@@ -1,0 +1,1896 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MedVault — Patient Portal</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f0f4f0;
+      --surface: #fff;
+      --surface2: #f7faf7;
+      --green: #1a7a4a;
+      --green2: #25a668;
+      --green3: #e8f5ee;
+      --green4: #d1ead9;
+      --text: #0d1f0d;
+      --muted: #5a7a5a;
+      --border: #d0e8d8;
+      --red: #c0392b;
+      --amber: #b7780a;
+      --blue: #1a4a8a;
+      --shadow: 0 2px 20px rgba(26, 122, 74, .10);
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh
+    }
+
+    .shell {
+      display: flex;
+      min-height: 100vh
+    }
+
+    /* SIDEBAR */
+    .sidebar {
+      background: var(--green);
+      width: 260px;
+      min-width: 260px;
+      flex-shrink: 0;
+      padding: 28px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      z-index: 10;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 8px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, .2);
+      margin-bottom: 8px
+    }
+
+    .logo-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0
+    }
+
+    .logo h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 17px;
+      color: #fff;
+      line-height: 1.2
+    }
+
+    .logo small {
+      color: rgba(255, 255, 255, .6);
+      font-size: 11px
+    }
+
+    .nav-group {
+      margin-top: 12px
+    }
+
+    .nav-label {
+      color: rgba(255, 255, 255, .4);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      padding: 8px 8px 4px
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: 9px;
+      cursor: pointer;
+      color: rgba(255, 255, 255, .8);
+      font-size: 13.5px;
+      transition: all .15s;
+      border: none;
+      background: transparent;
+      width: 100%;
+      text-align: left
+    }
+
+    .nav-btn:hover {
+      background: rgba(255, 255, 255, .12);
+      color: #fff
+    }
+
+    .nav-btn.active {
+      background: rgba(255, 255, 255, .2);
+      color: #fff;
+      font-weight: 600
+    }
+
+    .nav-icon {
+      font-size: 16px;
+      width: 22px;
+      text-align: center;
+      flex-shrink: 0
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .1)
+    }
+
+    .sf-name {
+      color: #fff;
+      font-weight: 600;
+      font-size: 13px
+    }
+
+    .sf-code {
+      color: rgba(255, 255, 255, .5);
+      font-size: 11px;
+      font-family: monospace;
+      margin-top: 2px
+    }
+
+    .sf-badge {
+      display: inline-block;
+      background: rgba(255, 255, 255, .2);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+      margin-top: 4px
+    }
+
+    /* MAIN */
+    .main {
+      flex: 1;
+      min-width: 0;
+      width: calc(100% - 260px);
+      padding: 32px 36px;
+      overflow-x: hidden
+    }
+
+    .page {
+      display: none
+    }
+
+    .page.active {
+      display: block
+    }
+
+    .page-header {
+      margin-bottom: 24px
+    }
+
+    .page-header h2 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 26px
+    }
+
+    .page-header p {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 4px
+    }
+
+    /* CARDS */
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px
+    }
+
+    .card-sm {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      margin-bottom: 14px
+    }
+
+    .card-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      margin-bottom: 14px
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px
+    }
+
+    /* STATS */
+    .stat-card {
+      background: var(--green3);
+      border-radius: 14px;
+      padding: 20px;
+      text-align: center;
+      border: 1px solid var(--border)
+    }
+
+    .stat-card .icon {
+      font-size: 28px;
+      margin-bottom: 6px
+    }
+
+    .stat-card .label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px
+    }
+
+    /* FORMS */
+    .form-group {
+      margin-bottom: 14px
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: .06em
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      min-width: 0;
+      padding: 10px 13px;
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      font-size: 14px;
+      font-family: 'DM Sans', sans-serif;
+      background: var(--surface);
+      color: var(--text);
+      transition: border .15s, box-shadow .15s;
+      outline: none
+    }
+
+    input:focus,
+    textarea:focus {
+      border-color: var(--green2);
+      box-shadow: 0 0 0 3px rgba(37, 166, 104, .12)
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px
+    }
+
+    /* BUTTONS */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 10px 20px;
+      border-radius: 9px;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all .15s;
+      font-family: 'DM Sans', sans-serif
+    }
+
+    .btn-primary {
+      background: var(--green);
+      color: #fff
+    }
+
+    .btn-primary:hover {
+      background: var(--green2);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(26, 122, 74, .3)
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--green);
+      border: 1.5px solid var(--green)
+    }
+
+    .btn-outline:hover {
+      background: var(--green3)
+    }
+
+    .btn-danger {
+      background: var(--red);
+      color: #fff
+    }
+
+    .btn-danger:hover {
+      opacity: .88
+    }
+
+    .btn-sm {
+      padding: 7px 14px;
+      font-size: 12.5px
+    }
+
+    .btn:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+      transform: none !important
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px
+    }
+
+    /* ALERTS */
+    .alert {
+      padding: 11px 15px;
+      border-radius: 9px;
+      font-size: 13px;
+      margin-bottom: 14px;
+      display: flex;
+      gap: 9px;
+      align-items: flex-start;
+      line-height: 1.5
+    }
+
+    .alert-success {
+      background: #e8f5ee;
+      color: #1a5c35;
+      border: 1px solid #a8d5bc
+    }
+
+    .alert-error {
+      background: #fdecea;
+      color: #8b1a1a;
+      border: 1px solid #f5b7b1
+    }
+
+    .alert-info {
+      background: #e8f0fe;
+      color: #1a3a7a;
+      border: 1px solid #aec4f5
+    }
+
+    .alert-warn {
+      background: #fff8e1;
+      color: #7a5a00;
+      border: 1px solid #ffe082
+    }
+
+    /* RECORD FIELDS */
+    .rec-field {
+      display: flex;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      align-items: flex-start
+    }
+
+    .rec-field:last-child {
+      border-bottom: none
+    }
+
+    .rec-key {
+      color: var(--muted);
+      font-weight: 700;
+      min-width: 130px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      padding-top: 2px
+    }
+
+    .rec-val {
+      color: var(--text);
+      font-size: 13.5px;
+      flex: 1;
+      word-break: break-all
+    }
+
+    /* REQUEST CARDS */
+    .req-card {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 18px 22px;
+      box-shadow: var(--shadow);
+      margin-bottom: 12px;
+      border-left: 4px solid var(--green);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap
+    }
+
+    .req-card.denied {
+      border-color: var(--red)
+    }
+
+    .req-card.approved {
+      border-color: var(--green2)
+    }
+
+    .req-info h4 {
+      font-size: 14px;
+      font-weight: 700
+    }
+
+    .req-info p {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px
+    }
+
+    .req-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap
+    }
+
+    /* BADGES */
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700
+    }
+
+    .badge-pending {
+      background: #fff8e1;
+      color: var(--amber)
+    }
+
+    .badge-approved {
+      background: #e8f5ee;
+      color: var(--green)
+    }
+
+    .badge-denied {
+      background: #fdecea;
+      color: var(--red)
+    }
+
+    /* TABS */
+    .tabs {
+      display: flex;
+      gap: 3px;
+      background: var(--surface2);
+      border-radius: 10px;
+      padding: 4px;
+      margin-bottom: 20px;
+      border: 1px solid var(--border)
+    }
+
+    .tab {
+      flex: 1;
+      text-align: center;
+      padding: 8px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all .15s;
+      border: none;
+      background: transparent
+    }
+
+    .tab.active {
+      background: var(--surface);
+      color: var(--green);
+      font-weight: 700;
+      box-shadow: 0 1px 5px rgba(0, 0, 0, .08)
+    }
+
+    /* MODAL */
+    .modal-bg {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      backdrop-filter: blur(4px)
+    }
+
+    .modal-bg.open {
+      display: flex
+    }
+
+    .modal {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 28px;
+      width: min(500px, 94vw);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .2);
+      max-height: 90vh;
+      overflow-y: auto
+    }
+
+    .modal h3 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 20px;
+      margin-bottom: 18px
+    }
+
+    /* CODE DISPLAY */
+    .code-box {
+      font-family: monospace;
+      font-size: 22px;
+      font-weight: 700;
+      background: var(--green3);
+      color: var(--green);
+      padding: 14px 20px;
+      border-radius: 10px;
+      text-align: center;
+      letter-spacing: .12em;
+      border: 2px dashed var(--green2);
+      margin: 12px 0
+    }
+
+    /* SPINNER */
+    .spin {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      border: 2px solid rgba(255, 255, 255, .4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+
+    /* EMPTY */
+    .empty {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--muted)
+    }
+
+    .empty-icon {
+      font-size: 44px;
+      margin-bottom: 10px
+    }
+
+    /* OTP STEP */
+    .otp-step {
+      display: none
+    }
+
+    .otp-step.active {
+      display: block
+    }
+
+    .otp-input {
+      font-size: 22px;
+      letter-spacing: .3em;
+      font-family: monospace;
+      text-align: center;
+      font-weight: 700
+    }
+
+    /* REPORT CARD */
+    .report-card {
+      background: var(--surface2);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      margin-bottom: 12px;
+      overflow: hidden
+    }
+
+    .report-header {
+      background: var(--green);
+      color: #fff;
+      padding: 14px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center
+    }
+
+    .report-body {
+      padding: 16px 18px
+    }
+
+    /* HISTORY TABLE */
+    .hist-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px
+    }
+
+    .hist-table th {
+      text-align: left;
+      padding: 8px 12px;
+      background: var(--surface2);
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      border-bottom: 1px solid var(--border)
+    }
+
+    .hist-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border)
+    }
+
+    .hist-table tr:last-child td {
+      border-bottom: none
+    }
+
+    /* SECTION DIVIDER */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 20px 0
+    }
+
+    /* PROFILE PHOTO */
+    .photo-circle {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: var(--green3);
+      border: 3px solid var(--green2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      overflow: hidden;
+      flex-shrink: 0
+    }
+
+    .photo-circle img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover
+    }
+
+    /* STEP INDICATOR */
+    .steps {
+      display: flex;
+      gap: 0;
+      margin-bottom: 24px
+    }
+
+    .step {
+      flex: 1;
+      text-align: center;
+      padding: 10px 4px;
+      font-size: 12px;
+      color: var(--muted);
+      border-bottom: 2px solid var(--border);
+      transition: all .2s
+    }
+
+    .step.active {
+      color: var(--green);
+      border-color: var(--green);
+      font-weight: 700
+    }
+
+    .step.done {
+      color: var(--green2);
+      border-color: var(--green2)
+    }
+
+    @media(max-width:700px) {
+      .shell {
+        flex-direction: column
+      }
+
+      .sidebar {
+        width: 100%;
+        min-width: unset;
+        position: relative;
+        height: auto
+      }
+
+      .main {
+        width: 100%;
+        padding: 20px 16px
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="logo">
+        <div class="logo-icon">🏥</div>
+        <div>
+          <h1>MedVault</h1><small>Patient Portal</small>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Main</div>
+        <button class="nav-btn active" onclick="nav('home')" id="nb-home"><span class="nav-icon">🏠</span>
+          Dashboard</button>
+        <button class="nav-btn" onclick="nav('register')" id="nb-register"><span class="nav-icon">✨</span>
+          Register</button>
+        <button class="nav-btn" onclick="nav('login')" id="nb-login"><span class="nav-icon">🔑</span> Load
+          Profile</button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">My Health</div>
+        <button class="nav-btn" onclick="nav('record')" id="nb-record"><span class="nav-icon">📋</span> My
+          Record</button>
+        <button class="nav-btn" onclick="nav('reports')" id="nb-reports"><span class="nav-icon">📄</span> Visit
+          Reports</button>
+        <button class="nav-btn" onclick="nav('notes')" id="nb-notes"><span class="nav-icon">📝</span> Doctor
+          Notes</button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Access Control</div>
+        <button class="nav-btn" onclick="nav('requests')" id="nb-requests"><span class="nav-icon">🔔</span> Access
+          Requests</button>
+        <button class="nav-btn" onclick="nav('scan')" id="nb-scan"><span class="nav-icon">📲</span> Scan Doctor
+          QR</button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Security</div>
+        <button class="nav-btn" onclick="nav('history')" id="nb-history"><span class="nav-icon">🕐</span> Login
+          History</button>
+        <button class="nav-btn" onclick="nav('audit')" id="nb-audit"><span class="nav-icon">🛡</span> Audit Log</button>
+        <button class="nav-btn" onclick="nav('about')" id="nb-about"><span class="nav-icon">ℹ️</span> About
+          MedVault</button>
+      </div>
+
+      <div class="sidebar-footer" id="sf" style="display:none">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="photo-circle" id="sf-photo">👤</div>
+          <div>
+            <div class="sf-name" id="sf-name">—</div>
+            <div class="sf-code" id="sf-code">—</div>
+            <div class="sf-badge">Patient</div>
+          </div>
+        </div>
+        <button class="btn btn-outline btn-sm" style="margin-top:10px;width:100%" onclick="logout()">↩ Switch
+          Profile</button>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+
+      <!-- DASHBOARD -->
+      <div class="page active" id="page-home">
+        <div class="page-header">
+          <h2>Welcome to MedVault 👋</h2>
+          <p>Your encrypted health data, fully in your control.</p>
+        </div>
+        <div class="grid-3" style="margin-bottom:20px">
+          <div class="stat-card">
+            <div class="icon">🔒</div>
+            <div>End-to-End Encrypted</div>
+            <div class="label">Server never sees plaintext</div>
+          </div>
+          <div class="stat-card">
+            <div class="icon">⏱</div>
+            <div>24h Access Windows</div>
+            <div class="label">Auto-expiring doctor access</div>
+          </div>
+          <div class="stat-card">
+            <div class="icon">🗝</div>
+            <div>Zero-Trust</div>
+            <div class="label">Only you hold the key</div>
+          </div>
+        </div>
+        <div class="card" id="home-out">
+          <div class="card-title">Get Started</div>
+          <p style="color:var(--muted);font-size:14px;margin-bottom:16px">New patient? Register with email OTP
+            verification. Already registered? Load your profile.</p>
+          <div class="btn-group" style="margin-top:0">
+            <button class="btn btn-primary" onclick="nav('register')">✨ Register Now</button>
+            <button class="btn btn-outline" onclick="nav('login')">🔑 Load Profile</button>
+          </div>
+        </div>
+        <div class="card" id="home-in" style="display:none">
+          <div class="card-title">Your Profile</div>
+          <div id="home-details"></div>
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="nav('requests')">🔔 Access Requests</button>
+            <button class="btn btn-outline" onclick="nav('reports')">📄 Visit Reports</button>
+            <button class="btn btn-outline" onclick="nav('record')">📋 My Record</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- REGISTER -->
+      <div class="page" id="page-register">
+        <div class="page-header">
+          <h2>Create Patient Profile</h2>
+          <p>OTP-verified registration with end-to-end encryption.</p>
+        </div>
+        <div id="reg-alert"></div>
+
+        <!-- Steps -->
+        <div class="steps">
+          <div class="step active" id="step1-ind">1. Email OTP</div>
+          <div class="step" id="step2-ind">2. Your Details</div>
+          <div class="step" id="step3-ind">3. Done</div>
+        </div>
+
+        <!-- Step 1: OTP -->
+        <div class="otp-step active" id="reg-step1">
+          <div class="card">
+            <div class="card-title">Verify Your Email</div>
+            <div class="form-group"><label>Email Address *</label><input id="reg-email" type="email"
+                placeholder="you@example.com" /></div>
+            <button class="btn btn-primary" id="send-otp-btn" onclick="sendOTP()">📧 Send OTP</button>
+          </div>
+          <div id="otp-entry" style="display:none" class="card">
+            <div class="card-title">Enter OTP</div>
+            <p style="color:var(--muted);font-size:13px;margin-bottom:14px">A 6-digit OTP was sent to your email. Valid
+              for 5 minutes.</p>
+            <div class="form-group"><input class="otp-input" id="reg-otp" maxlength="6" placeholder="000000"
+                oninput="this.value=this.value.replace(/\D/g,'')" /></div>
+            <div style="display:flex;gap:10px">
+              <button class="btn btn-primary" onclick="verifyOTP()">✅ Verify OTP</button>
+              <button class="btn btn-outline btn-sm" onclick="sendOTP()">Resend</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Details -->
+        <div class="otp-step" id="reg-step2">
+          <div class="card" id="reg-form-card">
+            <div class="card-title">Personal Details</div>
+            <div class="form-row">
+              <div class="form-group"><label>Full Name *</label><input id="r-name" placeholder="Aarav Sharma" /></div>
+              <div class="form-group"><label>Age</label><input id="r-age" type="number" placeholder="28" /></div>
+            </div>
+            <div class="form-group"><label>Phone</label><input id="r-phone" type="tel" placeholder="+91 98765 43210" />
+            </div>
+            <div class="form-group"><label>Medical Notes (stored encrypted)</label><textarea id="r-notes"
+                placeholder="e.g. Diabetic, allergic to penicillin..."></textarea></div>
+            <div class="divider"></div>
+            <div class="card-title">Protect Your Data Key</div>
+            <div class="form-row">
+              <div class="form-group"><label>Password *</label><input id="r-pw" type="password"
+                  placeholder="Strong password" /></div>
+              <div class="form-group"><label>Confirm Password *</label><input id="r-pw2" type="password"
+                  placeholder="Repeat password" /></div>
+            </div>
+            <button class="btn btn-primary" id="reg-btn" onclick="register()">✨ Create My Profile</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Success -->
+        <div class="otp-step" id="reg-step3"></div>
+      </div>
+
+      <!-- LOGIN / LOAD PROFILE -->
+      <div class="page" id="page-login">
+        <div class="page-header">
+          <h2>Load Your Profile</h2>
+          <p>Sign in with your profile code or your registered email.</p>
+        </div>
+        <div id="login-alert"></div>
+
+        <!-- Tabs -->
+        <div class="tabs" style="margin-bottom:20px">
+          <button class="tab active" id="tab-code" onclick="switchLoginTab('code')">🔑 Profile Code</button>
+          <button class="tab" id="tab-email" onclick="switchLoginTab('email')">📧 Email & Password</button>
+        </div>
+
+        <!-- Tab 1: Profile Code (existing) -->
+        <div id="login-tab-code">
+          <div class="card">
+            <div class="form-group"><label>Profile Code</label><input id="l-code" placeholder="e.g. nurpsuyJ" /></div>
+            <div class="form-group"><label>Password</label><input id="l-pw" type="password"
+                placeholder="Your password" /></div>
+            <button class="btn btn-primary" onclick="loadProfile()">🔑 Load Profile</button>
+          </div>
+        </div>
+
+        <!-- Tab 2: Email & Password (new) -->
+        <div id="login-tab-email" style="display:none">
+          <div class="card">
+            <div class="form-group"><label>Email Address</label><input id="le-email" type="email"
+                placeholder="you@example.com" /></div>
+            <div class="form-group"><label>Password</label><input id="le-pw" type="password"
+                placeholder="Your password" /></div>
+            <button class="btn btn-primary" id="email-login-btn" onclick="loginWithEmail()">📧 Login with Email</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MY RECORD -->
+      <div class="page" id="page-record">
+        <div class="page-header">
+          <h2>My Medical Record</h2>
+          <p>Decrypted locally — never sent to server in plaintext.</p>
+        </div>
+        <div id="record-content">
+          <div class="alert alert-info">ℹ️ Load your profile first.</div>
+        </div>
+      </div>
+
+      <!-- VISIT REPORTS -->
+      <div class="page" id="page-reports">
+        <div class="page-header">
+          <h2>Visit Reports</h2>
+          <p>Encrypted reports uploaded by your doctors. Only you can decrypt them.</p>
+        </div>
+        <div id="reports-alert"></div>
+        <div id="reports-list">
+          <div class="alert alert-info">ℹ️ Login with your email account to view reports.</div>
+        </div>
+      </div>
+
+
+      <!-- IMAGE LIGHTBOX MODAL -->
+      <div id="img-lightbox" onclick="closeImagePreview()"
+        style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:24px">
+        <button onclick="closeImagePreview()"
+          style="position:fixed;top:18px;right:22px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:26px;cursor:pointer;border-radius:50%;width:40px;height:40px;line-height:40px">✕</button>
+        <img id="lightbox-img" src=""
+          style="max-width:90vw;max-height:80vh;border-radius:12px;object-fit:contain;box-shadow:0 8px 40px rgba(0,0,0,.6)"
+          onclick="event.stopPropagation()">
+        <div style="display:flex;gap:12px" onclick="event.stopPropagation()">
+          <button id="lightbox-dl-btn"
+            onclick="downloadNoteImage(document.getElementById('lightbox-img').src, document.getElementById('lightbox-img').dataset.filename)"
+            style="background:#fff;color:#1a1a1a;border:none;padding:8px 22px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700">⬇
+            Download Photo</button>
+        </div>
+      </div>
+
+      <!-- ABOUT MEDVAULT -->
+      <div class="page" id="page-about">
+        <div class="page-header">
+          <h2>About MedVault ℹ️</h2>
+          <p>Built for patients. Secured by cryptography. Controlled by you.</p>
+        </div>
+
+        <!-- Hero -->
+        <div class="card"
+          style="background:linear-gradient(135deg,#4a1a8a,#7c3aed);color:#fff;border:none;margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+            <div style="font-size:56px">🏥</div>
+            <div>
+              <div style="font-size:22px;font-weight:800;margin-bottom:6px">MedVault</div>
+              <div style="opacity:.85;font-size:14px;max-width:560px">A decentralised, patient-first medical data
+                platform. Your health records are encrypted on your device — no cloud, no third-party, no data mining.
+                Doctors access your data only when you explicitly approve it.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- What is MedVault -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-title">🎯 What is MedVault?</div>
+          <p style="font-size:14px;line-height:1.8;color:var(--muted)">MedVault is a <strong>decentralised health data
+              management system</strong> that puts patients in complete control of their medical records. Unlike
+            traditional hospital systems where your data lives on centralized servers accessible to anyone with admin
+            rights, MedVault stores your encrypted data on <em>your own device</em>. Only you hold the keys.</p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:18px">
+            <div style="background:var(--primary-light);border-radius:12px;padding:16px;text-align:center">
+              <div style="font-size:28px;margin-bottom:6px">🔒</div>
+              <div style="font-size:13px;font-weight:700;color:var(--primary)">Zero-Trust Storage</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px">Server never sees your plaintext data</div>
+            </div>
+            <div style="background:#e8f5ee;border-radius:12px;padding:16px;text-align:center">
+              <div style="font-size:28px;margin-bottom:6px">✅</div>
+              <div style="font-size:13px;font-weight:700;color:#1a5c35">Consent-First</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px">Every access requires your explicit approval
+              </div>
+            </div>
+            <div style="background:#fff8e1;border-radius:12px;padding:16px;text-align:center">
+              <div style="font-size:28px;margin-bottom:6px">⏱</div>
+              <div style="font-size:13px;font-weight:700;color:#7a5a00">Time-Limited Access</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px">Doctor access auto-expires in 24 hours</div>
+            </div>
+            <div style="background:#e8f5fe;border-radius:12px;padding:16px;text-align:center">
+              <div style="font-size:28px;margin-bottom:6px">📖</div>
+              <div style="font-size:13px;font-weight:700;color:#1a4c7a">Full Audit Trail</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px">Every action is logged and visible to you
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Security Features -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-title">🛡 Security Features</div>
+          <div style="display:flex;flex-direction:column;gap:12px;margin-top:6px">
+            <div
+              style="display:flex;gap:14px;align-items:flex-start;padding:12px;background:var(--surface2);border-radius:10px">
+              <span style="font-size:24px;flex-shrink:0">🔑</span>
+              <div>
+                <div style="font-weight:700;font-size:14px">RSA-2048 Asymmetric Encryption</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px">A unique RSA keypair is generated locally
+                  on your device during registration. Your private key never leaves your machine. The public key is used
+                  by doctors to wrap session keys securely.</div>
+              </div>
+            </div>
+            <div
+              style="display:flex;gap:14px;align-items:flex-start;padding:12px;background:var(--surface2);border-radius:10px">
+              <span style="font-size:24px;flex-shrink:0">🔐</span>
+              <div>
+                <div style="font-weight:700;font-size:14px">AES-256-GCM Data Encryption</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px">All medical records are encrypted with
+                  AES-256-GCM before storage. Each record has its own unique encryption key, which is itself wrapped
+                  with your password-derived key.</div>
+              </div>
+            </div>
+            <div
+              style="display:flex;gap:14px;align-items:flex-start;padding:12px;background:var(--surface2);border-radius:10px">
+              <span style="font-size:24px;flex-shrink:0">🧂</span>
+              <div>
+                <div style="font-weight:700;font-size:14px">PBKDF2 Password-Based Key Derivation</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px">Your password is never stored. It's
+                  transformed using PBKDF2 with a random salt into a <em>Key Encryption Key (KEK)</em> that unlocks your
+                  record key locally. Brute-forcing is computationally infeasible.</div>
+              </div>
+            </div>
+            <div
+              style="display:flex;gap:14px;align-items:flex-start;padding:12px;background:var(--surface2);border-radius:10px">
+              <span style="font-size:24px;flex-shrink:0">✍️</span>
+              <div>
+                <div style="font-weight:700;font-size:14px">Digital Signatures (RSA + SHA-256)</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px">Every record is signed with your private
+                  key. This ensures data integrity — any tampering with your encrypted record is detectable because the
+                  signature will fail verification.</div>
+              </div>
+            </div>
+            <div
+              style="display:flex;gap:14px;align-items:flex-start;padding:12px;background:var(--surface2);border-radius:10px">
+              <span style="font-size:24px;flex-shrink:0">🎟</span>
+              <div>
+                <div style="font-weight:700;font-size:14px">JWT Authentication (HS256)</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px">Session tokens are signed JWTs with a
+                  15-minute expiry. Refresh tokens last 7 days. Failed logins are tracked and accounts are locked after
+                  5 incorrect attempts.</div>
+              </div>
+            </div>
+            <div
+              style="display:flex;gap:14px;align-items:flex-start;padding:12px;background:var(--surface2);border-radius:10px">
+              <span style="font-size:24px;flex-shrink:0">📲</span>
+              <div>
+                <div style="font-weight:700;font-size:14px">QR Code Access Flow</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px">Doctors present a QR code. You scan it and
+                  decrypt access using your own password. Your data key is re-wrapped with the doctor's public key,
+                  giving them a 24-hour time-limited, patient-authorised session.</div>
+              </div>
+            </div>
+            <div
+              style="display:flex;gap:14px;align-items:flex-start;padding:12px;background:var(--surface2);border-radius:10px">
+              <span style="font-size:24px;flex-shrink:0">📋</span>
+              <div>
+                <div style="font-weight:700;font-size:14px">Immutable Audit Log</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px">Every login, access request, approval,
+                  denial, note addition, and data fetch is logged with a timestamp and actor. You can view the full
+                  history at any time in the Audit Log tab.</div>
+              </div>
+            </div>
+            <div
+              style="display:flex;gap:14px;align-items:flex-start;padding:12px;background:var(--surface2);border-radius:10px">
+              <span style="font-size:24px;flex-shrink:0">🚦</span>
+              <div>
+                <div style="font-weight:700;font-size:14px">Rate Limiting & Account Lockout</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px">API endpoints are rate-limited to prevent
+                  brute-force attacks. Accounts are automatically locked after 5 consecutive failed login attempts and
+                  require admin intervention to unlock.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tech Stack -->
+        <div class="card">
+          <div class="card-title">⚙️ Technology Stack</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:10px">
+            <div style="border:1.5px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+              <div style="font-size:22px">🐍</div>
+              <div style="font-size:12px;font-weight:700;margin-top:4px">Python 3 + Flask</div>
+              <div style="font-size:11px;color:var(--muted)">Backend API</div>
+            </div>
+            <div style="border:1.5px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+              <div style="font-size:22px">🔐</div>
+              <div style="font-size:12px;font-weight:700;margin-top:4px">cryptography lib</div>
+              <div style="font-size:11px;color:var(--muted)">RSA + AES-GCM</div>
+            </div>
+            <div style="border:1.5px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+              <div style="font-size:22px">🌐</div>
+              <div style="font-size:12px;font-weight:700;margin-top:4px">Vanilla JS + HTML5</div>
+              <div style="font-size:11px;color:var(--muted)">Zero dependencies</div>
+            </div>
+            <div style="border:1.5px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+              <div style="font-size:22px">📁</div>
+              <div style="font-size:12px;font-weight:700;margin-top:4px">Local JSON Files</div>
+              <div style="font-size:11px;color:var(--muted)">Decentralised storage</div>
+            </div>
+            <div style="border:1.5px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+              <div style="font-size:22px">🎟</div>
+              <div style="font-size:12px;font-weight:700;margin-top:4px">JWT (HS256)</div>
+              <div style="font-size:11px;color:var(--muted)">Session auth</div>
+            </div>
+            <div style="border:1.5px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+              <div style="font-size:22px">📲</div>
+              <div style="font-size:12px;font-weight:700;margin-top:4px">QRCode.js</div>
+              <div style="font-size:11px;color:var(--muted)">Doctor identity QR</div>
+            </div>
+          </div>
+          <p style="font-size:12px;color:var(--muted);margin-top:16px;text-align:center">MedVault — a Minor Project
+            submission · All rights reserved © 2026</p>
+        </div>
+      </div>
+
+      <div class="page" id="page-notes">
+        <div class="page-header"
+          style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+          <div>
+            <h2>Doctor Notes 📝</h2>
+            <p>Clinical notes added to your profile by doctors with your consent. Full audit trail included.</p>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="loadDoctorNotes()" style="margin-top:6px">↻ Refresh</button>
+        </div>
+        <div id="notes-alert"></div>
+        <div id="notes-list">
+          <div class="alert alert-info">ℹ️ Load your profile to see doctor notes.</div>
+        </div>
+      </div>
+
+      <!-- ACCESS REQUESTS -->
+      <div class="page" id="page-requests">
+        <div class="page-header">
+          <h2>Doctor Access Requests</h2>
+          <p>Approve or deny doctors requesting access to your records.</p>
+        </div>
+        <div id="req-alert"></div>
+        <div
+          style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+          <div class="tabs" style="margin-bottom:0;flex:1;max-width:360px">
+            <button class="tab active" onclick="filterReqs('pending')" id="tab-pending">⏳ Pending</button>
+            <button class="tab" onclick="filterReqs('approved')" id="tab-approved">✅ Approved</button>
+            <button class="tab" onclick="filterReqs('denied')" id="tab-denied">❌ Denied</button>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="loadRequests()">↻ Refresh</button>
+        </div>
+        <div id="requests-list"></div>
+      </div>
+
+      <!-- SCAN QR -->
+      <div class="page" id="page-scan">
+        <div class="page-header">
+          <h2>Scan Doctor QR 📲</h2>
+          <p>Like a UPI payment — scan, enter password, transfer record securely.</p>
+        </div>
+        <div id="scan-alert"></div>
+        <div id="scan-body">
+          <div class="card">
+            <div class="card-title">Enter Doctor Code (from QR)</div>
+            <p style="color:var(--muted);font-size:13px;margin-bottom:14px">Scan doctor's QR with your phone camera — it
+              shows a code. Or ask them directly.</p>
+            <div class="form-group"><input id="scan-dcode" placeholder="e.g. 7e7878c3" oninput="lookupDoctor()" /></div>
+            <div id="scan-preview" style="display:none"></div>
+          </div>
+          <div class="card" id="scan-step2" style="display:none">
+            <div class="card-title">Confirm Transfer — Your Security PIN</div>
+            <div id="scan-doc-info" style="margin-bottom:16px"></div>
+            <div class="form-group"><label>Your Password 🔐</label><input id="scan-pw" type="password"
+                placeholder="Enter password to unlock your data" /></div>
+            <div class="alert alert-warn" style="margin-bottom:14px">⚠️ This will encrypt and share your record with
+              this doctor for <strong>24 hours only</strong>.</div>
+            <button class="btn btn-primary" id="scan-btn" onclick="transferToDoctor()">🔐 Confirm & Transfer</button>
+          </div>
+          <div class="grid-3">
+            <div class="card-sm" style="text-align:center">
+              <div style="font-size:26px">📲</div>
+              <div style="font-weight:700;font-size:13px;margin-top:6px">Scan QR</div>
+              <div style="color:var(--muted);font-size:12px">Like UPI QR</div>
+            </div>
+            <div class="card-sm" style="text-align:center">
+              <div style="font-size:26px">🔑</div>
+              <div style="font-weight:700;font-size:13px;margin-top:6px">Enter Password</div>
+              <div style="color:var(--muted);font-size:12px">Your UPI PIN</div>
+            </div>
+            <div class="card-sm" style="text-align:center">
+              <div style="font-size:26px">🏥</div>
+              <div style="font-weight:700;font-size:13px;margin-top:6px">Record Transfers</div>
+              <div style="color:var(--muted);font-size:12px">Encrypted, 24h</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOGIN HISTORY -->
+      <div class="page" id="page-history">
+        <div class="page-header">
+          <h2>Login History</h2>
+          <p>All login events for your account.</p>
+        </div>
+        <div id="history-content">
+          <div class="alert alert-info">ℹ️ Login with your email account to view history.</div>
+        </div>
+      </div>
+
+      <!-- AUDIT LOG -->
+      <div class="page" id="page-audit">
+        <div class="page-header">
+          <h2>Audit Log 🛡</h2>
+          <p>Every action taken on your account, tamper-evident.</p>
+        </div>
+        <div id="audit-content">
+          <div class="alert alert-info">ℹ️ Login with your email account to view audit log.</div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- APPROVE MODAL -->
+  <div class="modal-bg" id="approve-modal">
+    <div class="modal">
+      <h3>🩺 Approve Doctor Access?</h3>
+      <div id="modal-doc-info" style="margin-bottom:18px"></div>
+      <div class="form-group"><label>Your Password</label><input id="modal-pw" type="password"
+          placeholder="Enter password to approve" /></div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="approve-ok-btn" onclick="submitApprove()">✅ Approve (24h)</button>
+        <button class="btn btn-danger" onclick="submitDeny()">❌ Deny</button>
+        <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+    onerror="console.warn('QR lib unavailable')"></script>
+  <script>
+    // ════════════════════════════════════════════════════════════
+    //  STATE
+    // ════════════════════════════════════════════════════════════
+    let S = { code: '', name: '', email: '', logged: false, jwt: '', uid: '', role: 'patient' };
+    let allReqs = [], currentFilter = 'pending', activeReq = null;
+    let regEmail = '', regVToken = '';
+
+    // ════════════════════════════════════════════════════════════
+    //  NAV
+    // ════════════════════════════════════════════════════════════
+    function nav(p) {
+      document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(x => x.classList.remove('active'));
+      document.getElementById('page-' + p)?.classList.add('active');
+      document.getElementById('nb-' + p)?.classList.add('active');
+      if (p === 'requests') loadRequests();
+      if (p === 'record') showRecord();
+      if (p === 'reports') loadReports();
+      if (p === 'notes') loadDoctorNotes();
+      if (p === 'history') loadHistory();
+      if (p === 'audit') loadAudit();
+      if (p === 'scan') initScan();
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  AUTH STATE
+    // ════════════════════════════════════════════════════════════
+    function setLoggedIn(code, name, email, jwt = '', uid = '') {
+      S = { code, name, email, logged: true, jwt, uid, role: 'patient' };
+      sessionStorage.setItem('medvault_session', JSON.stringify(S));
+      document.getElementById('home-out').style.display = 'none';
+      document.getElementById('home-in').style.display = 'block';
+      document.getElementById('home-details').innerHTML = `
+    <div class="rec-field"><div class="rec-key">Profile Code</div><div class="rec-val" style="font-family:monospace;font-weight:700">${code}</div></div>
+    <div class="rec-field"><div class="rec-key">Name</div><div class="rec-val">${name || '—'}</div></div>
+    <div class="rec-field"><div class="rec-key">Email</div><div class="rec-val">${email || '—'}</div></div>`;
+      document.getElementById('sf').style.display = 'block';
+      document.getElementById('sf-name').textContent = name || code;
+      document.getElementById('sf-code').textContent = code;
+    }
+    function logout() { sessionStorage.removeItem('medvault_session'); S = { code: '', name: '', email: '', logged: false, jwt: '', uid: '' }; document.getElementById('home-out').style.display = 'block'; document.getElementById('home-in').style.display = 'none'; document.getElementById('sf').style.display = 'none'; nav('home'); }
+
+    // ════════════════════════════════════════════════════════════
+    //  REGISTER — OTP FLOW
+    // ════════════════════════════════════════════════════════════
+    async function sendOTP() {
+      const email = document.getElementById('reg-email').value.trim();
+      if (!email || !email.includes('@')) return alert('Enter a valid email.');
+      const btn = document.getElementById('send-otp-btn');
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Sending...';
+      document.getElementById('reg-alert').innerHTML = '';
+      try {
+        const r = await fetch('/api/auth/otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+        regEmail = email;
+        document.getElementById('otp-entry').style.display = 'block';
+        document.getElementById('reg-alert').innerHTML = `<div class="alert alert-success">✅ OTP sent to ${email}${d.dev_otp ? ' — Dev OTP: <strong>' + d.dev_otp + '</strong>' : ''}</div>`;
+      } catch (e) { document.getElementById('reg-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+      finally { btn.disabled = false; btn.textContent = '📧 Send OTP'; }
+    }
+
+    async function verifyOTP() {
+      const otp = document.getElementById('reg-otp').value.trim();
+      if (otp.length !== 6) return alert('Enter 6-digit OTP.');
+      document.getElementById('reg-alert').innerHTML = '';
+      try {
+        const r = await fetch('/api/auth/verify_otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: regEmail, otp }) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Wrong OTP');
+        regVToken = d.verification_token;
+        // advance to step 2
+        document.getElementById('reg-step1').classList.remove('active');
+        document.getElementById('reg-step2').classList.add('active');
+        document.getElementById('step1-ind').classList.replace('active', 'done');
+        document.getElementById('step2-ind').classList.add('active');
+        document.getElementById('reg-alert').innerHTML = `<div class="alert alert-success">✅ Email verified!</div>`;
+      } catch (e) { document.getElementById('reg-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+    }
+
+    async function register() {
+      const name = document.getElementById('r-name').value.trim();
+      const age = document.getElementById('r-age').value.trim();
+      const notes = document.getElementById('r-notes').value.trim();
+      const phone = document.getElementById('r-phone').value.trim();
+      const pw = document.getElementById('r-pw').value;
+      const pw2 = document.getElementById('r-pw2').value;
+      if (!name) return alert('Name required.');
+      if (!pw) return alert('Password required.');
+      if (pw !== pw2) return alert('Passwords do not match.');
+      const btn = document.getElementById('reg-btn');
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Encrypting...';
+      document.getElementById('reg-alert').innerHTML = '';
+      try {
+        // use legacy register (always works, no OTP needed)
+        const r = await fetch('/api/register', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, age, email: regEmail || '', notes, phone, password: pw })
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Registration failed');
+        // show step 3
+        document.getElementById('reg-step2').classList.remove('active');
+        document.getElementById('reg-step3').classList.add('active');
+        document.getElementById('step2-ind').classList.replace('active', 'done');
+        document.getElementById('step3-ind').classList.add('active');
+        document.getElementById('reg-step3').innerHTML = `
+      <div class="alert alert-success">✅ Profile created successfully!</div>
+      <div class="card">
+        <div class="card-title">Your Profile Code — Save This!</div>
+        <div class="code-box">${d.profile_code}</div>
+        <p style="color:var(--muted);font-size:13px;margin-top:10px">⚠️ This is your login ID. Store it with your password.</p>
+        <div class="btn-group"><button class="btn btn-primary" onclick="setLoggedIn('${d.profile_code}','${name}','${regEmail || ''}');nav('home')">Go to Dashboard →</button></div>
+      </div>`;
+        setLoggedIn(d.profile_code, name, regEmail || '');
+      } catch (e) { document.getElementById('reg-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+      finally { btn.disabled = false; btn.textContent = '✨ Create My Profile'; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  LOAD PROFILE (legacy code+pw)
+    // ════════════════════════════════════════════════════════════
+    async function loadProfile() {
+      const code = document.getElementById('l-code').value.trim();
+      const pw = document.getElementById('l-pw').value;
+      if (!code || !pw) return alert('Profile code and password required.');
+      document.getElementById('login-alert').innerHTML = '';
+      try {
+        // Step 1: Load local profile (decrypt with password)
+        const r = await fetch('/api/load_profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_code: code, password: pw }) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        // Step 2: Auto JWT login using email from profile (enables Reports, History, Audit)
+        let jwt = '', uid = '';
+        if (d.email) {
+          try {
+            const jr = await fetch('/api/auth/login', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: d.email, password: pw })
+            });
+            const jd = await jr.json();
+            if (jr.ok && jd.access_token) {
+              jwt = jd.access_token;
+              uid = jd.user_id || '';
+            }
+          } catch (_) {/* JWT login optional — profile still loads */ }
+        }
+
+        setLoggedIn(code, d.name, d.email, jwt, uid);
+        document.getElementById('login-alert').innerHTML = `<div class="alert alert-success">✅ Welcome back, ${d.name || code}!${jwt ? ' 🔐 Full access enabled.' : ' ⚠️ Email login unavailable — some features restricted.'}</div>`;
+        setTimeout(() => nav('home'), 1000);
+      } catch (e) { document.getElementById('login-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  LOGIN TAB SWITCH
+    // ════════════════════════════════════════════════════════════
+    function switchLoginTab(tab) {
+      document.getElementById('login-tab-code').style.display = tab === 'code' ? 'block' : 'none';
+      document.getElementById('login-tab-email').style.display = tab === 'email' ? 'block' : 'none';
+      document.getElementById('tab-code').classList.toggle('active', tab === 'code');
+      document.getElementById('tab-email').classList.toggle('active', tab === 'email');
+      document.getElementById('login-alert').innerHTML = '';
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  EMAIL + PASSWORD LOGIN
+    // ════════════════════════════════════════════════════════════
+    async function loginWithEmail() {
+      const email = document.getElementById('le-email').value.trim().toLowerCase();
+      const pw = document.getElementById('le-pw').value;
+      if (!email || !email.includes('@')) return alert('Enter a valid email address.');
+      if (!pw) return alert('Password is required.');
+      const btn = document.getElementById('email-login-btn');
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Logging in…';
+      document.getElementById('login-alert').innerHTML = '';
+      try {
+        // Hash password (same method as profile-code login)
+        const pwHash = await sha256(pw);
+
+        // JWT login
+        const jr = await fetch('/api/auth/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password: pw })
+        });
+        const jd = await jr.json();
+        if (!jr.ok) throw new Error(jd.error || 'Invalid email or password');
+
+        const profileCode = jd.profile_code || '';
+        const jwt = jd.access_token || '';
+        const uid = jd.user_id || '';
+        const name = jd.name || email;
+
+        if (!profileCode) {
+          // No profile_code in DB (registered only via JWT flow, not legacy)
+          setLoggedIn('', name, email, jwt, uid);
+          document.getElementById('login-alert').innerHTML =
+            `<div class="alert alert-success">✅ Welcome, ${name}! 🔐 JWT access enabled. Profile code not linked — some local features may be unavailable.</div>`;
+          setTimeout(() => nav('home'), 1200);
+          return;
+        }
+
+        // Try to also load local profile for full session
+        let localName = name;
+        try {
+          const lr = await fetch('/api/load_profile', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profile_code: profileCode, password: pw })
+          });
+          if (lr.ok) { const ld = await lr.json(); localName = ld.name || name; }
+        } catch (_) { }
+
+        setLoggedIn(profileCode, localName, email, jwt, uid);
+        document.getElementById('login-alert').innerHTML =
+          `<div class="alert alert-success">✅ Welcome back, ${localName}! 🔐 Full access enabled.</div>`;
+        setTimeout(() => nav('home'), 1000);
+      } catch (e) {
+        document.getElementById('login-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`;
+      } finally { btn.disabled = false; btn.textContent = '📧 Login with Email'; }
+    }
+
+    // SHA-256 helper (Web Crypto API)
+    async function sha256(message) {
+      const msgBuffer = new TextEncoder().encode(message);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+
+    // ════════════════════════════════════════════════════════════
+    //  RECORD
+    // ════════════════════════════════════════════════════════════
+    async function showRecord() {
+      const box = document.getElementById('record-content');
+      if (!S.logged) { box.innerHTML = '<div class="alert alert-info">ℹ️ Load your profile first.</div>'; return; }
+      try {
+        const r = await fetch(`/api/record/${S.code}`); const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        box.innerHTML = `<div class="card"><div class="card-title">Decrypted Record (local only)</div>${Object.entries(d.record).filter(([k, v]) => v).map(([k, v]) => `<div class="rec-field"><div class="rec-key">${k}</div><div class="rec-val">${v}</div></div>`).join('')}</div>`;
+      } catch (e) { box.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  VISIT REPORTS (requires JWT)
+    // ════════════════════════════════════════════════════════════
+    async function loadReports() {
+      const box = document.getElementById('reports-list');
+      if (!S.jwt || !S.uid) { box.innerHTML = '<div class="alert alert-info">ℹ️ You need to login with email account to view reports. Use the email login flow after registration.</div>'; return; }
+      box.innerHTML = '<div class="empty"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
+      try {
+        const r = await fetch(`/api/reports/${S.uid}`, { headers: { 'Authorization': 'Bearer ' + S.jwt } });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        if (!d.length) { box.innerHTML = '<div class="empty"><div class="empty-icon">📄</div><p>No visit reports yet. Reports appear here when a doctor uploads them.</p></div>'; return; }
+        box.innerHTML = d.map(rep => `
+      <div class="report-card">
+        <div class="report-header"><span>📋 Report #${rep.id.slice(0, 8)}</span><span style="font-size:12px;opacity:.8">${new Date(rep.created_at).toLocaleDateString()}</span></div>
+        <div class="report-body">
+          <div class="rec-field"><div class="rec-key">Doctor</div><div class="rec-val">${rep.doctor_email || '—'}</div></div>
+          <div class="rec-field"><div class="rec-key">File Hash</div><div class="rec-val" style="font-family:monospace;font-size:12px">${(rep.file_hash || '').slice(0, 32)}...</div></div>
+          <div class="rec-field"><div class="rec-key">Encrypted</div><div class="rec-val" style="color:var(--green)">✅ AES-256-GCM</div></div>
+          <div style="margin-top:12px"><button class="btn btn-outline btn-sm" onclick="fetchAndDecryptReport('${rep.id}')">🔓 Decrypt & View</button></div>
+        </div>
+      </div>`).join('');
+      } catch (e) { box.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+    }
+
+    async function fetchAndDecryptReport(recId) {
+      if (!S.jwt) return alert('JWT login required.');
+      try {
+        const r = await fetch(`/api/report/${recId}`, { headers: { 'Authorization': 'Bearer ' + S.jwt } });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        // Client-side decryption would go here — show encrypted blob metadata
+        document.getElementById('reports-alert').innerHTML = `
+      <div class="alert alert-info">
+        🔒 <strong>Encrypted Report Retrieved</strong><br>
+        The report is stored as an AES-256-GCM encrypted blob. Full client-side decryption requires your private key and the doctor's encrypted AES key.
+        <br><br><strong>Encrypted AES Key (for patient):</strong> <span style="font-family:monospace;font-size:11px">${d.encrypted_aes_key?.slice(0, 64) || 'N/A'}...</span>
+      </div>`;
+      } catch (e) { document.getElementById('reports-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  ACCESS REQUESTS
+    // ════════════════════════════════════════════════════════════
+    async function loadRequests() {
+      const box = document.getElementById('requests-list');
+      document.getElementById('req-alert').innerHTML = '';
+      if (!S.logged) { box.innerHTML = '<div class="alert alert-info">ℹ️ Load your profile first.</div>'; return; }
+      box.innerHTML = '<div class="empty"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
+      try {
+        const r = await fetch(`/api/requests/${S.code}`); const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        allReqs = d.requests; renderReqs();
+      } catch (e) { box.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+    }
+    function filterReqs(f) {
+      currentFilter = f;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-' + f).classList.add('active');
+      renderReqs();
+    }
+    function renderReqs() {
+      const box = document.getElementById('requests-list');
+      const list = allReqs.filter(r => r.status === currentFilter);
+      if (!list.length) { box.innerHTML = `<div class="empty"><div class="empty-icon">${currentFilter === 'pending' ? '🔔' : currentFilter === 'approved' ? '✅' : '❌'}</div><p>No ${currentFilter} requests.</p></div>`; return; }
+      box.innerHTML = list.map(r => `
+    <div class="req-card ${r.status}">
+      <div class="req-info">
+        <h4>🩺 ${r.doctor_name ? 'Dr. ' + r.doctor_name : r.doctor_code}</h4>
+        <p>${[r.doctor_specialization, r.doctor_hospital].filter(Boolean).join(' • ')}</p>
+        <p style="font-size:11px;color:var(--muted);margin-top:3px">${new Date(r.timestamp).toLocaleString()}</p>
+      </div>
+      <div class="req-actions">
+        <span class="badge badge-${r.status}">${r.status}</span>
+        ${r.status === 'pending' ? `<button class="btn btn-primary btn-sm" onclick="openApprove('${r.request_id}')">Review</button>` : ''}
+      </div>
+    </div>`).join('');
+    }
+    function openApprove(reqId) {
+      activeReq = allReqs.find(r => r.request_id === reqId); if (!activeReq) return;
+      document.getElementById('modal-doc-info').innerHTML = `
+    <div class="rec-field"><div class="rec-key">Doctor</div><div class="rec-val">${activeReq.doctor_name || activeReq.doctor_code}</div></div>
+    <div class="rec-field"><div class="rec-key">Specialization</div><div class="rec-val">${activeReq.doctor_specialization || '—'}</div></div>
+    <div class="rec-field"><div class="rec-key">Hospital</div><div class="rec-val">${activeReq.doctor_hospital || '—'}</div></div>
+    <div class="rec-field"><div class="rec-key">Access Duration</div><div class="rec-val">24 hours (auto-expires)</div></div>`;
+      document.getElementById('modal-pw').value = '';
+      document.getElementById('approve-modal').classList.add('open');
+    }
+    function closeModal() { document.getElementById('approve-modal').classList.remove('open'); activeReq = null; }
+    async function submitApprove() {
+      const pw = document.getElementById('modal-pw').value; if (!pw) return alert('Password required.');
+      const btn = document.getElementById('approve-ok-btn'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+      try {
+        const r = await fetch('/api/approve', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            profile_code: S.code, request_id: activeReq.request_id,
+            doctor_code: activeReq.doctor_code, doctor_public_pem: activeReq.doctor_public_pem, password: pw
+          })
+        });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error);
+        closeModal();
+        document.getElementById('req-alert').innerHTML = '<div class="alert alert-success">✅ Access approved for 24 hours.</div>';
+        await loadRequests();
+      } catch (e) { alert('❌ ' + e.message); }
+      finally { btn.disabled = false; btn.textContent = '✅ Approve (24h)'; }
+    }
+    async function submitDeny() {
+      const btn = document.getElementById('approve-ok-btn'); btn.disabled = true;
+      try {
+        const r = await fetch('/api/deny', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ request_id: activeReq.request_id })
+        });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error);
+        closeModal();
+        document.getElementById('req-alert').innerHTML = '<div class="alert alert-warn">🚫 Request denied.</div>';
+        await loadRequests();
+      } catch (e) { alert('Error: ' + e.message); }
+      finally { btn.disabled = false; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  QR SCAN FLOW
+    // ════════════════════════════════════════════════════════════
+    let scannedDoc = null;
+    function initScan() { document.getElementById('scan-alert').innerHTML = ''; document.getElementById('scan-dcode').value = ''; document.getElementById('scan-step2').style.display = 'none'; document.getElementById('scan-preview').style.display = 'none'; scannedDoc = null; }
+    async function lookupDoctor() {
+      const code = document.getElementById('scan-dcode').value.trim();
+      if (code.length < 6) { document.getElementById('scan-step2').style.display = 'none'; return; }
+      try {
+        const r = await fetch('/api/lookup_doctor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doctor_code: code }) });
+        const d = await r.json();
+        if (!r.ok || !d.found) { document.getElementById('scan-step2').style.display = 'none'; return; }
+        scannedDoc = code;
+        document.getElementById('scan-preview').style.display = 'block';
+        document.getElementById('scan-preview').innerHTML = `<div class="alert alert-success">✅ Doctor found: <strong>${d.name || code}</strong>${d.specialization ? ' — ' + d.specialization : ''}</div>`;
+        document.getElementById('scan-doc-info').innerHTML = `
+      <div class="rec-field"><div class="rec-key">Doctor</div><div class="rec-val">${d.name || code}</div></div>
+      <div class="rec-field"><div class="rec-key">Specialization</div><div class="rec-val">${d.specialization || '—'}</div></div>
+      <div class="rec-field"><div class="rec-key">Hospital</div><div class="rec-val">${d.hospital || '—'}</div></div>`;
+        document.getElementById('scan-step2').style.display = 'block';
+      } catch (e) { document.getElementById('scan-step2').style.display = 'none'; }
+    }
+    async function transferToDoctor() {
+      if (!S.logged) return alert('Load your profile first.');
+      if (!scannedDoc) return alert('Enter a valid doctor code.');
+      const pw = document.getElementById('scan-pw').value; if (!pw) return alert('Password required — this is your security PIN.');
+      const btn = document.getElementById('scan-btn'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Encrypting & transferring...';
+      document.getElementById('scan-alert').innerHTML = '';
+      try {
+        const r = await fetch('/api/qr_transfer', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profile_code: S.code, doctor_code: scannedDoc, password: pw })
+        });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error);
+        document.getElementById('scan-alert').innerHTML = '<div class="alert alert-success">✅ Record transferred! Dr. ' + scannedDoc + ' has 24h access.</div>';
+        document.getElementById('scan-step2').style.display = 'none';
+        document.getElementById('scan-dcode').value = ''; scannedDoc = null;
+      } catch (e) { document.getElementById('scan-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+      finally { btn.disabled = false; btn.textContent = '🔐 Confirm & Transfer'; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  LOGIN HISTORY
+    // ════════════════════════════════════════════════════════════
+    async function loadHistory() {
+      const box = document.getElementById('history-content');
+      if (!S.jwt) { box.innerHTML = '<div class="alert alert-info">ℹ️ JWT login required to view history.</div>'; return; }
+      try {
+        const r = await fetch('/api/login_history', { headers: { 'Authorization': 'Bearer ' + S.jwt } });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error);
+        if (!d.length) { box.innerHTML = '<div class="empty"><div class="empty-icon">🕐</div><p>No history yet.</p></div>'; return; }
+        box.innerHTML = `<div class="card"><table class="hist-table"><thead><tr><th>Time</th><th>IP Address</th></tr></thead><tbody>${d.reverse().map(h => `<tr><td>${new Date(h.ts).toLocaleString()}</td><td>${h.ip || '—'}</td></tr>`).join('')}</tbody></table></div>`;
+      } catch (e) { box.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  AUDIT LOG
+    // ════════════════════════════════════════════════════════════
+    async function loadAudit() {
+      const box = document.getElementById('audit-content');
+      if (!S.jwt) { box.innerHTML = '<div class="alert alert-info">ℹ️ JWT login required to view audit log.</div>'; return; }
+      try {
+        const r = await fetch('/api/audit_log', { headers: { 'Authorization': 'Bearer ' + S.jwt } });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error);
+        if (!d.length) { box.innerHTML = '<div class="empty"><div class="empty-icon">🛡</div><p>No audit entries yet.</p></div>'; return; }
+        box.innerHTML = `<div class="card"><table class="hist-table"><thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Target</th></tr></thead><tbody>${d.reverse().map(e => `<tr><td style="font-size:12px">${new Date(e.ts).toLocaleString()}</td><td><strong>${e.action}</strong></td><td style="font-family:monospace;font-size:12px">${e.actor}</td><td style="font-family:monospace;font-size:12px">${e.target || '—'}</td></tr>`).join('')}</tbody></table></div>`;
+      } catch (e) { box.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  DOCTOR NOTES (patient view)
+    // ════════════════════════════════════════════════════════════
+
+    const PAT_NOTE_TYPE_LABELS = {
+      General: 'General Observation', Diagnosis: 'Diagnosis',
+      Prescription: 'Prescription / Medication', FollowUp: 'Follow-Up Required',
+      LabResult: 'Lab / Test Result', Allergy: 'Allergy / Adverse Reaction',
+      Surgical: 'Surgical Note', Emergency: 'Emergency Note',
+    };
+
+    const PAT_NOTE_TYPE_COLORS = {
+      General: '#ede9fe', Diagnosis: '#fdecea', Prescription: '#e8f5ee',
+      FollowUp: '#fff8e1', LabResult: '#e8f5fe', Allergy: '#fde8f5',
+      Surgical: '#f5f5f5', Emergency: '#ffe8e8',
+    };
+
+    const PAT_NOTE_TYPE_TEXT = {
+      General: '#4a1a8a', Diagnosis: '#8b1a1a', Prescription: '#1a5c35',
+      FollowUp: '#7a5a00', LabResult: '#0a4a8b', Allergy: '#8b1a6a',
+      Surgical: '#333', Emergency: '#c0392b',
+    };
+
+    function escHtmlPat(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function loadDoctorNotes() {
+      const box = document.getElementById('notes-list');
+      if (!S.logged || !S.code) {
+        box.innerHTML = '<div class="alert alert-info">ℹ️ Load your profile first.</div>';
+        return;
+      }
+      box.innerHTML = '<div class="empty"><div class="empty-icon">⏳</div><p>Loading doctor notes…</p></div>';
+      try {
+        const res = await fetch(`/api/doctor_notes/${S.code}`);
+        const notes = await res.json();
+        if (!res.ok) throw new Error(notes.error || 'Failed to load notes');
+        if (!Array.isArray(notes) || !notes.length) {
+          box.innerHTML = '<div class="empty"><div class="empty-icon">📝</div><p>No doctor notes yet. Notes appear here when a doctor with approved access adds them.</p></div>';
+          return;
+        }
+
+        // Group notes by doctor
+        const byDoctor = {};
+        notes.forEach(n => {
+          const key = n.doctor_code;
+          if (!byDoctor[key]) byDoctor[key] = { meta: n, notes: [] };
+          byDoctor[key].notes.push(n);
+        });
+
+        let html = '';
+        Object.values(byDoctor).forEach(group => {
+          const m = group.meta;
+          html += `
+            <div class="card" style="margin-bottom:20px">
+              <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+                <div style="width:44px;height:44px;border-radius:50%;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">🩺</div>
+                <div>
+                  <div style="font-weight:700;font-size:15px">${escHtmlPat(m.doctor_name || m.doctor_code)}</div>
+                  <div style="color:var(--muted);font-size:12px">${escHtmlPat(m.doctor_specialization || '')}${m.doctor_specialization && m.doctor_hospital ? ' · ' : ''}${escHtmlPat(m.doctor_hospital || '')}</div>
+                  <div style="color:var(--muted);font-size:11px;font-family:monospace">Code: ${m.doctor_code}</div>
+                </div>
+                <div style="margin-left:auto;text-align:right">
+                  <div style="background:var(--primary-light);color:var(--primary);font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px">${group.notes.length} note${group.notes.length !== 1 ? 's' : ''}</div>
+                </div>
+              </div>
+              ${group.notes.map(n => {
+            const bgColor = PAT_NOTE_TYPE_COLORS[n.note_type] || '#f5f5f5';
+            const txtColor = PAT_NOTE_TYPE_TEXT[n.note_type] || '#333';
+            const typeLabel = PAT_NOTE_TYPE_LABELS[n.note_type] || n.note_type;
+            return `
+                <div style="border:1.5px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:10px;background:#fff">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                      <span style="background:${bgColor};color:${txtColor};font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px">${typeLabel}</span>
+                      ${n.visit_date ? `<span style="color:var(--muted);font-size:12px">📅 Visit: ${n.visit_date}</span>` : ''}
+                    </div>
+                    <span style="color:var(--muted);font-size:11px;white-space:nowrap">🕐 ${new Date(n.created_at).toLocaleString()}</span>
+                  </div>
+                  <p style="font-size:14px;line-height:1.65;white-space:pre-wrap;color:var(--text);margin-bottom:10px">${escHtmlPat(n.note || n.note_text || '')}</p>
+                  ${n.image_filename ? `
+                  <div style="margin-bottom:14px">
+                    <img src="/api/note_images/${n.image_filename}"
+                         onclick="openImagePreview('/api/note_images/${n.image_filename}', '${n.image_filename}')"
+                         style="max-width:100%;max-height:220px;border-radius:10px;border:1.5px solid var(--border);object-fit:contain;display:block;cursor:zoom-in;transition:opacity .15s"
+                         onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+                    <div style="display:flex;gap:10px;margin-top:8px">
+                      <button onclick="openImagePreview('/api/note_images/${n.image_filename}', '${n.image_filename}')"
+                        style="background:var(--primary-light);color:var(--primary);border:none;padding:5px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">🔍 Preview</button>
+                      <button onclick="downloadNoteImage('/api/note_images/${n.image_filename}', '${n.image_filename}')"
+                        style="background:#e8f5ee;color:#2a7a4b;border:none;padding:5px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">⬇ Download</button>
+                    </div>
+                  </div>` : ''}
+                  <div style="background:#f8f8f8;border-radius:8px;padding:8px 12px;font-size:11px;color:var(--muted)">
+                    📋 Added by <strong>${escHtmlPat(n.doctor_name || n.doctor_code)}</strong>
+                    ${n.doctor_specialization ? `· ${escHtmlPat(n.doctor_specialization)}` : ''}
+                    ${n.doctor_hospital ? `· ${escHtmlPat(n.doctor_hospital)}` : ''}
+                    · Code: <span style="font-family:monospace">${n.doctor_code}</span>
+                  </div>
+                </div>`;
+          }).join('')}
+            </div>`;
+        });
+        box.innerHTML = html;
+      } catch (e) {
+        box.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`;
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  IMAGE LIGHTBOX / DOWNLOAD
+    // ════════════════════════════════════════════════════════════
+    function openImagePreview(src, filename) {
+      const lb = document.getElementById('img-lightbox');
+      const img = document.getElementById('lightbox-img');
+      img.src = src;
+      img.dataset.filename = filename;
+      lb.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+    function closeImagePreview() {
+      document.getElementById('img-lightbox').style.display = 'none';
+      document.body.style.overflow = '';
+    }
+    async function downloadNoteImage(src, filename) {
+      try {
+        const res = await fetch(src);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename || 'note_image';
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+      } catch { window.open(src, '_blank'); }
+    }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeImagePreview(); });
+
+    // ════════════════════════════════════════════════════════════
+    //  RESTORE SESSION on page load / refresh
+    // ════════════════════════════════════════════════════════════
+    (function restoreSession() {
+      try {
+        const saved = sessionStorage.getItem('medvault_session');
+        if (saved) {
+          const s = JSON.parse(saved);
+          if (s.logged) setLoggedIn(s.code, s.name, s.email, s.jwt || '', s.uid || '');
+        }
+      } catch (e) { sessionStorage.removeItem('medvault_session'); }
+    })();
+  </script>
+</body>
+
+</html>

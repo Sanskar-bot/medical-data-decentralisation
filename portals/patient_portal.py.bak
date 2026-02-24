@@ -1,0 +1,1086 @@
+#!/usr/bin/env python3
+"""
+Patient Portal  —  http://127.0.0.1:5001
+Serves the patient-facing web UI and handles all crypto on the patient's machine.
+"""
+import os, sys, json, time
+from datetime import datetime, timezone
+from base64 import b64encode, b64decode
+from flask import Flask, request, jsonify, send_from_directory
+import requests as http
+
+ROOT   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+from common.crypto_utils import (
+    generate_rsa_keypair, rsa_serialize_private, rsa_serialize_public,
+    generate_aes_key, aesgcm_encrypt, rsa_sign,
+    derive_kek_from_password, wrap_key_with_kek, unwrap_key_with_kek,
+    rsa_load_private, rsa_unwrap_key, rsa_load_public, rsa_wrap_key,
+)
+
+BACKEND   = os.environ.get("SERVER_BASE", "http://127.0.0.1:5000")
+USERS_DIR = os.path.join(ROOT, "client", "Users")
+os.makedirs(USERS_DIR, exist_ok=True)
+
+app = Flask(__name__)
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+@app.after_request
+def cors(r):
+    r.headers["Access-Control-Allow-Origin"]  = "*"
+    r.headers["Access-Control-Allow-Headers"] = "Content-Type,X-API-Key"
+    r.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return r
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+def api_key():
+    kf = os.path.join(ROOT, "server", "api_key.txt")
+    return open(kf).read().strip() if os.path.exists(kf) else ""
+
+def bh():  # backend headers
+    return {"X-API-Key": api_key(), "Content-Type": "application/json"}
+
+def user_dir(code): return os.path.join(USERS_DIR, code)
+def user_json(code): return os.path.join(user_dir(code), "user_data.json")
+
+# ── HTML UI ───────────────────────────────────────────────────────────────────
+HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MedVault — Patient Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f0f4f0;--surface:#fff;--surface2:#f7faf7;
+  --green:#1a7a4a;--green2:#25a668;--green3:#e8f5ee;
+  --text:#0d1f0d;--muted:#5a7a5a;--border:#d0e8d8;
+  --red:#c0392b;--amber:#b7780a;
+  --shadow:0 2px 16px rgba(26,122,74,.10);
+  --radius:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+/* ── layout ── */
+.shell{display:flex;min-height:100vh}
+
+/* ── sidebar ── */
+.sidebar{
+  background:var(--green);
+  padding:32px 20px;
+  display:flex;flex-direction:column;gap:8px;
+  width:260px;min-width:260px;flex-shrink:0;
+  position:sticky;top:0;height:100vh;
+  overflow-y:auto;
+}
+.logo{
+  display:flex;align-items:center;gap:12px;
+  padding:0 8px 28px;
+  border-bottom:1px solid rgba(255,255,255,.2);
+  margin-bottom:12px;
+}
+.logo-icon{
+  width:44px;height:44px;border-radius:12px;
+  background:rgba(255,255,255,.2);
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;
+}
+.logo h1{font-family:'DM Serif Display',serif;font-size:18px;color:#fff;line-height:1.2}
+.logo small{color:rgba(255,255,255,.65);font-size:11px;font-weight:300}
+.nav-label{color:rgba(255,255,255,.45);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;padding:16px 8px 4px}
+.nav-btn{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;border-radius:10px;cursor:pointer;
+  color:rgba(255,255,255,.8);font-size:14px;font-weight:400;
+  transition:background .15s,color .15s;border:none;background:transparent;width:100%;text-align:left;
+}
+.nav-btn:hover{background:rgba(255,255,255,.12);color:#fff}
+.nav-btn.active{background:rgba(255,255,255,.2);color:#fff;font-weight:600}
+.nav-icon{font-size:18px;width:24px;text-align:center}
+.profile-pill{
+  margin-top:auto;padding:14px;border-radius:12px;
+  background:rgba(255,255,255,.12);
+}
+.profile-pill .name{color:#fff;font-weight:600;font-size:13px}
+.profile-pill .code{color:rgba(255,255,255,.55);font-size:11px;font-family:monospace;margin-top:2px}
+
+/* ── main ── */
+.main{flex:1;min-width:0;padding:36px 40px;overflow-x:hidden}
+.page{display:none}.page.active{display:block}
+.page-header{margin-bottom:28px}
+.page-header h2{font-family:'DM Serif Display',serif;font-size:28px;color:var(--text)}
+.page-header p{color:var(--muted);font-size:14px;margin-top:4px}
+
+/* ── cards ── */
+.card{background:var(--surface);border-radius:var(--radius);padding:28px;box-shadow:var(--shadow);margin-bottom:20px}
+.card-title{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:16px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px}
+.stat{background:var(--green3);border-radius:12px;padding:20px;text-align:center}
+.stat .num{font-family:'DM Serif Display',serif;font-size:36px;color:var(--green)}
+.stat .lbl{font-size:12px;color:var(--muted);margin-top:4px}
+
+/* ── forms ── */
+.form-grid{display:grid;gap:16px}
+.form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+input,textarea,select{
+  width:100%;padding:11px 14px;border:1.5px solid var(--border);
+  border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;
+  background:var(--surface);color:var(--text);transition:border .15s,box-shadow .15s;
+  outline:none;
+}
+input:focus,textarea:focus{border-color:var(--green2);box-shadow:0 0 0 3px rgba(37,166,104,.15)}
+textarea{resize:vertical;min-height:80px}
+
+/* ── buttons ── */
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:11px 22px;border-radius:10px;font-size:14px;font-weight:600;
+  cursor:pointer;border:none;transition:all .15s;font-family:'DM Sans',sans-serif;
+}
+.btn-primary{background:var(--green);color:#fff}
+.btn-primary:hover{background:var(--green2);transform:translateY(-1px);box-shadow:0 4px 14px rgba(26,122,74,.3)}
+.btn-outline{background:transparent;color:var(--green);border:1.5px solid var(--green)}
+.btn-outline:hover{background:var(--green3)}
+.btn-danger{background:var(--red);color:#fff}
+.btn-danger:hover{opacity:.88}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none!important}
+
+/* ── request cards ── */
+.req-card{
+  background:var(--surface);border-radius:12px;padding:20px 24px;
+  border-left:4px solid var(--green);box-shadow:var(--shadow);margin-bottom:12px;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+}
+.req-card.denied{border-color:var(--red)}
+.req-card.approved{border-color:var(--green2)}
+.req-info h4{font-size:15px;font-weight:600}
+.req-info p{font-size:12px;color:var(--muted);margin-top:2px}
+.req-actions{display:flex;gap:8px}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-pending{background:#fff8e1;color:var(--amber)}
+.badge-approved{background:#e8f5ee;color:var(--green)}
+.badge-denied{background:#fdecea;color:var(--red)}
+
+/* ── record view ── */
+.record-box{
+  background:var(--surface2);border-radius:12px;padding:20px;
+  border:1.5px solid var(--border);font-family:monospace;font-size:13px;
+  line-height:1.7;white-space:pre-wrap;word-break:break-all;
+}
+.record-field{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+.record-field:last-child{border-bottom:none}
+.record-key{color:var(--muted);font-weight:600;min-width:120px;font-size:12px;text-transform:uppercase}
+.record-val{color:var(--text);font-size:14px}
+
+/* ── alerts ── */
+.alert{padding:12px 16px;border-radius:10px;font-size:13px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start}
+.alert-success{background:#e8f5ee;color:#1a5c35;border:1px solid #a8d5bc}
+.alert-error{background:#fdecea;color:#8b1a1a;border:1px solid #f5b7b1}
+.alert-info{background:#e8f0fe;color:#1a3a7a;border:1px solid #aec4f5}
+.alert-warn{background:#fff8e1;color:#7a5a00;border:1px solid #ffe082}
+
+/* ── tabs ── */
+.tabs{display:flex;gap:4px;background:var(--surface2);border-radius:10px;padding:4px;margin-bottom:24px;border:1px solid var(--border)}
+.tab{flex:1;text-align:center;padding:9px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;color:var(--muted);transition:all .15s;border:none;background:transparent}
+.tab.active{background:var(--surface);color:var(--green);font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.08)}
+
+/* ── spinner ── */
+.spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── empty state ── */
+.empty{text-align:center;padding:48px 20px;color:var(--muted)}
+.empty-icon{font-size:48px;margin-bottom:12px}
+.empty p{font-size:14px}
+
+/* ── modal ── */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(3px)}
+.modal-bg.open{display:flex}
+.modal{background:var(--surface);border-radius:var(--radius);padding:32px;width:min(480px,94vw);box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal h3{font-family:'DM Serif Display',serif;font-size:22px;margin-bottom:20px}
+
+/* ── profile code display ── */
+.code-display{
+  font-family:monospace;font-size:22px;font-weight:700;
+  background:var(--green3);color:var(--green);padding:16px 24px;
+  border-radius:12px;text-align:center;letter-spacing:.12em;
+  border:2px dashed var(--green2);margin:12px 0;
+}
+.divider{height:1px;background:var(--border);margin:24px 0}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-icon">🏥</div>
+    <div><h1>MedVault</h1><small>Patient Portal</small></div>
+  </div>
+
+  <span class="nav-label">Menu</span>
+  <button class="nav-btn active" onclick="nav('home')" id="nb-home"><span class="nav-icon">🏠</span> Dashboard</button>
+  <button class="nav-btn" onclick="nav('register')" id="nb-register"><span class="nav-icon">✨</span> Register</button>
+  <button class="nav-btn" onclick="nav('login')" id="nb-login"><span class="nav-icon">🔑</span> Load Profile</button>
+  <button class="nav-btn" onclick="nav('record')" id="nb-record"><span class="nav-icon">📋</span> My Record</button>
+  <button class="nav-btn" onclick="nav('requests')" id="nb-requests"><span class="nav-icon">🔔</span> Access Requests</button>
+  <button class="nav-btn" onclick="nav('scan')" id="nb-scan"><span class="nav-icon">📲</span> Scan Doctor QR</button>
+
+  <div class="profile-pill" id="sidebar-profile" style="display:none">
+    <div class="name" id="sp-name">—</div>
+    <div class="code" id="sp-code">—</div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+
+  <!-- HOME -->
+  <div class="page active" id="page-home">
+    <div class="page-header">
+      <h2>Welcome to MedVault 👋</h2>
+      <p>Your encrypted health records, fully under your control.</p>
+    </div>
+    <div class="stat-grid" style="margin-bottom:24px">
+      <div class="stat"><div class="num">🔒</div><div class="lbl">End-to-End Encrypted</div></div>
+      <div class="stat"><div class="num">⏱</div><div class="lbl">Time-Limited Doctor Access</div></div>
+      <div class="stat"><div class="num">🗝</div><div class="lbl">Only You Hold the Key</div></div>
+    </div>
+    <div class="card" id="home-logged-out">
+      <div class="card-title">Get Started</div>
+      <p style="color:var(--muted);font-size:14px;margin-bottom:20px">New patient? Create your encrypted profile. Already registered? Load your profile to manage your records.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="nav('register')">✨ Register Now</button>
+        <button class="btn btn-outline" onclick="nav('login')">🔑 Load My Profile</button>
+      </div>
+    </div>
+    <div class="card" id="home-logged-in" style="display:none">
+      <div class="card-title">Your Status</div>
+      <div class="record-field"><div class="record-key">Profile Code</div><div class="record-val" id="hi-code">—</div></div>
+      <div class="record-field"><div class="record-key">Name</div><div class="record-val" id="hi-name">—</div></div>
+      <div class="record-field"><div class="record-key">Email</div><div class="record-val" id="hi-email">—</div></div>
+      <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="nav('requests')">🔔 View Requests</button>
+        <button class="btn btn-outline" onclick="nav('record')">📋 My Record</button>
+        <button class="btn btn-outline" onclick="logout()">↩ Switch Profile</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- REGISTER -->
+  <div class="page" id="page-register">
+    <div class="page-header">
+      <h2>Create Patient Profile</h2>
+      <p>Your data is encrypted on this device before being uploaded.</p>
+    </div>
+    <div id="reg-result"></div>
+    <div class="card" id="reg-form-card">
+      <div class="card-title">Personal Details</div>
+      <div class="form-grid">
+        <div class="form-row">
+          <div><label>Full Name *</label><input id="r-name" placeholder="Aarav Sharma" /></div>
+          <div><label>Age</label><input id="r-age" type="number" placeholder="28" /></div>
+        </div>
+        <div><label>Email</label><input id="r-email" type="email" placeholder="aarav@example.com" /></div>
+        <div><label>Medical Notes (stored encrypted)</label><textarea id="r-notes" placeholder="e.g. Diabetic, allergic to penicillin..."></textarea></div>
+        <div class="divider"></div>
+        <div class="card-title">Protect Your Local Key</div>
+        <div class="form-row">
+          <div><label>Password *</label><input id="r-pw" type="password" placeholder="Choose a strong password" /></div>
+          <div><label>Confirm Password *</label><input id="r-pw2" type="password" placeholder="Repeat password" /></div>
+        </div>
+        <div>
+          <button class="btn btn-primary" id="reg-btn" onclick="register()">✨ Create My Profile</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOGIN -->
+  <div class="page" id="page-login">
+    <div class="page-header">
+      <h2>Load Your Profile</h2>
+      <p>Enter your profile code and password to access your account.</p>
+    </div>
+    <div id="login-result"></div>
+    <div class="card">
+      <div class="card-title">Profile Details</div>
+      <div class="form-grid">
+        <div><label>Profile Code</label><input id="l-code" placeholder="e.g. nurpsuyJ" /></div>
+        <div><label>Password</label><input id="l-pw" type="password" placeholder="Your local password" /></div>
+        <button class="btn btn-primary" onclick="loadProfile()">🔑 Load Profile</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RECORD -->
+  <div class="page" id="page-record">
+    <div class="page-header">
+      <h2>My Medical Record</h2>
+      <p>Decrypted locally — never sent to the server in plaintext.</p>
+    </div>
+    <div id="record-content">
+      <div class="alert alert-info">ℹ️ Load your profile first to view your record.</div>
+    </div>
+  </div>
+
+  <!-- REQUESTS -->
+  <div class="page" id="page-requests">
+    <div class="page-header">
+      <h2>Doctor Access Requests</h2>
+      <p>Review and approve or deny doctors requesting access to your records.</p>
+    </div>
+    <div id="req-alert"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div class="tabs" style="margin-bottom:0;flex:1;max-width:360px">
+        <button class="tab active" onclick="filterReqs('pending')" id="tab-pending">⏳ Pending</button>
+        <button class="tab" onclick="filterReqs('approved')" id="tab-approved">✅ Approved</button>
+        <button class="tab" onclick="filterReqs('denied')" id="tab-denied">❌ Denied</button>
+      </div>
+      <button class="btn btn-outline" onclick="loadRequests()">↻ Refresh</button>
+    </div>
+    <div id="requests-list"></div>
+  </div>
+
+
+  <!-- SCAN QR PAGE -->
+  <div class="page" id="page-scan">
+    <div class="page-header">
+      <h2>Scan Doctor QR 📲</h2>
+      <p>Scan your doctor's QR code and enter your password to instantly share your medical record — like a UPI payment for health data.</p>
+    </div>
+    <div id="scan-result"></div>
+    <div id="scan-not-logged" class="alert alert-info">ℹ️ Load your profile first before scanning.</div>
+    <div id="scan-logged" style="display:none">
+      <div class="card">
+        <div class="card-title">Step 1 — Enter Doctor Code</div>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Scan the doctor's QR with your phone camera app — it will show a code. Or ask the doctor for their code directly.</p>
+        <div class="form-grid">
+          <div>
+            <label>Doctor Code (from QR)</label>
+            <input id="scan-dcode" placeholder="e.g. 7e7878c3" oninput="lookupDoctor()" />
+          </div>
+          <div id="scan-doctor-preview" style="display:none" class="alert alert-success" id="doc-preview"></div>
+        </div>
+      </div>
+
+      <div class="card" id="scan-step2" style="display:none">
+        <div class="card-title">Step 2 — Confirm & Transfer (like entering UPI PIN)</div>
+        <div id="scan-doc-info" style="margin-bottom:20px;padding:16px;background:var(--green3);border-radius:10px;border:1px solid var(--border)"></div>
+        <div class="form-grid">
+          <div>
+            <label>Your Password 🔐</label>
+            <input id="scan-pw" type="password" placeholder="Enter your local password to unlock your data" />
+          </div>
+          <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:10px;padding:14px">
+            <div style="font-weight:600;font-size:13px;color:#7a5a00;margin-bottom:6px">⚠️ What will happen:</div>
+            <div style="font-size:12px;color:#7a5a00;line-height:1.7">
+              • Your medical record will be encrypted<br>
+              • Only this doctor can decrypt it<br>
+              • Access expires automatically in <strong>24 hours</strong><br>
+              • You can deny future requests anytime
+            </div>
+          </div>
+          <button class="btn btn-primary" id="scan-transfer-btn" onclick="transferToDoctor()">
+            🔐 Confirm & Transfer Record
+          </button>
+        </div>
+      </div>
+
+      <div class="card" style="background:var(--green3);border:1px solid var(--border)">
+        <div class="card-title">How It Works</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px;text-align:center;padding:12px">
+            <div style="font-size:28px">📲</div>
+            <div style="font-weight:600;font-size:13px;margin-top:6px">Scan QR</div>
+            <div style="color:var(--muted);font-size:12px">Like scanning a UPI QR</div>
+          </div>
+          <div style="flex:1;min-width:200px;text-align:center;padding:12px">
+            <div style="font-size:28px">🔑</div>
+            <div style="font-weight:600;font-size:13px;margin-top:6px">Enter Password</div>
+            <div style="color:var(--muted);font-size:12px">Like your UPI PIN</div>
+          </div>
+          <div style="flex:1;min-width:200px;text-align:center;padding:12px">
+            <div style="font-size:28px">🏥</div>
+            <div style="font-weight:600;font-size:13px;margin-top:6px">Record Transfers</div>
+            <div style="color:var(--muted);font-size:12px">Encrypted, 24h only</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<!-- APPROVE MODAL -->
+<div class="modal-bg" id="approve-modal">
+  <div class="modal">
+    <h3>🩺 Doctor Access Request</h3>
+    <div id="modal-doctor-info" style="margin-bottom:20px"></div>
+    <div><label>Your Password (to unlock key)</label><input id="modal-pw" type="password" placeholder="Enter your local password" /></div>
+    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap">
+      <button class="btn btn-primary" id="approve-btn" onclick="submitApprove()">✅ Approve (24h Access)</button>
+      <button class="btn btn-danger" onclick="submitDeny()">❌ Deny</button>
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+
+// ── SCAN / QR TRANSFER ────────────────────────────────────────────────────
+let scannedDoctorCode = null;
+
+function initScan() {
+  if (!S.logged) {
+    document.getElementById('scan-not-logged').style.display = 'block';
+    document.getElementById('scan-logged').style.display = 'none';
+  } else {
+    document.getElementById('scan-not-logged').style.display = 'none';
+    document.getElementById('scan-logged').style.display = 'block';
+  }
+  document.getElementById('scan-result').innerHTML = '';
+  document.getElementById('scan-step2').style.display = 'none';
+  document.getElementById('scan-dcode').value = '';
+}
+
+async function lookupDoctor() {
+  const code = document.getElementById('scan-dcode').value.trim();
+  if (code.length < 6) { document.getElementById('scan-step2').style.display = 'none'; return; }
+  // fetch doctor public key from backend to confirm they exist
+  try {
+    const res = await fetch('/api/lookup_doctor', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ doctor_code: code })
+    });
+    const d = await res.json();
+    if (!res.ok || !d.found) {
+      document.getElementById('scan-step2').style.display = 'none';
+      return;
+    }
+    scannedDoctorCode = code;
+    document.getElementById('scan-doc-info').innerHTML = `
+      <div style="font-size:13px">
+        <div style="font-weight:700;font-size:15px;margin-bottom:6px">🩺 ${d.name || 'Doctor'}</div>
+        ${d.specialization ? '<div>Specialization: <strong>' + d.specialization + '</strong></div>' : ''}
+        ${d.hospital ? '<div>Hospital: <strong>' + d.hospital + '</strong></div>' : ''}
+        <div style="margin-top:6px;color:var(--muted);font-size:11px">Code: ${code}</div>
+      </div>`;
+    document.getElementById('scan-step2').style.display = 'block';
+  } catch(e) {
+    document.getElementById('scan-step2').style.display = 'none';
+  }
+}
+
+async function transferToDoctor() {
+  if (!S.logged) return alert('Load your profile first.');
+  if (!scannedDoctorCode) return alert('Enter a valid doctor code first.');
+  const pw = document.getElementById('scan-pw').value;
+  if (!pw) return alert('Enter your password — this is your security PIN.');
+
+  const btn = document.getElementById('scan-transfer-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Encrypting & transferring...';
+  document.getElementById('scan-result').innerHTML = '';
+
+  try {
+    const res = await fetch('/api/qr_transfer', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        profile_code: S.code,
+        doctor_code: scannedDoctorCode,
+        password: pw
+      })
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Transfer failed');
+    document.getElementById('scan-result').innerHTML = `
+      <div class="alert alert-success">
+        ✅ <strong>Record transferred successfully!</strong><br>
+        Dr. ${scannedDoctorCode} can now view your record for 24 hours.
+        Access will expire automatically after that.
+      </div>`;
+    document.getElementById('scan-step2').style.display = 'none';
+    document.getElementById('scan-dcode').value = '';
+    scannedDoctorCode = null;
+  } catch(e) {
+    document.getElementById('scan-result').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '🔐 Confirm & Transfer Record';
+  }
+}
+
+// ── state ──────────────────────────────────────────────────────────────────
+let S = { code:'', name:'', email:'', logged:false };
+let allReqs = [], currentFilter = 'pending', activeReq = null;
+
+// ── nav ────────────────────────────────────────────────────────────────────
+function nav(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.getElementById('nb-' + page)?.classList.add('active');
+  if (page === 'requests') loadRequests();
+  if (page === 'record') showRecord();
+  if (page === 'scan') initScan();
+}
+
+// ── auth state ─────────────────────────────────────────────────────────────
+function setLoggedIn(code, name, email) {
+  S = { code, name, email, logged:true };
+  document.getElementById('home-logged-out').style.display = 'none';
+  document.getElementById('home-logged-in').style.display = 'block';
+  document.getElementById('hi-code').textContent = code;
+  document.getElementById('hi-name').textContent = name || '—';
+  document.getElementById('hi-email').textContent = email || '—';
+  document.getElementById('sidebar-profile').style.display = 'block';
+  document.getElementById('sp-name').textContent = name || code;
+  document.getElementById('sp-code').textContent = code;
+}
+
+function logout() {
+  S = { code:'', name:'', email:'', logged:false };
+  document.getElementById('home-logged-out').style.display = 'block';
+  document.getElementById('home-logged-in').style.display = 'none';
+  document.getElementById('sidebar-profile').style.display = 'none';
+  nav('home');
+}
+
+// ── register ───────────────────────────────────────────────────────────────
+async function register() {
+  const name = document.getElementById('r-name').value.trim();
+  const age  = document.getElementById('r-age').value.trim();
+  const email= document.getElementById('r-email').value.trim();
+  const notes= document.getElementById('r-notes').value.trim();
+  const pw   = document.getElementById('r-pw').value;
+  const pw2  = document.getElementById('r-pw2').value;
+
+  if (!name) return alert('Name is required.');
+  if (!pw)   return alert('Password is required.');
+  if (pw !== pw2) return alert('Passwords do not match.');
+
+  const btn = document.getElementById('reg-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Encrypting & registering...';
+  document.getElementById('reg-result').innerHTML = '';
+
+  try {
+    const res = await fetch('/api/register', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ name, age, email, notes, password:pw })
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Registration failed');
+
+    document.getElementById('reg-result').innerHTML = `
+      <div class="alert alert-success">
+        ✅ Profile created successfully! Your profile code is below — save it safely.
+      </div>
+      <div class="card">
+        <div class="card-title">Your Profile Code</div>
+        <div class="code-display">${d.profile_code}</div>
+        <p style="color:var(--muted);font-size:13px;margin-top:12px">
+          ⚠️ Save this code! You'll need it every time you log in. 
+          Store it alongside your password in a safe place.
+        </p>
+        <div style="margin-top:16px">
+          <button class="btn btn-primary" onclick="nav('home')">Go to Dashboard →</button>
+        </div>
+      </div>`;
+    document.getElementById('reg-form-card').style.display = 'none';
+    setLoggedIn(d.profile_code, name, email);
+  } catch(e) {
+    document.getElementById('reg-result').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✨ Create My Profile';
+  }
+}
+
+// ── load profile ───────────────────────────────────────────────────────────
+async function loadProfile() {
+  const code = document.getElementById('l-code').value.trim();
+  const pw   = document.getElementById('l-pw').value;
+  if (!code || !pw) return alert('Profile code and password are required.');
+
+  document.getElementById('login-result').innerHTML = '';
+  try {
+    const res = await fetch('/api/load_profile', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ profile_code:code, password:pw })
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Failed to load profile');
+
+    setLoggedIn(code, d.name, d.email);
+    document.getElementById('login-result').innerHTML = `<div class="alert alert-success">✅ Profile loaded! Welcome back, ${d.name || code}.</div>`;
+    setTimeout(() => nav('home'), 1200);
+  } catch(e) {
+    document.getElementById('login-result').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`;
+  }
+}
+
+// ── record view ────────────────────────────────────────────────────────────
+async function showRecord() {
+  const box = document.getElementById('record-content');
+  if (!S.logged) { box.innerHTML = '<div class="alert alert-info">ℹ️ Load your profile first.</div>'; return; }
+  try {
+    const res = await fetch(`/api/record/${S.code}`);
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error);
+    const rec = d.record;
+    box.innerHTML = `<div class="card">
+      <div class="card-title">Decrypted Record (local only)</div>
+      ${Object.entries(rec).filter(([k,v])=>v).map(([k,v])=>`
+        <div class="record-field">
+          <div class="record-key">${k}</div>
+          <div class="record-val">${v}</div>
+        </div>`).join('')}
+    </div>`;
+  } catch(e) {
+    box.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`;
+  }
+}
+
+// ── requests ───────────────────────────────────────────────────────────────
+async function loadRequests() {
+  const box = document.getElementById('requests-list');
+  document.getElementById('req-alert').innerHTML = '';
+  if (!S.logged) {
+    box.innerHTML = '<div class="alert alert-info">ℹ️ Load your profile first to see requests.</div>';
+    return;
+  }
+  box.innerHTML = '<div class="empty"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
+  try {
+    const res = await fetch(`/api/requests/${S.code}`);
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error);
+    allReqs = d.requests;
+    renderReqs();
+  } catch(e) {
+    box.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`;
+  }
+}
+
+function filterReqs(f) {
+  currentFilter = f;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + f).classList.add('active');
+  renderReqs();
+}
+
+function renderReqs() {
+  const box = document.getElementById('requests-list');
+  const list = allReqs.filter(r => r.status === currentFilter);
+  if (!list.length) {
+    box.innerHTML = `<div class="empty"><div class="empty-icon">${currentFilter==='pending'?'🔔':currentFilter==='approved'?'✅':'❌'}</div><p>No ${currentFilter} requests.</p></div>`;
+    return;
+  }
+  box.innerHTML = list.map(r => `
+    <div class="req-card ${r.status}">
+      <div class="req-info">
+        <h4>🩺 Dr. ${r.doctor_name || r.doctor_code}</h4>
+        <p>${r.doctor_specialization ? r.doctor_specialization + ' • ' : ''}${r.doctor_hospital || ''}</p>
+        <p style="margin-top:4px;font-size:11px;color:var(--muted)">
+          Requested: ${new Date(r.timestamp).toLocaleString()}
+        </p>
+      </div>
+      <div class="req-actions">
+        <span class="badge badge-${r.status}">${r.status}</span>
+        ${r.status==='pending' ? `<button class="btn btn-primary" onclick="openApprove('${r.request_id}')">Review</button>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+// ── approve / deny ─────────────────────────────────────────────────────────
+function openApprove(reqId) {
+  activeReq = allReqs.find(r => r.request_id === reqId);
+  if (!activeReq) return;
+  document.getElementById('modal-doctor-info').innerHTML = `
+    <div class="record-field"><div class="record-key">Doctor</div><div class="record-val">${activeReq.doctor_name || activeReq.doctor_code}</div></div>
+    <div class="record-field"><div class="record-key">Specialization</div><div class="record-val">${activeReq.doctor_specialization || '—'}</div></div>
+    <div class="record-field"><div class="record-key">Hospital</div><div class="record-val">${activeReq.doctor_hospital || '—'}</div></div>
+    <div class="record-field"><div class="record-key">Access Duration</div><div class="record-val">24 hours</div></div>`;
+  document.getElementById('modal-pw').value = '';
+  document.getElementById('approve-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('approve-modal').classList.remove('open');
+  activeReq = null;
+}
+
+async function submitApprove() {
+  const pw = document.getElementById('modal-pw').value;
+  if (!pw) return alert('Password required.');
+  const btn = document.getElementById('approve-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Encrypting...';
+
+  try {
+    const res = await fetch('/api/approve', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ profile_code:S.code, request_id:activeReq.request_id,
+        doctor_code:activeReq.doctor_code, doctor_public_pem:activeReq.doctor_public_pem, password:pw })
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Approval failed');
+    closeModal();
+    document.getElementById('req-alert').innerHTML = '<div class="alert alert-success">✅ Access approved! The doctor can now view your record for 24 hours.</div>';
+    await loadRequests();
+  } catch(e) {
+    alert('❌ ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '✅ Approve (24h Access)';
+  }
+}
+
+async function submitDeny() {
+  const btn = document.getElementById('approve-btn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/deny', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ request_id:activeReq.request_id })
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error);
+    closeModal();
+    document.getElementById('req-alert').innerHTML = '<div class="alert alert-warn">🚫 Request denied.</div>';
+    await loadRequests();
+  } catch(e) { alert('Error: ' + e.message); }
+  finally { btn.disabled = false; }
+}
+</script>
+</body>
+</html>"""
+
+# ── API routes ─────────────────────────────────────────────────────────────
+@app.route("/")
+def index():
+    return HTML
+
+@app.route("/api/register", methods=["POST", "OPTIONS"])
+def api_register():
+    if request.method == "OPTIONS": return jsonify({}), 200
+    d = request.get_json(force=True)
+    name, age, email = d.get("name",""), d.get("age",""), d.get("email","")
+    notes, pw = d.get("notes",""), d.get("password","")
+
+    if not name: return jsonify({"error":"Name is required"}), 400
+    if not pw:   return jsonify({"error":"Password is required"}), 400
+
+    # generate keys + encrypt record
+    priv, pub = generate_rsa_keypair()
+    K_data    = generate_aes_key()
+    record    = {"name":name,"age":age,"email":email,"notes":notes}
+    plain     = json.dumps(record, ensure_ascii=False).encode()
+    enc       = aesgcm_encrypt(K_data, plain)
+    to_sign   = (enc["nonce"] + "|" + enc["ciphertext"]).encode()
+    sig       = rsa_sign(priv, to_sign)
+
+    # protect K_data with password
+    kek, salt   = derive_kek_from_password(pw)
+    wrapped_k   = wrap_key_with_kek(kek, K_data)
+    priv_pem    = rsa_serialize_private(priv)
+    pub_pem     = rsa_serialize_public(pub)
+
+    # profile code
+    profile_code = b64encode(os.urandom(6)).decode().replace("=","").replace("/","_")
+    pdir = user_dir(profile_code)
+    os.makedirs(pdir, exist_ok=True)
+
+    local = {
+        "profile_code": profile_code,
+        "patient_details": record,
+        "patient_public_pem": pub_pem.decode(),
+        "encrypted_record": enc,
+        "signature": sig,
+        "key_protection": {"wrapped_k": wrapped_k, "salt_b64": b64encode(salt).decode()}
+    }
+    with open(user_json(profile_code), "w") as f: json.dump(local, f, indent=2)
+    with open(os.path.join(pdir, "patient_private.pem"), "wb") as f: f.write(priv_pem)
+    with open(os.path.join(pdir, "patient_public.pem"),  "wb") as f: f.write(pub_pem)
+
+    # upload to backend
+    try:
+        http.post(f"{BACKEND}/register_user",
+            json={"profile_code":profile_code,"encrypted_record":enc,
+                  "signature":sig,"patient_public_pem":pub_pem.decode()},
+            headers=bh(), timeout=8)
+    except Exception as e:
+        print(f"[warn] backend upload failed: {e}")
+
+    return jsonify({"profile_code": profile_code})
+
+@app.route("/api/load_profile", methods=["POST","OPTIONS"])
+def api_load_profile():
+    if request.method == "OPTIONS": return jsonify({}), 200
+    d = request.get_json(force=True)
+    code, pw = d.get("profile_code","").strip(), d.get("password","")
+    uf = user_json(code)
+    if not os.path.exists(uf):
+        return jsonify({"error":"Profile not found on this machine. Register first."}), 404
+    with open(uf) as f: local = json.load(f)
+    kp = local.get("key_protection") or {}
+    if kp.get("wrapped_k"):
+        try:
+            salt = b64decode(kp["salt_b64"])
+            kek, _ = derive_kek_from_password(pw, salt=salt)
+            unwrap_key_with_kek(kek, kp["wrapped_k"])  # just validate password
+        except Exception:
+            return jsonify({"error":"Wrong password."}), 401
+    rec = local.get("patient_details", {})
+    return jsonify({"name": rec.get("name",""), "email": rec.get("email","")})
+
+@app.route("/api/record/<code>")
+def api_record(code):
+    uf = user_json(code)
+    if not os.path.exists(uf): return jsonify({"error":"Profile not found"}), 404
+    with open(uf) as f: local = json.load(f)
+    rec = local.get("patient_details", {})
+    return jsonify({"record": rec})
+
+@app.route("/api/requests/<code>")
+def api_requests(code):
+    try:
+        r = http.get(f"{BACKEND}/active_requests", headers=bh(), timeout=8)
+        all_r = r.json() if r.ok else []
+    except Exception:
+        return jsonify({"error":"Cannot reach backend server"}), 502
+
+    mine = [x for x in all_r if x.get("profile_code") == code]
+
+    # try to decrypt doctor profile from each request
+    uf = user_json(code)
+    priv = None
+    if os.path.exists(uf):
+        pdir = user_dir(code)
+        pk = os.path.join(pdir, "patient_private.pem")
+        if os.path.exists(pk):
+            try:
+                priv = rsa_load_private(open(pk,"rb").read())
+            except Exception:
+                pass
+
+    result = []
+    for req in mine:
+        entry = {
+            "request_id": req.get("request_id"),
+            "doctor_code": req.get("doctor_code"),
+            "status": req.get("status","pending"),
+            "timestamp": req.get("timestamp",""),
+            "doctor_public_pem": req.get("doctor_public_pem",""),
+            "doctor_name": None, "doctor_specialization": None, "doctor_hospital": None,
+        }
+        enc_b64 = req.get("encrypted_doctor_profile_b64")
+        if enc_b64 and priv:
+            try:
+                raw = rsa_unwrap_key(priv, enc_b64)
+                profile = json.loads(raw.decode())
+                entry["doctor_name"] = profile.get("name")
+                entry["doctor_specialization"] = profile.get("specialization")
+                entry["doctor_hospital"] = profile.get("hospital")
+            except Exception:
+                pass
+        result.append(entry)
+    return jsonify({"requests": result})
+
+@app.route("/api/approve", methods=["POST","OPTIONS"])
+def api_approve():
+    if request.method == "OPTIONS": return jsonify({}), 200
+    d = request.get_json(force=True)
+    code      = d.get("profile_code","")
+    req_id    = d.get("request_id","")
+    doc_code  = d.get("doctor_code","")
+    doc_pub   = d.get("doctor_public_pem","")
+    pw        = d.get("password","")
+
+    uf = user_json(code)
+    if not os.path.exists(uf): return jsonify({"error":"Profile not found"}), 404
+    with open(uf) as f: local = json.load(f)
+
+    kp = local.get("key_protection",{})
+    try:
+        salt  = b64decode(kp["salt_b64"])
+        kek,_ = derive_kek_from_password(pw, salt=salt)
+        K_data = unwrap_key_with_kek(kek, kp["wrapped_k"])
+    except Exception:
+        return jsonify({"error":"Wrong password"}), 401
+
+    # wrap K_data for doctor
+    from datetime import timedelta
+    try:
+        doc_pub_obj = rsa_load_public(doc_pub.encode())
+        T = os.urandom(32)
+        enc_kdata = aesgcm_encrypt(T, K_data)
+        wrapped_T = rsa_wrap_key(doc_pub_obj, T)
+        expires   = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    except Exception as e:
+        return jsonify({"error":f"Crypto error: {e}"}), 500
+
+    try:
+        r = http.post(f"{BACKEND}/approve_request",
+            json={"request_id":req_id,"doctor_code":doc_code,"patient_code":code,
+                  "wrapped_key":wrapped_T,"encrypted_kdata_with_temp":enc_kdata,
+                  "temp_key_expires_at":expires},
+            headers=bh(), timeout=8)
+        if not r.ok: return jsonify({"error":r.text}), r.status_code
+    except Exception as e:
+        return jsonify({"error":str(e)}), 502
+
+    return jsonify({"status":"ok"})
+
+@app.route("/api/deny", methods=["POST","OPTIONS"])
+def api_deny():
+    if request.method == "OPTIONS": return jsonify({}), 200
+    d = request.get_json(force=True)
+    try:
+        r = http.post(f"{BACKEND}/update_request_status",
+            json={"request_id":d.get("request_id"),"status":"denied"},
+            headers=bh(), timeout=8)
+        return jsonify({"status":"ok"}) if r.ok else jsonify({"error":r.text}), r.status_code
+    except Exception as e:
+        return jsonify({"error":str(e)}), 502
+
+
+@app.route("/api/lookup_doctor", methods=["POST","OPTIONS"])
+def api_lookup_doctor():
+    if request.method == "OPTIONS": return jsonify({}), 200
+    d    = request.get_json(force=True)
+    code = d.get("doctor_code","").strip()
+    # check backend has this doctor
+    try:
+        r = http.get(f"{BACKEND}/active_requests", headers=bh(), timeout=6)
+        # doctor lookup: check if doctor folder exists locally or just confirm via server
+        # look in local doctor Doctors folder for any matching code
+        doctors_dir = os.path.join(ROOT, "doctor", "Doctors")
+        if os.path.exists(doctors_dir):
+            for folder in os.listdir(doctors_dir):
+                meta_path = os.path.join(doctors_dir, folder, "doctor_data.json")
+                if os.path.exists(meta_path):
+                    try:
+                        m = json.load(open(meta_path))
+                        if m.get("doctor_code") == code:
+                            return jsonify({"found": True, "name": m.get("name",""),
+                                "specialization": m.get("specialization",""),
+                                "hospital": m.get("hospital","")})
+                    except: pass
+        # also check server Doctors folder
+        server_doc = os.path.join(ROOT, "server", "Doctors", f"{code}.json")
+        if os.path.exists(server_doc):
+            return jsonify({"found": True, "name": "", "specialization": "", "hospital": ""})
+        return jsonify({"found": False}), 404
+    except Exception as e:
+        return jsonify({"found": False, "error": str(e)}), 502
+
+@app.route("/api/qr_transfer", methods=["POST","OPTIONS"])
+def api_qr_transfer():
+    """Patient scans doctor QR and directly transfers encrypted record — like a UPI payment."""
+    if request.method == "OPTIONS": return jsonify({}), 200
+    d        = request.get_json(force=True)
+    pat_code = d.get("profile_code","")
+    doc_code = d.get("doctor_code","")
+    pw       = d.get("password","")
+
+    # 1. load patient K_data
+    uf = user_json(pat_code)
+    if not os.path.exists(uf): return jsonify({"error":"Patient profile not found"}), 404
+    with open(uf) as f: local = json.load(f)
+    kp = local.get("key_protection",{})
+    try:
+        salt   = b64decode(kp["salt_b64"])
+        kek,_  = derive_kek_from_password(pw, salt=salt)
+        K_data = unwrap_key_with_kek(kek, kp["wrapped_k"])
+    except Exception:
+        return jsonify({"error":"Wrong password"}), 401
+
+    # 2. fetch doctor public key from backend
+    try:
+        r = http.get(f"{BACKEND}/register_doctor", headers=bh(), timeout=6)
+    except: pass
+    # get doctor pub from local Doctors folder
+    doc_pub_pem = None
+    doctors_dir = os.path.join(ROOT, "doctor", "Doctors")
+    if os.path.exists(doctors_dir):
+        for folder in os.listdir(doctors_dir):
+            meta_path = os.path.join(doctors_dir, folder, "doctor_data.json")
+            pub_path  = os.path.join(doctors_dir, folder, "doctor_public.pem")
+            if os.path.exists(meta_path) and os.path.exists(pub_path):
+                try:
+                    m = json.load(open(meta_path))
+                    if m.get("doctor_code") == doc_code:
+                        doc_pub_pem = open(pub_path,"rb").read().decode()
+                        break
+                except: pass
+
+    if not doc_pub_pem:
+        # try fetching from server Doctors folder
+        server_doc_path = os.path.join(ROOT, "server", "Doctors", f"{doc_code}.json")
+        if os.path.exists(server_doc_path):
+            try:
+                sd = json.load(open(server_doc_path))
+                doc_pub_pem = sd.get("public_pem","")
+            except: pass
+
+    if not doc_pub_pem:
+        return jsonify({"error":"Doctor not found. Make sure the doctor is registered on this system."}), 404
+
+    # 3. wrap K_data for doctor (same as approve flow)
+    from datetime import timedelta
+    try:
+        doc_pub_obj = rsa_load_public(doc_pub_pem.encode())
+        T           = os.urandom(32)
+        enc_kdata   = aesgcm_encrypt(T, K_data)
+        wrapped_T   = rsa_wrap_key(doc_pub_obj, T)
+        expires     = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    except Exception as e:
+        return jsonify({"error":f"Encryption failed: {e}"}), 500
+
+    # 4. we need a request_id — create a fake approved request directly
+    # First send a request on behalf of doctor, then approve it immediately
+    pat_priv_path = os.path.join(user_dir(pat_code), "patient_private.pem")
+    if not os.path.exists(pat_priv_path):
+        return jsonify({"error":"Patient private key not found locally"}), 500
+
+    # get doctor public key object to encrypt profile
+    profile_bytes = json.dumps({"doctor_code": doc_code, "name": "QR Transfer",
+        "specialization":"","hospital":""}, separators=(",",":")).encode()
+    enc_b64 = rsa_wrap_key(doc_pub_obj, profile_bytes)
+
+    try:
+        # post access request
+        rr = http.post(f"{BACKEND}/request_access_simple/{pat_code}",
+            json={"doctor_code":doc_code,"doctor_public_pem":doc_pub_pem,
+                  "encrypted_doctor_profile_b64":enc_b64},
+            headers=bh(), timeout=8)
+        rd = rr.json()
+        req_id = rd.get("request_id") or rd.get("request",{}).get("request_id")
+        if not req_id:
+            # duplicate pending — find it
+            ar = http.get(f"{BACKEND}/active_requests", headers=bh(), timeout=6).json()
+            found = next((x for x in ar if x.get("profile_code")==pat_code
+                          and x.get("doctor_code")==doc_code and x.get("status")=="pending"), None)
+            req_id = found["request_id"] if found else None
+        if not req_id:
+            return jsonify({"error":"Could not create access request"}), 500
+
+        # immediately approve with wrapped key
+        ra = http.post(f"{BACKEND}/approve_request",
+            json={"request_id":req_id,"doctor_code":doc_code,"patient_code":pat_code,
+                  "wrapped_key":wrapped_T,"encrypted_kdata_with_temp":enc_kdata,
+                  "temp_key_expires_at":expires},
+            headers=bh(), timeout=8)
+        if not ra.ok:
+            return jsonify({"error":ra.text}), ra.status_code
+    except Exception as e:
+        return jsonify({"error":str(e)}), 502
+
+    return jsonify({"status":"ok","expires_at":expires})
+
+if __name__ == "__main__":
+    print("  Patient Portal → http://127.0.0.1:5001")
+    app.run(host="127.0.0.1", port=5001, debug=False)

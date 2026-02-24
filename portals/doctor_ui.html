@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MedVault — Doctor Portal</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@300;400;500;600&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f5f0ff;
+      --surface: #fff;
+      --surface2: #f2eeff;
+      --purple: #4a1a8a;
+      --purple2: #7c3aed;
+      --purple3: #ede9fe;
+      --purple4: #c4b5fd;
+      --text: #0d0a1a;
+      --muted: #6b5e8a;
+      --border: #ddd6fe;
+      --red: #c0392b;
+      --green: #1a7a4a;
+      --amber: #b7780a;
+      --shadow: 0 2px 20px rgba(74, 26, 138, .10);
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh
+    }
+
+    .shell {
+      display: flex;
+      min-height: 100vh
+    }
+
+    .sidebar {
+      background: var(--purple);
+      width: 260px;
+      min-width: 260px;
+      flex-shrink: 0;
+      padding: 28px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      z-index: 10
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 8px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, .2);
+      margin-bottom: 8px
+    }
+
+    .logo-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0
+    }
+
+    .logo h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: 17px;
+      color: #fff;
+      line-height: 1.2
+    }
+
+    .logo small {
+      color: rgba(255, 255, 255, .6);
+      font-size: 11px
+    }
+
+    .nav-group {
+      margin-top: 12px
+    }
+
+    .nav-label {
+      color: rgba(255, 255, 255, .4);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      padding: 8px 8px 4px
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: 9px;
+      cursor: pointer;
+      color: rgba(255, 255, 255, .8);
+      font-size: 13.5px;
+      transition: all .15s;
+      border: none;
+      background: transparent;
+      width: 100%;
+      text-align: left
+    }
+
+    .nav-btn:hover {
+      background: rgba(255, 255, 255, .12);
+      color: #fff
+    }
+
+    .nav-btn.active {
+      background: rgba(255, 255, 255, .2);
+      color: #fff;
+      font-weight: 600
+    }
+
+    .nav-icon {
+      font-size: 16px;
+      width: 22px;
+      text-align: center;
+      flex-shrink: 0
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .1)
+    }
+
+    .sf-name {
+      color: #fff;
+      font-weight: 600;
+      font-size: 13px
+    }
+
+    .sf-code {
+      color: rgba(255, 255, 255, .5);
+      font-size: 11px;
+      font-family: monospace;
+      margin-top: 2px
+    }
+
+    .sf-badge {
+      display: inline-block;
+      background: rgba(255, 255, 255, .2);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+      margin-top: 4px
+    }
+
+    .main {
+      flex: 1;
+      min-width: 0;
+      width: calc(100% - 260px);
+      padding: 32px 36px;
+      overflow-x: hidden
+    }
+
+    .page {
+      display: none
+    }
+
+    .page.active {
+      display: block
+    }
+
+    .page-header {
+      margin-bottom: 24px
+    }
+
+    .page-header h2 {
+      font-family: 'Playfair Display', serif;
+      font-size: 26px
+    }
+
+    .page-header p {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 4px
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px
+    }
+
+    .card-sm {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      margin-bottom: 14px
+    }
+
+    .card-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      margin-bottom: 14px
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px
+    }
+
+    .stat-card {
+      background: var(--purple3);
+      border-radius: 14px;
+      padding: 20px;
+      text-align: center;
+      border: 1px solid var(--border)
+    }
+
+    .stat-card .icon {
+      font-size: 28px;
+      margin-bottom: 6px
+    }
+
+    .stat-card .label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px
+    }
+
+    .form-group {
+      margin-bottom: 14px
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: .06em
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      min-width: 0;
+      padding: 10px 13px;
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      font-size: 14px;
+      font-family: 'Inter', sans-serif;
+      background: var(--surface);
+      color: var(--text);
+      transition: border .15s, box-shadow .15s;
+      outline: none
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: var(--purple2);
+      box-shadow: 0 0 0 3px rgba(124, 58, 237, .12)
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 90px
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 10px 20px;
+      border-radius: 9px;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all .15s;
+      font-family: 'Inter', sans-serif
+    }
+
+    .btn-primary {
+      background: var(--purple);
+      color: #fff
+    }
+
+    .btn-primary:hover {
+      background: var(--purple2);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(74, 26, 138, .3)
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--purple);
+      border: 1.5px solid var(--purple)
+    }
+
+    .btn-outline:hover {
+      background: var(--purple3)
+    }
+
+    .btn-success {
+      background: var(--green);
+      color: #fff
+    }
+
+    .btn-success:hover {
+      opacity: .88
+    }
+
+    .btn-danger {
+      background: var(--red);
+      color: #fff
+    }
+
+    .btn-danger:hover {
+      opacity: .88
+    }
+
+    .btn-sm {
+      padding: 7px 14px;
+      font-size: 12.5px
+    }
+
+    .btn:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+      transform: none !important
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px
+    }
+
+    .alert {
+      padding: 11px 15px;
+      border-radius: 9px;
+      font-size: 13px;
+      margin-bottom: 14px;
+      display: flex;
+      gap: 9px;
+      align-items: flex-start;
+      line-height: 1.5
+    }
+
+    .alert-success {
+      background: #e8f5ee;
+      color: #1a5c35;
+      border: 1px solid #a8d5bc
+    }
+
+    .alert-error {
+      background: #fdecea;
+      color: #8b1a1a;
+      border: 1px solid #f5b7b1
+    }
+
+    .alert-info {
+      background: var(--purple3);
+      color: var(--purple);
+      border: 1px solid var(--purple4)
+    }
+
+    .alert-warn {
+      background: #fff8e1;
+      color: #7a5a00;
+      border: 1px solid #ffe082
+    }
+
+    .rec-field {
+      display: flex;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      align-items: flex-start
+    }
+
+    .rec-field:last-child {
+      border-bottom: none
+    }
+
+    .rec-key {
+      color: var(--muted);
+      font-weight: 700;
+      min-width: 130px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      padding-top: 2px
+    }
+
+    .rec-val {
+      color: var(--text);
+      font-size: 13.5px;
+      flex: 1;
+      word-break: break-all
+    }
+
+    .patient-card {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 18px 22px;
+      box-shadow: var(--shadow);
+      margin-bottom: 12px;
+      border-left: 4px solid var(--purple2);
+      cursor: pointer;
+      transition: transform .1s
+    }
+
+    .patient-card:hover {
+      transform: translateX(2px)
+    }
+
+    .patient-card h4 {
+      font-size: 14px;
+      font-weight: 700
+    }
+
+    .patient-card p {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 3px
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700
+    }
+
+    .badge-approved {
+      background: #e8f5ee;
+      color: var(--green)
+    }
+
+    .badge-pending {
+      background: #fff8e1;
+      color: var(--amber)
+    }
+
+    .badge-denied {
+      background: #fdecea;
+      color: var(--red)
+    }
+
+    .code-box {
+      font-family: monospace;
+      font-size: 22px;
+      font-weight: 700;
+      background: var(--purple3);
+      color: var(--purple);
+      padding: 14px 20px;
+      border-radius: 10px;
+      text-align: center;
+      letter-spacing: .12em;
+      border: 2px dashed var(--purple2);
+      margin: 12px 0
+    }
+
+    .spin {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      border: 2px solid rgba(255, 255, 255, .4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+
+    .empty {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--muted)
+    }
+
+    .empty-icon {
+      font-size: 44px;
+      margin-bottom: 10px
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 20px 0
+    }
+
+    /* QR */
+    #qr-canvas-wrap canvas {
+      display: block;
+      margin: 0 auto
+    }
+
+    .qr-wrap {
+      display: inline-block;
+      padding: 16px;
+      background: #fff;
+      border-radius: 12px;
+      border: 2px solid var(--border);
+      margin: 8px auto;
+      display: block;
+      text-align: center
+    }
+
+    /* REPORT FORM SECTIONS */
+    .section-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--purple);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin: 18px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid var(--purple3)
+    }
+
+    /* UPLOAD DROP ZONE */
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      text-align: center;
+      cursor: pointer;
+      transition: border .15s, background .15s
+    }
+
+    .dropzone:hover,
+    .dropzone.drag {
+      border-color: var(--purple2);
+      background: var(--purple3)
+    }
+
+    .dropzone .dz-icon {
+      font-size: 32px;
+      margin-bottom: 8px
+    }
+
+    .dropzone p {
+      color: var(--muted);
+      font-size: 13px
+    }
+
+    /* STEP */
+    .steps {
+      display: flex;
+      gap: 0;
+      margin-bottom: 24px
+    }
+
+    .step {
+      flex: 1;
+      text-align: center;
+      padding: 10px 4px;
+      font-size: 12px;
+      color: var(--muted);
+      border-bottom: 2px solid var(--border);
+      transition: all .2s
+    }
+
+    .step.active {
+      color: var(--purple);
+      border-color: var(--purple);
+      font-weight: 700
+    }
+
+    .step.done {
+      color: var(--purple2);
+      border-color: var(--purple2)
+    }
+
+    /* SEARCH */
+    .search-result {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: background .15s
+    }
+
+    .search-result:hover {
+      background: var(--purple3)
+    }
+
+    .search-result h4 {
+      font-size: 14px;
+      font-weight: 600
+    }
+
+    .search-result p {
+      font-size: 12px;
+      color: var(--muted)
+    }
+
+    /* HIST TABLE */
+    .hist-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px
+    }
+
+    .hist-table th {
+      text-align: left;
+      padding: 8px 12px;
+      background: var(--surface2);
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      border-bottom: 1px solid var(--border)
+    }
+
+    .hist-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border)
+    }
+
+    .hist-table tr:last-child td {
+      border-bottom: none
+    }
+
+    @media(max-width:700px) {
+      .shell {
+        flex-direction: column
+      }
+
+      .sidebar {
+        width: 100%;
+        min-width: unset;
+        position: relative;
+        height: auto
+      }
+
+      .main {
+        width: 100%;
+        padding: 20px 16px
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="logo">
+        <div class="logo-icon">🩺</div>
+        <div>
+          <h1>MedVault</h1><small>Doctor Portal</small>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Main</div>
+        <button class="nav-btn active" onclick="nav('home')" id="nb-home"><span class="nav-icon">🏠</span>
+          Dashboard</button>
+        <button class="nav-btn" onclick="nav('register')" id="nb-register"><span class="nav-icon">✨</span>
+          Register</button>
+        <button class="nav-btn" onclick="nav('login')" id="nb-login"><span class="nav-icon">🔑</span> Load
+          Profile</button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Patients</div>
+        <button class="nav-btn" onclick="nav('search')" id="nb-search"><span class="nav-icon">🔍</span> Find
+          Patient</button>
+        <button class="nav-btn" onclick="nav('request')" id="nb-request"><span class="nav-icon">📨</span> Request
+          Access</button>
+        <button class="nav-btn" onclick="nav('mypatients')" id="nb-mypatients"><span class="nav-icon">👥</span> My
+          Patients</button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Records</div>
+        <button class="nav-btn" onclick="nav('upload')" id="nb-upload"><span class="nav-icon">📋</span> Upload
+          Report</button>
+        <button class="nav-btn" onclick="nav('images')" id="nb-images"><span class="nav-icon">🖼</span> Medical
+          Images</button>
+        <button class="nav-btn" onclick="nav('records')" id="nb-records"><span class="nav-icon">📂</span> View
+          Records</button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Tools</div>
+        <button class="nav-btn" onclick="nav('qr')" id="nb-qr"><span class="nav-icon">📲</span> My QR Code</button>
+        <button class="nav-btn" onclick="nav('audit')" id="nb-audit"><span class="nav-icon">🛡</span> Audit Log</button>
+      </div>
+
+      <div class="sidebar-footer" id="sf" style="display:none">
+        <div class="sf-name" id="sf-name">—</div>
+        <div class="sf-code" id="sf-code">Code: —</div>
+        <div class="sf-badge">Doctor</div>
+        <button class="btn btn-outline btn-sm"
+          style="margin-top:10px;width:100%;color:#fff;border-color:rgba(255,255,255,.3)" onclick="logout()">↩ Switch
+          Profile</button>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+
+      <!-- DASHBOARD -->
+      <div class="page active" id="page-home">
+        <div class="page-header">
+          <h2>Doctor Dashboard 🩺</h2>
+          <p>Securely access patient records with full consent and encryption.</p>
+        </div>
+        <div class="grid-3" style="margin-bottom:20px">
+          <div class="stat-card">
+            <div class="icon">🔐</div>
+            <div>Patient-Controlled</div>
+            <div class="label">Consent-first access</div>
+          </div>
+          <div class="stat-card">
+            <div class="icon">⏱</div>
+            <div>24h Windows</div>
+            <div class="label">Auto-expiring access</div>
+          </div>
+          <div class="stat-card">
+            <div class="icon">🔒</div>
+            <div>Hybrid Encryption</div>
+            <div class="label">AES-256 + RSA-2048</div>
+          </div>
+        </div>
+        <div class="card" id="home-out">
+          <div class="card-title">Get Started</div>
+          <p style="color:var(--muted);font-size:14px;margin-bottom:16px">New to MedVault? Register your doctor profile.
+            Already registered? Load your profile.</p>
+          <div class="btn-group" style="margin-top:0">
+            <button class="btn btn-primary" onclick="nav('register')">✨ Register as Doctor</button>
+            <button class="btn btn-outline" onclick="nav('login')">🔑 Load Profile</button>
+          </div>
+        </div>
+        <div class="card" id="home-in" style="display:none">
+          <div class="card-title">Your Profile</div>
+          <div id="home-details"></div>
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="nav('search')">🔍 Find Patient</button>
+            <button class="btn btn-outline" onclick="nav('upload')">📋 Upload Report</button>
+            <button class="btn btn-outline" onclick="nav('qr')">📲 My QR Code</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- REGISTER -->
+      <div class="page" id="page-register">
+        <div class="page-header">
+          <h2>Doctor Registration</h2>
+          <p>Your private key stays on this device. Only your public key goes to the server.</p>
+        </div>
+        <div id="reg-alert"></div>
+        <div class="card" id="reg-card">
+          <div class="card-title">Professional Details</div>
+          <div class="form-row">
+            <div class="form-group"><label>Full Name *</label><input id="r-name" placeholder="Dr. Priya Mehta" /></div>
+            <div class="form-group"><label>Specialization</label><input id="r-spec" placeholder="Cardiologist" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Hospital / Clinic</label><input id="r-hosp" placeholder="Apollo Hospital" />
+            </div>
+            <div class="form-group"><label>Email</label><input id="r-email" type="email"
+                placeholder="priya@hospital.com" /></div>
+          </div>
+          <div class="divider"></div>
+          <div class="card-title">Protect Your Private Key</div>
+          <div class="form-row">
+            <div class="form-group"><label>Password *</label><input id="r-pw" type="password" /></div>
+            <div class="form-group"><label>Confirm Password *</label><input id="r-pw2" type="password" /></div>
+          </div>
+          <button class="btn btn-primary" id="reg-btn" onclick="register()">✨ Create Doctor Profile</button>
+        </div>
+      </div>
+
+      <!-- LOGIN -->
+      <div class="page" id="page-login">
+        <div class="page-header">
+          <h2>Load Your Profile</h2>
+        </div>
+        <div id="login-alert"></div>
+        <div class="card">
+          <div class="form-group"><label>Doctor Code</label><input id="l-code" placeholder="e.g. 7e7878c3" /></div>
+          <div class="form-group"><label>Password</label><input id="l-pw" type="password" /></div>
+          <button class="btn btn-primary" onclick="loadProfile()">🔑 Load Profile</button>
+        </div>
+      </div>
+
+      <!-- FIND PATIENT -->
+      <div class="page" id="page-search">
+        <div class="page-header">
+          <h2>Find Patient</h2>
+          <p>Search by profile code to request access.</p>
+        </div>
+        <div class="card">
+          <div class="form-group"><label>Patient Profile Code</label><input id="search-code" placeholder="e.g. nurpsuyJ"
+              oninput="searchPatient()" /></div>
+          <div id="search-result"></div>
+        </div>
+      </div>
+
+      <!-- REQUEST ACCESS -->
+      <div class="page" id="page-request">
+        <div class="page-header">
+          <h2>Request Patient Access</h2>
+          <p>Patient will be notified and can approve or deny.</p>
+        </div>
+        <div id="req-alert"></div>
+        <div class="card">
+          <div class="form-group"><label>Patient Profile Code *</label><input id="req-pcode"
+              placeholder="e.g. nurpsuyJ" /></div>
+          <div class="form-group"><label>Your Password</label><input id="req-pw" type="password" /></div>
+          <button class="btn btn-primary" id="req-btn" onclick="requestAccess()">📨 Send Request</button>
+        </div>
+      </div>
+
+      <!-- MY PATIENTS -->
+      <div class="page" id="page-mypatients">
+        <div class="page-header">
+          <h2>My Patients</h2>
+          <p>Patients who have approved your access.</p>
+        </div>
+        <div id="mypatients-list">
+          <div class="alert alert-info">ℹ️ Load your profile first.</div>
+        </div>
+      </div>
+
+      <!-- UPLOAD REPORT -->
+      <div class="page" id="page-upload">
+        <div class="page-header">
+          <h2>Upload Visit Report</h2>
+          <p>Hybrid encryption: AES-256-GCM data, RSA-2048 key wrapping.</p>
+        </div>
+        <div id="upload-alert"></div>
+        <div class="alert alert-info">ℹ️ JWT login required to upload. The report is encrypted before reaching the
+          server — the backend never sees plaintext.</div>
+        <div class="card">
+          <div class="section-label">Patient</div>
+          <div class="form-group"><label>Patient Profile Code *</label><input id="up-pcode"
+              placeholder="Patient's profile code" /></div>
+          <div class="section-label">Visit Details (encrypted before upload)</div>
+          <div class="form-row">
+            <div class="form-group"><label>Visit Reason *</label><input id="up-reason" placeholder="Annual checkup" />
+            </div>
+            <div class="form-group"><label>Diagnosis</label><input id="up-diagnosis"
+                placeholder="Hypertension Stage 1" /></div>
+          </div>
+          <div class="form-group"><label>Medication Prescribed</label><input id="up-medication"
+              placeholder="Amlodipine 5mg once daily" /></div>
+          <div class="form-group"><label>Notes</label><textarea id="up-notes"
+              placeholder="Additional clinical notes..."></textarea></div>
+          <div class="section-label">Encryption</div>
+          <div class="alert alert-success">🔒 Report will be encrypted with AES-256-GCM. The AES key will be wrapped
+            with the patient's RSA-2048 public key. Server stores only ciphertext.</div>
+          <button class="btn btn-primary" id="upload-btn" onclick="uploadReport()">📋 Encrypt & Upload Report</button>
+        </div>
+      </div>
+
+      <!-- MEDICAL IMAGES -->
+      <div class="page" id="page-images">
+        <div class="page-header">
+          <h2>Medical Images</h2>
+          <p>Upload encrypted medical images. Integrity verified with SHA-256.</p>
+        </div>
+        <div id="img-alert"></div>
+        <div class="card">
+          <div class="form-group"><label>Record ID (from uploaded report)</label><input id="img-record-id"
+              placeholder="Record ID" /></div>
+          <div class="form-group">
+            <label>Medical Image (pre/post surgery, scan, etc.)</label>
+            <div class="dropzone" id="img-drop" onclick="document.getElementById('img-file').click()"
+              ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')"
+              ondrop="handleImgDrop(event)">
+              <div class="dz-icon">🖼</div>
+              <p>Click or drag to select image</p>
+              <p id="img-filename" style="color:var(--purple);font-weight:600;margin-top:6px"></p>
+            </div>
+            <input type="file" id="img-file" accept="image/*" style="display:none" onchange="previewImg(this)">
+          </div>
+          <div class="alert alert-success">🔒 Image will be encrypted with AES-256-GCM client-side. SHA-256 hash
+            computed for integrity. Server verifies hash on receipt.</div>
+          <button class="btn btn-primary" id="img-btn" onclick="uploadImage()">🖼 Encrypt & Upload Image</button>
+        </div>
+      </div>
+
+      <!-- VIEW RECORDS -->
+      <div class="page" id="page-records">
+        <div class="page-header">
+          <h2>Patient Records</h2>
+          <p>Fetch and decrypt approved patient records.</p>
+        </div>
+        <div id="records-alert"></div>
+        <div class="card">
+          <div class="form-row">
+            <div class="form-group"><label>Patient Profile Code *</label><input id="view-pcode"
+                placeholder="e.g. nurpsuyJ" /></div>
+            <div class="form-group"><label>Your Password</label><input id="view-pw" type="password" /></div>
+          </div>
+          <button class="btn btn-primary" id="view-btn" onclick="viewRecord()">📂 Fetch & Decrypt Record</button>
+        </div>
+        <div id="record-display" style="display:none"></div>
+      </div>
+
+      <!-- QR CODE -->
+      <div class="page" id="page-qr">
+        <div class="page-header">
+          <h2>My Doctor QR Code 📲</h2>
+          <p>Patient scans this to securely share their record — like a UPI payment for health data.</p>
+        </div>
+        <div id="qr-not-logged" class="alert alert-info">ℹ️ Load your doctor profile first.</div>
+        <div id="qr-logged" style="display:none">
+          <div class="grid-2">
+            <div class="card" style="text-align:center">
+              <div class="card-title">Your QR Code</div>
+              <div class="qr-wrap">
+                <div id="qr-canvas"></div>
+              </div>
+              <p style="color:var(--muted);font-size:12px;margin-top:8px">Patient scans → enters password → record
+                transfers</p>
+              <button class="btn btn-outline btn-sm" style="margin-top:12px" onclick="downloadQR()">⬇ Download
+                PNG</button>
+            </div>
+            <div class="card">
+              <div class="card-title">How It Works</div>
+              <div style="display:flex;flex-direction:column;gap:14px">
+                <div style="display:flex;gap:12px">
+                  <div
+                    style="width:26px;height:26px;border-radius:50%;background:var(--purple3);color:var(--purple);font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                    1</div>
+                  <div><strong style="font-size:13px">Show this QR</strong>
+                    <p style="font-size:12px;color:var(--muted)">On screen or printed</p>
+                  </div>
+                </div>
+                <div style="display:flex;gap:12px">
+                  <div
+                    style="width:26px;height:26px;border-radius:50%;background:var(--purple3);color:var(--purple);font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                    2</div>
+                  <div><strong style="font-size:13px">Patient scans it</strong>
+                    <p style="font-size:12px;color:var(--muted)">In their Patient Portal → Scan QR</p>
+                  </div>
+                </div>
+                <div style="display:flex;gap:12px">
+                  <div
+                    style="width:26px;height:26px;border-radius:50%;background:var(--purple3);color:var(--purple);font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                    3</div>
+                  <div><strong style="font-size:13px">Patient enters password</strong>
+                    <p style="font-size:12px;color:var(--muted)">Like entering UPI PIN</p>
+                  </div>
+                </div>
+                <div style="display:flex;gap:12px">
+                  <div
+                    style="width:26px;height:26px;border-radius:50%;background:var(--purple3);color:var(--purple);font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                    4</div>
+                  <div><strong style="font-size:13px">24h access granted</strong>
+                    <p style="font-size:12px;color:var(--muted)">Encrypted, auto-expires</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Your Doctor Code (manual entry)</div>
+            <div class="code-box" id="qr-doc-code"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AUDIT -->
+      <div class="page" id="page-audit">
+        <div class="page-header">
+          <h2>Audit Log 🛡</h2>
+          <p>Your action history on MedVault.</p>
+        </div>
+        <div id="audit-content">
+          <div class="alert alert-info">ℹ️ JWT login required.</div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+    onerror="console.warn('QR lib not available')"></script>
+  <script>
+    // ════════════════════════════════════════════════════════════
+    //  STATE
+    // ════════════════════════════════════════════════════════════
+    let S = { code: '', name: '', spec: '', hosp: '', logged: false, jwt: '', uid: '' };
+    let _imgFile = null;
+
+    // ════════════════════════════════════════════════════════════
+    //  NAV
+    // ════════════════════════════════════════════════════════════
+    function nav(p) {
+      document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(x => x.classList.remove('active'));
+      document.getElementById('page-' + p)?.classList.add('active');
+      document.getElementById('nb-' + p)?.classList.add('active');
+      if (p === 'qr') showQR();
+      if (p === 'mypatients') loadMyPatients();
+      if (p === 'audit') loadAudit();
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  AUTH
+    // ════════════════════════════════════════════════════════════
+    function setLoggedIn(code, name, spec, hosp, jwt = '', uid = '') {
+      S = { code, name, spec, hosp, logged: true, jwt, uid };
+      sessionStorage.setItem('medvault_session', JSON.stringify(S));
+      document.getElementById('home-out').style.display = 'none';
+      document.getElementById('home-in').style.display = 'block';
+      document.getElementById('home-details').innerHTML = `
+    <div class="rec-field"><div class="rec-key">Name</div><div class="rec-val">${name || '—'}</div></div>
+    <div class="rec-field"><div class="rec-key">Doctor Code</div><div class="rec-val" style="font-family:monospace;font-weight:700">${code}</div></div>
+    <div class="rec-field"><div class="rec-key">Specialization</div><div class="rec-val">${spec || '—'}</div></div>
+    <div class="rec-field"><div class="rec-key">Hospital</div><div class="rec-val">${hosp || '—'}</div></div>`;
+      document.getElementById('sf').style.display = 'block';
+      document.getElementById('sf-name').textContent = name || code;
+      document.getElementById('sf-code').textContent = 'Code: ' + code;
+    }
+    function logout() { sessionStorage.removeItem('medvault_session'); S = { code: '', name: '', spec: '', hosp: '', logged: false, jwt: '', uid: '' }; document.getElementById('home-out').style.display = 'block'; document.getElementById('home-in').style.display = 'none'; document.getElementById('sf').style.display = 'none'; nav('home'); }
+
+    // ════════════════════════════════════════════════════════════
+    //  REGISTER
+    // ════════════════════════════════════════════════════════════
+    async function register() {
+      const name = document.getElementById('r-name').value.trim();
+      const spec = document.getElementById('r-spec').value.trim();
+      const hosp = document.getElementById('r-hosp').value.trim();
+      const email = document.getElementById('r-email').value.trim();
+      const pw = document.getElementById('r-pw').value;
+      const pw2 = document.getElementById('r-pw2').value;
+      if (!name) return alert('Name required.');
+      if (!pw || pw !== pw2) return alert('Password required and must match.');
+      const btn = document.getElementById('reg-btn'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Generating keys...';
+      document.getElementById('reg-alert').innerHTML = '';
+      try {
+        const r = await fetch('/api/register', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, specialization: spec, hospital: hosp, email, password: pw })
+        });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error);
+        document.getElementById('reg-card').style.display = 'none';
+        document.getElementById('reg-alert').innerHTML = `
+      <div class="alert alert-success">✅ Doctor profile created!</div>
+      <div class="card"><div class="card-title">Your Doctor Code</div><div class="code-box">${d.doctor_code}</div>
+      <p style="color:var(--muted);font-size:13px;margin-top:8px">Save this — you need it to log in.</p>
+      <div class="btn-group"><button class="btn btn-primary" onclick="setLoggedIn('${d.doctor_code}','${name}','${spec}','${hosp}');nav('home')">Go to Dashboard →</button></div></div>`;
+        setLoggedIn(d.doctor_code, name, spec, hosp);
+      } catch (e) { document.getElementById('reg-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+      finally { btn.disabled = false; btn.textContent = '✨ Create Doctor Profile'; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  LOAD PROFILE
+    // ════════════════════════════════════════════════════════════
+    async function loadProfile() {
+      const code = document.getElementById('l-code').value.trim();
+      const pw = document.getElementById('l-pw').value;
+      if (!code || !pw) return alert('Doctor code and password required.');
+      document.getElementById('login-alert').innerHTML = '';
+      try {
+        const r = await fetch('/api/load_profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doctor_code: code, password: pw }) });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error);
+        setLoggedIn(code, d.name, d.specialization, d.hospital);
+        document.getElementById('login-alert').innerHTML = `<div class="alert alert-success">✅ Welcome back, ${d.name}!</div>`;
+        setTimeout(() => nav('home'), 1000);
+      } catch (e) { document.getElementById('login-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  SEARCH PATIENT
+    // ════════════════════════════════════════════════════════════
+    async function searchPatient() {
+      const code = document.getElementById('search-code').value.trim();
+      const box = document.getElementById('search-result');
+      if (code.length < 4) { box.innerHTML = ''; return; }
+      try {
+        const r = await fetch(`/api/lookup_patient`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_code: code }) });
+        const d = await r.json();
+        if (!r.ok || !d.found) { box.innerHTML = '<div class="alert alert-warn">Patient not found.</div>'; return; }
+        box.innerHTML = `<div class="search-result" onclick="document.getElementById('req-pcode').value='${code}';nav('request')">
+      <h4>✅ Patient Found</h4><p>Code: <strong>${code}</strong> — Click to request access</p></div>`;
+      } catch (e) { box.innerHTML = `<div class="alert alert-info">Enter a complete profile code to search.</div>`; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  REQUEST ACCESS
+    // ════════════════════════════════════════════════════════════
+    async function requestAccess() {
+      if (!S.logged) return alert('Load your profile first.');
+      const pcode = document.getElementById('req-pcode').value.trim();
+      const pw = document.getElementById('req-pw').value;
+      if (!pcode) return alert('Patient profile code required.');
+      if (!pw) return alert('Your password required.');
+      const btn = document.getElementById('req-btn'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Sending...';
+      document.getElementById('req-alert').innerHTML = '';
+      try {
+        const r = await fetch('/api/request_access', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ doctor_code: S.code, patient_code: pcode, password: pw })
+        });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error);
+        document.getElementById('req-alert').innerHTML = `<div class="alert alert-success">✅ Request sent! Patient will be notified.<br><strong>Request ID:</strong> <span style="font-family:monospace;font-size:12px">${d.request_id}</span></div>`;
+      } catch (e) { document.getElementById('req-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+      finally { btn.disabled = false; btn.textContent = '📨 Send Request'; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  MY PATIENTS
+    // ════════════════════════════════════════════════════════════
+    async function loadMyPatients() {
+      const box = document.getElementById('mypatients-list');
+      if (!S.logged) { box.innerHTML = '<div class="alert alert-info">ℹ️ Load your profile first.</div>'; return; }
+      if (!S.jwt) { box.innerHTML = '<div class="alert alert-info">ℹ️ JWT login required to list approved patients.</div>'; return; }
+      box.innerHTML = '<div class="empty"><div class="empty-icon">⏳</div><p>Loading...</p></div>';
+      try {
+        const r = await fetch('/api/doctor_patients', { headers: { 'Authorization': 'Bearer ' + S.jwt } });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error);
+        if (!d.length) { box.innerHTML = '<div class="empty"><div class="empty-icon">👥</div><p>No approved patients yet. Request access and wait for patient approval.</p></div>'; return; }
+        box.innerHTML = d.map(p => `
+      <div class="patient-card" onclick="document.getElementById('view-pcode').value='${p.patient_id}';nav('records')">
+        <h4>Patient: ${p.patient_id}</h4>
+        <p>Status: <span class="badge badge-approved">Approved</span> • Since ${new Date(p.responded_at || p.created_at).toLocaleDateString()}</p>
+      </div>`).join('');
+      } catch (e) { box.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  UPLOAD REPORT (hybrid encryption)
+    // ════════════════════════════════════════════════════════════
+    async function uploadReport() {
+      if (!S.logged) return alert('Load your profile first.');
+      if (!S.jwt) return alert('JWT login required to upload reports.');
+      const pcode = document.getElementById('up-pcode').value.trim();
+      const reason = document.getElementById('up-reason').value.trim();
+      const diagnosis = document.getElementById('up-diagnosis').value.trim();
+      const medication = document.getElementById('up-medication').value.trim();
+      const notes = document.getElementById('up-notes').value.trim();
+      if (!pcode || !reason) return alert('Patient code and visit reason required.');
+      const btn = document.getElementById('upload-btn'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Encrypting...';
+      document.getElementById('upload-alert').innerHTML = '';
+      try {
+        // Build report JSON
+        const report = {
+          visit_reason: reason, diagnosis, medication, notes,
+          doctor_code: S.code, doctor_name: S.name, timestamp: new Date().toISOString()
+        };
+        const reportJson = JSON.stringify(report);
+        // Compute SHA-256 hash of plaintext
+        const encoder = new TextEncoder();
+        const hashBuf = await crypto.subtle.digest('SHA-256', encoder.encode(reportJson));
+        const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        // Generate AES-256-GCM key
+        const aesKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+        // Encrypt report
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, encoder.encode(reportJson));
+        const encBlob = { nonce: btoa(String.fromCharCode(...iv)), ciphertext: btoa(String.fromCharCode(...new Uint8Array(ct))) };
+        // Export raw AES key
+        const rawKey = await crypto.subtle.exportKey('raw', aesKey);
+        const rawKeyB64 = btoa(String.fromCharCode(...new Uint8Array(rawKey)));
+        // Fetch patient public key
+        const pkResp = await fetch(`http://127.0.0.1:5000/get_patient_public/${pcode}`, { headers: { 'X-API-Key': await getApiKey() } });
+        const pkData = await pkResp.json();
+        const patPubPem = pkData.patient_public_pem || '';
+        // Wrap AES key with patient RSA public key (server-side via portal to keep it simple)
+        const r = await fetch('/api/upload_report', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + S.jwt },
+          body: JSON.stringify({
+            patient_id: pcode, encrypted_report_blob: encBlob,
+            encrypted_aes_key: rawKeyB64, file_hash: hashHex, patient_public_pem: patPubPem
+          })
+        });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error);
+        document.getElementById('upload-alert').innerHTML = `<div class="alert alert-success">✅ Report encrypted & uploaded! Record ID: <span style="font-family:monospace">${d.record_id}</span><br>SHA-256: <span style="font-family:monospace;font-size:11px">${hashHex}</span></div>`;
+        // clear form
+        ['up-pcode', 'up-reason', 'up-diagnosis', 'up-medication', 'up-notes'].forEach(id => document.getElementById(id).value = '');
+      } catch (e) { document.getElementById('upload-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+      finally { btn.disabled = false; btn.textContent = '📋 Encrypt & Upload Report'; }
+    }
+
+    async function getApiKey() {
+      // read from cookie or local — in production use secure method
+      return '';
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  MEDICAL IMAGES
+    // ════════════════════════════════════════════════════════════
+    function previewImg(input) { if (input.files[0]) { _imgFile = input.files[0]; document.getElementById('img-filename').textContent = _imgFile.name; } }
+    function handleImgDrop(e) { e.preventDefault(); document.getElementById('img-drop').classList.remove('drag'); if (e.dataTransfer.files[0]) { _imgFile = e.dataTransfer.files[0]; document.getElementById('img-filename').textContent = _imgFile.name; } }
+
+    async function uploadImage() {
+      if (!S.logged || !S.jwt) return alert('JWT login required.');
+      const recId = document.getElementById('img-record-id').value.trim();
+      if (!recId) return alert('Record ID required — upload a report first to get a Record ID.');
+      if (!_imgFile) return alert('Select a medical image first.');
+      const btn = document.getElementById('img-btn'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Encrypting...';
+      document.getElementById('img-alert').innerHTML = '';
+      try {
+        const ab = await _imgFile.arrayBuffer();
+        // SHA-256 of original
+        const hashBuf = await crypto.subtle.digest('SHA-256', ab);
+        const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        // AES-GCM encrypt
+        const aesKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, ab);
+        // combine iv+ciphertext as encrypted file blob
+        const combined = new Uint8Array(12 + ct.byteLength);
+        combined.set(iv, 0); combined.set(new Uint8Array(ct), 12);
+        const encBlob = new Blob([combined], { type: 'application/octet-stream' });
+        const rawKey = await crypto.subtle.exportKey('raw', aesKey);
+        const encKeyB64 = btoa(String.fromCharCode(...new Uint8Array(rawKey)));
+        // Upload via multipart
+        const fd = new FormData();
+        fd.append('record_id', recId);
+        fd.append('file_hash', hashHex);
+        fd.append('encrypted_aes_key', encKeyB64);
+        fd.append('image', encBlob, 'encrypted.enc');
+        const r = await fetch('/api/upload_image', { method: 'POST', headers: { 'Authorization': 'Bearer ' + S.jwt }, body: fd });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error || JSON.stringify(d));
+        document.getElementById('img-alert').innerHTML = `<div class="alert alert-success">✅ Image encrypted & uploaded!<br>Image ID: <span style="font-family:monospace">${d.image_id}</span><br>SHA-256: <span style="font-family:monospace;font-size:11px">${hashHex}</span><br>Server hash verified: ${d.hash_verified ? '✅' : '⚠️ mismatch'}</div>`;
+      } catch (e) { document.getElementById('img-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+      finally { btn.disabled = false; btn.textContent = '🖼 Encrypt & Upload Image'; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  VIEW RECORDS
+    // ════════════════════════════════════════════════════════════
+    async function viewRecord() {
+      if (!S.logged) return alert('Load your profile first.');
+      const pcode = document.getElementById('view-pcode').value.trim();
+      const pw = document.getElementById('view-pw').value;
+      if (!pcode || !pw) return alert('Patient code and password required.');
+      const btn = document.getElementById('view-btn'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Decrypting...';
+      document.getElementById('records-alert').innerHTML = '';
+      document.getElementById('record-display').style.display = 'none';
+      try {
+        const r = await fetch('/api/fetch_record', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ doctor_code: S.code, patient_code: pcode, password: pw })
+        });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error);
+        const rec = d.record; const expires = d.expires_at ? new Date(d.expires_at).toLocaleString() : 'Unknown';
+        document.getElementById('record-display').style.display = 'block';
+        document.getElementById('record-display').innerHTML = `
+      <div class="alert alert-warn">⏱ Access expires: <strong>${expires}</strong></div>
+      <div class="card">
+        <div style="background:var(--purple);color:#fff;padding:14px 18px;border-radius:10px;margin-bottom:16px;display:flex;justify-content:space-between">
+          <span>🏥 Patient Record</span><span style="font-size:12px;opacity:.8">${pcode}</span>
+        </div>
+        ${Object.entries(rec).filter(([k, v]) => v).map(([k, v]) => `<div class="rec-field"><div class="rec-key">${k}</div><div class="rec-val">${v}</div></div>`).join('')}
+        <div class="rec-field"><div class="rec-key">Signature</div><div class="rec-val" style="color:${d.sig_valid ? 'var(--green)' : 'var(--red)'}">${d.sig_valid ? '✅ Verified' : '⚠️ Invalid'}</div></div>
+      </div>`;
+      } catch (e) { document.getElementById('records-alert').innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+      finally { btn.disabled = false; btn.textContent = '📂 Fetch & Decrypt Record'; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  QR CODE
+    // ════════════════════════════════════════════════════════════
+    let _qrGenerated = false;
+    function showQR() {
+      if (!S.logged) { document.getElementById('qr-not-logged').style.display = 'block'; document.getElementById('qr-logged').style.display = 'none'; return; }
+      document.getElementById('qr-not-logged').style.display = 'none';
+      document.getElementById('qr-logged').style.display = 'block';
+      document.getElementById('qr-doc-code').textContent = S.code;
+      if (_qrGenerated) return;
+      const wrap = document.getElementById('qr-canvas'); wrap.innerHTML = '';
+      const qrData = JSON.stringify({ type: 'medvault_doctor', doctor_code: S.code, doctor_name: S.name });
+      if (window.QRCode) {
+        new QRCode(wrap, { text: qrData, width: 200, height: 200, colorDark: '#4a1a8a', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H });
+        _qrGenerated = true;
+      } else {
+        wrap.innerHTML = `<div style="padding:20px;background:var(--purple3);border-radius:10px;font-family:monospace;font-size:12px;word-break:break-all">${qrData}</div>`;
+      }
+    }
+    function downloadQR() {
+      const canvas = document.querySelector('#qr-canvas canvas'); if (!canvas) return alert('Generate QR first.');
+      const a = document.createElement('a'); a.download = `doctor_qr_${S.code}.png`; a.href = canvas.toDataURL(); a.click();
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  AUDIT LOG
+    // ════════════════════════════════════════════════════════════
+    async function loadAudit() {
+      const box = document.getElementById('audit-content');
+      if (!S.jwt) { box.innerHTML = '<div class="alert alert-info">ℹ️ JWT login required.</div>'; return; }
+      try {
+        const r = await fetch('/api/audit_log', { headers: { 'Authorization': 'Bearer ' + S.jwt } });
+        const d = await r.json();
+        if (!d.length) { box.innerHTML = '<div class="empty"><div class="empty-icon">🛡</div><p>No entries.</p></div>'; return; }
+        box.innerHTML = `<div class="card"><table class="hist-table"><thead><tr><th>Time</th><th>Action</th><th>Target</th></tr></thead><tbody>${d.reverse().map(e => `<tr><td style="font-size:12px">${new Date(e.ts).toLocaleString()}</td><td><strong>${e.action}</strong></td><td style="font-family:monospace;font-size:12px">${e.target || '—'}</td></tr>`).join('')}</tbody></table></div>`;
+      } catch (e) { box.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  RESTORE SESSION on page load / refresh
+    // ════════════════════════════════════════════════════════════
+    (function restoreSession() {
+      try {
+        const saved = sessionStorage.getItem('medvault_session');
+        if (saved) {
+          const s = JSON.parse(saved);
+          if (s.logged) setLoggedIn(s.code, s.name, s.spec || '', s.hosp || '', s.jwt || '', s.uid || '');
+        }
+      } catch (e) { sessionStorage.removeItem('medvault_session'); }
+    })();
+  </script>
+</body>
+
+</html>
