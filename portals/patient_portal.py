@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Patient Portal — http://127.0.0.1:5001"""
-import os, sys, json, time
+import os, sys, json, time, secrets
 from datetime import datetime, timezone, timedelta
 from base64 import b64encode, b64decode
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, session, redirect
 import requests as http
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -17,11 +17,30 @@ from common.crypto_utils import (
 )
 from common.secure_key_store import SecureKeyStore
 
+# Add portals dir to sys.path so auth_utils is importable as a sibling module
+_PORTALS_DIR = os.path.dirname(__file__)
+if _PORTALS_DIR not in sys.path:
+    sys.path.insert(0, _PORTALS_DIR)
+from auth_utils import login_required  # noqa: E402
+
 BACKEND   = os.environ.get("SERVER_BASE", "http://127.0.0.1:5000")
 USERS_DIR = os.path.join(ROOT, "client", "Users")
+LANDING   = "http://127.0.0.1:5003"
 os.makedirs(USERS_DIR, exist_ok=True)
 
 app = Flask(__name__)
+# Shared secret key (same file used by landing.py so sessions are consistent)
+_SK_FILE = os.path.join(ROOT, "server", "flask_secret.key")
+if os.path.exists(_SK_FILE):
+    app.secret_key = open(_SK_FILE, "rb").read()
+else:
+    app.secret_key = secrets.token_bytes(32)
+    with open(_SK_FILE, "wb") as _f:
+        _f.write(app.secret_key)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 
 @app.after_request
 def cors(r):
@@ -50,11 +69,16 @@ def get_html():
     return "<h1>patient_ui.html not found</h1>"
 
 @app.route("/")
-def index(): return get_html()
+def index():
+    # If no active session, send user to the landing page to log in first
+    if not session.get("logged_in"):
+        return redirect(LANDING)
+    return get_html()
 
 # ── LEGACY ROUTES ──────────────────────────────────────────────────────────
 
 @app.route("/api/register", methods=["POST","OPTIONS"])
+@login_required(role="patient")
 def api_register():
     if request.method == "OPTIONS": return jsonify({}), 200
     d = request.get_json(force=True)
@@ -86,7 +110,7 @@ def api_register():
     # Store private key in Windows Credential Manager (DPAPI-backed).
     # The key exists only in memory here and in the OS credential vault —
     # never written to a project file.
-    SecureKeyStore.store_private_key(f"patient:{profile_code}", priv_pem)
+    SecureKeyStore.store_private_key(f"patient__{profile_code}", priv_pem)
     with open(os.path.join(pdir,"patient_public.pem"),"wb") as f:  f.write(pub_pem)
     try:
         http.post(f"{BACKEND}/register_user",
@@ -109,6 +133,7 @@ def api_register():
     return jsonify({"profile_code":profile_code})
 
 @app.route("/api/load_profile", methods=["POST","OPTIONS"])
+@login_required(role="patient")
 def api_load_profile():
     if request.method == "OPTIONS": return jsonify({}), 200
     d = request.get_json(force=True)
@@ -127,6 +152,7 @@ def api_load_profile():
     return jsonify({"name":rec.get("name",""),"email":rec.get("email","")})
 
 @app.route("/api/record/<code>")
+@login_required(role="patient")
 def api_record(code):
     uf = user_json(code)
     if not os.path.exists(uf): return jsonify({"error":"Profile not found"}), 404
@@ -134,6 +160,7 @@ def api_record(code):
     return jsonify({"record":local.get("patient_details",{})})
 
 @app.route("/api/requests/<code>")
+@login_required(role="patient")
 def api_requests(code):
     try:
         r = http.get(f"{BACKEND}/active_requests", headers=bh(), timeout=8)
@@ -142,7 +169,7 @@ def api_requests(code):
     mine = [x for x in all_r if x.get("profile_code")==code]
     priv = None
     try:
-        priv_pem = SecureKeyStore.load_private_key(f"patient:{code}")
+        priv_pem = SecureKeyStore.load_private_key(f"patient__{code}")
         priv = rsa_load_private(priv_pem)
     except KeyError:
         # Key not in credential store (account registered on another machine or
@@ -165,6 +192,7 @@ def api_requests(code):
     return jsonify({"requests":result})
 
 @app.route("/api/approve", methods=["POST","OPTIONS"])
+@login_required(role="patient")
 def api_approve():
     if request.method == "OPTIONS": return jsonify({}), 200
     d = request.get_json(force=True)
@@ -195,6 +223,7 @@ def api_approve():
     return jsonify({"status":"ok"})
 
 @app.route("/api/deny", methods=["POST","OPTIONS"])
+@login_required(role="patient")
 def api_deny():
     if request.method == "OPTIONS": return jsonify({}), 200
     d = request.get_json(force=True)
@@ -207,7 +236,7 @@ def api_deny():
 # ── NEW ENDPOINTS ──────────────────────────────────────────────────────────
 
 @app.route("/api/auth/otp", methods=["POST","OPTIONS"])
-def patient_otp():
+def patient_otp():  # intentionally unprotected — used during registration flow
     if request.method == "OPTIONS": return jsonify({}), 200
     d = request.get_json(force=True)
     try:
@@ -216,7 +245,7 @@ def patient_otp():
     except Exception as e: return jsonify({"error":str(e)}), 502
 
 @app.route("/api/auth/verify_otp", methods=["POST","OPTIONS"])
-def patient_verify_otp():
+def patient_verify_otp():  # intentionally unprotected — used during registration flow
     if request.method == "OPTIONS": return jsonify({}), 200
     d = request.get_json(force=True)
     try:
@@ -226,7 +255,7 @@ def patient_verify_otp():
     except Exception as e: return jsonify({"error":str(e)}), 502
 
 @app.route("/api/auth/login", methods=["POST","OPTIONS"])
-def patient_login():
+def patient_login():  # intentionally unprotected — this IS the login endpoint
     if request.method == "OPTIONS": return jsonify({}), 200
     d = request.get_json(force=True)
     import hashlib
@@ -238,6 +267,7 @@ def patient_login():
     except Exception as e: return jsonify({"error":str(e)}), 502
 
 @app.route("/api/reports/<patient_id>")
+@login_required(role="patient")
 def patient_reports(patient_id):
     token = request.headers.get("Authorization","").replace("Bearer ","")
     try:
@@ -246,6 +276,7 @@ def patient_reports(patient_id):
     except Exception as e: return jsonify({"error":str(e)}), 502
 
 @app.route("/api/report/<record_id>")
+@login_required(role="patient")
 def patient_report_detail(record_id):
     token = request.headers.get("Authorization","").replace("Bearer ","")
     try:
@@ -254,6 +285,7 @@ def patient_report_detail(record_id):
     except Exception as e: return jsonify({"error":str(e)}), 502
 
 @app.route("/api/access_requests_jwt")
+@login_required(role="patient")
 def patient_jwt_access_requests():
     token = request.headers.get("Authorization","").replace("Bearer ","")
     try:
@@ -262,6 +294,7 @@ def patient_jwt_access_requests():
     except Exception as e: return jsonify({"error":str(e)}), 502
 
 @app.route("/api/access_respond", methods=["POST","OPTIONS"])
+@login_required(role="patient")
 def patient_access_respond():
     if request.method == "OPTIONS": return jsonify({}), 200
     token = request.headers.get("Authorization","").replace("Bearer ","")
@@ -272,6 +305,7 @@ def patient_access_respond():
     except Exception as e: return jsonify({"error":str(e)}), 502
 
 @app.route("/api/login_history")
+@login_required(role="patient")
 def patient_login_history():
     token = request.headers.get("Authorization","").replace("Bearer ","")
     try:
@@ -280,6 +314,7 @@ def patient_login_history():
     except Exception as e: return jsonify({"error":str(e)}), 502
 
 @app.route("/api/audit_log")
+@login_required(role="patient")
 def patient_audit_log():
     token = request.headers.get("Authorization","").replace("Bearer ","")
     try:
@@ -288,6 +323,7 @@ def patient_audit_log():
     except Exception as e: return jsonify({"error":str(e)}), 502
 
 @app.route("/api/lookup_doctor", methods=["POST","OPTIONS"])
+@login_required(role="patient")
 def api_lookup_doctor():
     if request.method == "OPTIONS": return jsonify({}), 200
     d = request.get_json(force=True); code = d.get("doctor_code","").strip()
@@ -307,6 +343,7 @@ def api_lookup_doctor():
     return jsonify({"found":False}), 404
 
 @app.route("/api/qr_transfer", methods=["POST","OPTIONS"])
+@login_required(role="patient")
 def api_qr_transfer():
     if request.method == "OPTIONS": return jsonify({}), 200
     d = request.get_json(force=True)
@@ -383,6 +420,7 @@ def _save_notes_locally(patient_code, notes):
         print(f"[warn] could not save notes locally: {e}")
 
 @app.route("/api/doctor_notes/<patient_code>")
+@login_required(role="patient")
 def api_patient_notes(patient_code):
     """Fetch doctor notes from server and cache them in local user_data.json."""
     try:
@@ -408,6 +446,7 @@ def api_patient_notes(patient_code):
         return jsonify({"error": str(e)}), 502
 
 @app.route("/api/note_images/<filename>")
+@login_required(role="patient")
 def api_note_image(filename):
     """Proxy note images from the backend server."""
     try:

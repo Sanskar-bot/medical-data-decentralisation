@@ -971,8 +971,8 @@ def auth_register():
 
 @app.route("/internal/register_user_db", methods=["POST"])
 def internal_register_user_db():
-    """Called by patient_portal during legacy /api/register to create a users_db entry,
-    enabling JWT login for Reports, Login History, and Audit Log."""
+    """Called by landing.py during registration to create a users_db entry,
+    enabling JWT login after logout."""
     auth_err = _require_api_key()
     if auth_err: return auth_err
     body     = request.get_json(force=True) or {}
@@ -985,15 +985,29 @@ def internal_register_user_db():
     if not email or not name or not pw_hash:
         return jsonify({"error":"missing_fields"}), 400
     users = load_json(USERS_DB_FILE)
-    if email in users:
-        return jsonify({"message":"already_exists","user_id":users[email]["id"]}), 200
-    uid = str(uuid.uuid4())
     profile_code = body.get("profile_code", "")
+    doctor_code  = body.get("doctor_code", "")
+    if email in users:
+        existing = users[email]
+        # Always update role and password hash for the registering role
+        # (handles same email used for both patient and doctor)
+        existing["role"]          = role
+        existing["password_hash"] = pw_hash
+        if pub_key:
+            existing["public_key"] = pub_key
+        if profile_code:
+            existing["profile_code"] = profile_code
+        if doctor_code:
+            existing["doctor_code"] = doctor_code
+        save_json(USERS_DB_FILE, users)
+        return jsonify({"message":"updated","user_id":existing["id"]}), 200
+    uid = str(uuid.uuid4())
     users[email] = {
         "id":uid,"name":name,"email":email,"phone":"",
         "role":role,"password_hash":pw_hash,
         "public_key":pub_key,"encrypted_private_key":enc_priv,
         "profile_code":profile_code,
+        "doctor_code": doctor_code,
         "profile_photo_url":"","created_at":datetime.now(timezone.utc).isoformat(),
         "last_login":"","locked":False,"failed_attempts":0,
     }
@@ -1001,12 +1015,17 @@ def internal_register_user_db():
     audit("register_via_legacy", actor=email, detail=role)
     return jsonify({"message":"created","user_id":uid})
 
+
 @app.route("/auth/login", methods=["POST"])
 @rate_limited(max_calls=10, window=60)
 def auth_login():
     body  = request.get_json(force=True) or {}
     email = (body.get("email","") or "").strip().lower()
-    pw_hash = body.get("password_hash","")
+    # Callers send either:
+    #   password_hash  — pre-hashed SHA-256 hex (legacy portals)
+    #   password       — plaintext (new landing.py path)
+    raw_pw   = body.get("password","")
+    pw_hash  = body.get("password_hash","")
 
     users = load_json(USERS_DB_FILE)
     user  = users.get(email)
@@ -1014,8 +1033,34 @@ def auth_login():
         return jsonify({"error":"invalid_credentials"}), 401
     if user.get("locked"):
         return jsonify({"error":"account_locked"}), 403
-    if user.get("password_hash","") != pw_hash:
-        user["failed_attempts"] = user.get("failed_attempts",0) + 1
+
+    # ── Password verification (multi-format) ──────────────────────────────
+    from werkzeug.security import check_password_hash as _wz_check, generate_password_hash as _wz_gen
+
+    stored = user.get("password_hash", "")
+    auth_ok = False
+
+    if stored.startswith("pbkdf2:sha256:") or stored.startswith("scrypt:"):
+        # New werkzeug hash — verify directly with raw password if given
+        if raw_pw:
+            auth_ok = _wz_check(stored, raw_pw)
+        elif pw_hash:
+            # Legacy portal sent SHA-256 hex; we can't reverse-verify against werkzeug hash.
+            # Accept SHA-256 fallback only if we ALSO have the legacy hash stored.
+            # This branch hits if the account was JUST migrated but the portal sent pre-hash.
+            # In practice callers using the new landing.py always send raw_pw.
+            auth_ok = False
+    else:
+        # Legacy SHA-256 hex stored
+        sha_hash = hashlib.sha256(raw_pw.encode()).hexdigest() if raw_pw else pw_hash
+        auth_ok = (stored == sha_hash)
+        if auth_ok and raw_pw:
+            # Silent upgrade: re-hash with werkzeug and persist
+            user["password_hash"] = _wz_gen(raw_pw, method="pbkdf2:sha256", salt_length=16)
+            audit("password_upgraded", actor=email)
+
+    if not auth_ok:
+        user["failed_attempts"] = user.get("failed_attempts", 0) + 1
         if user["failed_attempts"] >= 5:
             user["locked"] = True
             audit("account_locked", actor=email)
@@ -1041,6 +1086,7 @@ def auth_login():
         "message":"ok","role":user["role"],
         "name":user["name"],"user_id":user["id"],
         "profile_code":user.get("profile_code", ""),
+        "doctor_code": user.get("doctor_code", "") or user.get("profile_code","") if user["role"]=="doctor" else "",
         "access_token":access_token,"refresh_token":refresh_token,
         "public_key":user["public_key"],
         "encrypted_private_key":user["encrypted_private_key"],

@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MedVault — Dashboard</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --sidebar-bg: #2a0a5e;
+            --sidebar-w: 240px;
+            --purple: #7c3aed;
+            --purple2: #5b21b6;
+            --purple3: #ede9fe;
+            --purple4: #4a1a8a;
+            --bg: #f5f0ff;
+            --surface: #fff;
+            --surface2: #f8f5ff;
+            --border: #ddd6fe;
+            --text: #1a0a2e;
+            --muted: #7c6a9e;
+            --green: #059669;
+            --red: #dc2626;
+            --amber: #d97706;
+            --radius: 14px;
+            --shadow: 0 2px 12px rgba(60, 20, 100, .10);
+        }
+
+        /* ── Patient green theme ─────────────────────────────────────────── */
+        .patient-theme {
+            --sidebar-bg: #064e3b;
+            --purple: #059669;
+            --purple2: #047857;
+            --purple3: #d1fae5;
+            --purple4: #065f46;
+            --bg: #f0fdf4;
+            --surface: #ffffff;
+            --surface2: #f0fdf4;
+            --border: #a7f3d0;
+            --text: #052e16;
+            --muted: #4b7a63;
+            --shadow: 0 2px 12px rgba(5, 150, 105, .12);
+        }
+
+        .patient-theme .btn-primary,
+        .patient-theme .badge-new,
+        .patient-theme .ov-tile:hover {
+            background: #059669 !important;
+        }
+
+        .patient-theme .nav-btn.active {
+            background: rgba(5, 150, 105, .25) !important;
+        }
+
+        .patient-theme .nav-btn:hover {
+            background: rgba(255, 255, 255, .08) !important;
+        }
+
+        .patient-theme .code-chip {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .patient-theme .record-header {
+            background: linear-gradient(135deg, #059669, #047857) !important;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+        }
+
+        /* ── Sidebar ─────────────────────────────────────────────────── */
+        .sidebar {
+            width: var(--sidebar-w);
+            min-width: var(--sidebar-w);
+            background: var(--sidebar-bg);
+            display: flex;
+            flex-direction: column;
+            padding: 24px 14px;
+            gap: 4px;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 0 6px 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, .15);
+            margin-bottom: 10px;
+        }
+
+        .logo-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, .15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .logo-text h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 16px;
+            color: #fff;
+        }
+
+        .logo-text small {
+            color: rgba(255, 255, 255, .55);
+            font-size: 11px;
+        }
+
+        .role-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .07em;
+            text-transform: uppercase;
+            padding: 2px 8px;
+            border-radius: 20px;
+            margin-top: 3px;
+        }
+
+        .role-patient {
+            background: rgba(16, 185, 129, .25);
+            color: #6ee7b7;
+        }
+
+        .role-doctor {
+            background: rgba(139, 92, 246, .25);
+            color: #c4b5fd;
+        }
+
+        .nav-label {
+            color: rgba(255, 255, 255, .4);
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: .10em;
+            text-transform: uppercase;
+            padding: 14px 8px 4px;
+        }
+
+        .nav-btn {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 10px 12px;
+            border-radius: 9px;
+            cursor: pointer;
+            color: rgba(255, 255, 255, .70);
+            font-size: 13px;
+            font-weight: 400;
+            border: none;
+            background: transparent;
+            width: 100%;
+            text-align: left;
+            transition: all .15s;
+        }
+
+        .nav-btn:hover {
+            background: rgba(255, 255, 255, .10);
+            color: #fff;
+        }
+
+        .nav-btn.active {
+            background: rgba(255, 255, 255, .18);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .nav-btn .ico {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+        }
+
+        .profile-section {
+            margin-top: auto;
+            border-top: 1px solid rgba(255, 255, 255, .15);
+            padding-top: 16px;
+        }
+
+        .profile-pill {
+            padding: 12px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, .10);
+        }
+
+        .profile-pill .pname {
+            color: #fff;
+            font-weight: 600;
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .profile-pill .pemail {
+            color: rgba(255, 255, 255, .50);
+            font-size: 11px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .logout-btn {
+            margin-top: 10px;
+            width: 100%;
+            padding: 9px;
+            border: 1px solid rgba(255, 255, 255, .20);
+            border-radius: 9px;
+            background: transparent;
+            color: rgba(255, 255, 255, .65);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all .15s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255, 255, 255, .10);
+            color: #fff;
+        }
+
+        /* ── Main ────────────────────────────────────────────────────── */
+        .main {
+            flex: 1;
+            min-width: 0;
+            padding: 32px 36px;
+            overflow-x: hidden;
+        }
+
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        .page-head {
+            margin-bottom: 24px;
+        }
+
+        .page-head h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 26px;
+        }
+
+        .page-head p {
+            color: var(--muted);
+            font-size: 13px;
+            margin-top: 3px;
+        }
+
+        /* ── Cards ───────────────────────────────────────────────────── */
+        .card {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 22px 24px;
+            box-shadow: var(--shadow);
+            margin-bottom: 18px;
+            border: 1px solid var(--border);
+        }
+
+        .card-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            margin-bottom: 16px;
+        }
+
+        /* ── Info fields ─────────────────────────────────────────────── */
+        .info-row {
+            display: flex;
+            gap: 12px;
+            padding: 9px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-key {
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            min-width: 130px;
+            padding-top: 2px;
+        }
+
+        .info-val {
+            color: var(--text);
+            font-size: 14px;
+        }
+
+        /* ── Forms ───────────────────────────────────────────────────── */
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
+
+        input[type=password],
+        input[type=text] {
+            width: 100%;
+            max-width: 340px;
+            padding: 10px 12px;
+            background: #f8f5ff;
+            border: 1.5px solid var(--border);
+            border-radius: 9px;
+            font-size: 14px;
+            font-family: 'Inter', sans-serif;
+            color: var(--text);
+            outline: none;
+            transition: border-color .15s;
+        }
+
+        input:focus {
+            border-color: var(--purple);
+        }
+
+        /* ── Buttons ─────────────────────────────────────────────────── */
+        .btn {
+            padding: 10px 20px;
+            border-radius: 9px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            font-family: 'Inter', sans-serif;
+            transition: all .15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #7c3aed, #4a1a8a);
+            color: #fff;
+            box-shadow: 0 3px 12px rgba(124, 58, 237, .30);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(124, 58, 237, .40);
+        }
+
+        .btn-primary:disabled {
+            opacity: .5;
+            transform: none;
+            cursor: not-allowed;
+        }
+
+        .btn-sm {
+            padding: 6px 14px;
+            font-size: 12px;
+        }
+
+        .btn-approve {
+            background: rgba(5, 150, 105, .12);
+            color: var(--green);
+            border: 1px solid rgba(5, 150, 105, .30);
+        }
+
+        .btn-approve:hover {
+            background: rgba(5, 150, 105, .22);
+        }
+
+        .btn-deny {
+            background: rgba(220, 38, 38, .10);
+            color: var(--red);
+            border: 1px solid rgba(220, 38, 38, .25);
+        }
+
+        .btn-deny:hover {
+            background: rgba(220, 38, 38, .20);
+        }
+
+        /* ── Alert ───────────────────────────────────────────────────── */
+        .alert {
+            padding: 10px 14px;
+            border-radius: 9px;
+            font-size: 13px;
+            margin-bottom: 14px;
+        }
+
+        .alert-info {
+            background: #ede9fe;
+            color: #4a1a8a;
+            border: 1px solid #c4b5fd;
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, .10);
+            color: var(--green);
+            border: 1px solid rgba(16, 185, 129, .30);
+        }
+
+        .alert-error {
+            background: rgba(220, 38, 38, .09);
+            color: var(--red);
+            border: 1px solid rgba(220, 38, 38, .25);
+        }
+
+        /* ── Table ───────────────────────────────────────────────────── */
+        .tbl {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .tbl th {
+            text-align: left;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            padding: 8px 12px;
+            background: var(--purple3);
+        }
+
+        .tbl td {
+            padding: 11px 12px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+
+        .tbl tr:last-child td {
+            border-bottom: none;
+        }
+
+        .tbl tr:hover td {
+            background: #faf7ff;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: var(--muted);
+            padding: 32px;
+            font-size: 14px;
+        }
+
+        /* ── Badge ───────────────────────────────────────────────────── */
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-pending {
+            background: rgba(217, 119, 6, .12);
+            color: var(--amber);
+        }
+
+        .badge-note {
+            background: var(--purple3);
+            color: var(--purple2);
+        }
+
+        /* ── Welcome overview tiles ──────────────────────────────────── */
+        .overview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+            gap: 14px;
+            margin-top: 4px;
+        }
+
+        .ov-tile {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 20px 18px;
+            box-shadow: var(--shadow);
+            border: 1.5px solid var(--border);
+            cursor: pointer;
+            transition: all .18s;
+        }
+
+        .ov-tile:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(60, 20, 100, .14);
+            border-color: var(--purple);
+        }
+
+        .ov-tile .ot-icon {
+            font-size: 26px;
+            margin-bottom: 10px;
+        }
+
+        .ov-tile .ot-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .ov-tile .ot-desc {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 3px;
+            line-height: 1.55;
+        }
+
+        .code-chip {
+            display: inline-block;
+            font-family: monospace;
+            font-size: 12px;
+            background: var(--purple3);
+            color: var(--purple2);
+            padding: 4px 10px;
+            border-radius: 6px;
+            letter-spacing: .04em;
+        }
+
+        /* ── Spinner ─────────────────────────────────────────────────── */
+        .spin {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, .40);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: sp .7s linear infinite;
+        }
+
+        .spin-dark {
+            border-color: rgba(100, 60, 180, .25);
+            border-top-color: var(--purple);
+        }
+
+        @keyframes sp {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ── Password modal overlay ──────────────────────────────────── */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-backdrop.show {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 28px;
+            width: 360px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+        }
+
+        .modal h3 {
+            font-family: 'Playfair Display', serif;
+            font-size: 18px;
+            margin-bottom: 6px;
+        }
+
+        .modal p {
+            color: var(--muted);
+            font-size: 13px;
+            margin-bottom: 18px;
+        }
+
+        /* ── Note type select ─ */
+        select {
+            width: 100%;
+            max-width: 340px;
+            padding: 10px 12px;
+            background: #f8f5ff;
+            border: 1.5px solid var(--border);
+            border-radius: 9px;
+            font-size: 14px;
+            font-family: 'Inter', sans-serif;
+            color: var(--text);
+            outline: none;
+        }
+
+        select:focus {
+            border-color: var(--purple);
+        }
+
+        textarea {
+            width: 100%;
+            max-width: 500px;
+            padding: 10px 12px;
+            background: #f8f5ff;
+            border: 1.5px solid var(--border);
+            border-radius: 9px;
+            font-size: 14px;
+            font-family: 'Inter', sans-serif;
+            color: var(--text);
+            outline: none;
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        textarea:focus {
+            border-color: var(--purple);
+        }
+
+        .record-card {
+            background: #f8f5ff;
+            border-radius: var(--radius);
+            border: 1.5px solid var(--border);
+            overflow: hidden;
+            margin-top: 14px;
+        }
+
+        .record-header {
+            background: linear-gradient(135deg, #7c3aed, #4a1a8a);
+            color: #fff;
+            padding: 14px 20px;
+            font-family: 'Playfair Display', serif;
+            font-size: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .record-body {
+            padding: 18px 20px;
+        }
+
+        .access-timer {
+            background: var(--purple3);
+            border-radius: 9px;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 14px;
+            font-size: 13px;
+            color: #4a1a8a;
+            border: 1px solid var(--border);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ╔══════════════ SIDEBAR ══════════════╗ -->
+    <aside class="sidebar">
+        <div class="logo">
+            <div class="logo-icon">{{ '🏥' if role == 'patient' else '🩺' }}</div>
+            <div class="logo-text">
+                <h1>MedVault</h1>
+                <small>{{ role|capitalize }} Portal</small>
+                <div class="role-badge {{ 'role-patient' if role == 'patient' else 'role-doctor' }}">{{ role }}</div>
+            </div>
+        </div>
+
+        <span class="nav-label">Navigation</span>
+        {% if role == 'patient' %}
+        <button class="nav-btn active" onclick="showSection('home')"><span class="ico">🏠</span> Home</button>
+        <button class="nav-btn" onclick="showSection('records')"><span class="ico">📋</span> My Records</button>
+        <button class="nav-btn" onclick="showSection('requests', loadRequests)"><span class="ico">📨</span> Access
+            Requests</button>
+        <button class="nav-btn" onclick="showSection('notes', loadNotes)"><span class="ico">📝</span> Doctor
+            Notes</button>
+        <button class="nav-btn" onclick="showSection('history', loadHistory)"><span class="ico">⏱</span> Login
+            History</button>
+        {% else %}
+        <button class="nav-btn active" onclick="showSection('home')"><span class="ico">🏠</span> Home</button>
+        <button class="nav-btn" onclick="showSection('doc-request')"><span class="ico">📨</span> Request Access</button>
+        <button class="nav-btn" onclick="showSection('doc-records')"><span class="ico">📋</span> Patient
+            Records</button>
+        <button class="nav-btn" onclick="showSection('doc-notes')"><span class="ico">📝</span> Add Note</button>
+        <button class="nav-btn" onclick="showSection('doc-qr')"><span class="ico">📲</span> My QR Code</button>
+        {% endif %}
+
+        <div class="profile-section">
+            <div class="profile-pill">
+                <div class="pname">{{ name }}</div>
+                <div class="pemail">{{ email }}</div>
+            </div>
+            <button class="logout-btn" onclick="location.href='/logout'">↩ Sign Out</button>
+        </div>
+    </aside>
+
+    <!-- ╔══════════════ MAIN ══════════════╗ -->
+    <main class="main">
+
+        <!-- ── HOME ── -->
+        <div class="section active" id="sec-home">
+            <div class="page-head">
+                <h2>Welcome back, {{ name.split()[0] }}! 👋</h2>
+                <p>{{ 'Your encrypted health records — you control everything.' if role=='patient' else 'Consent-gated
+                    access to patient records.' }}</p>
+            </div>
+            <div class="card" style="margin-bottom:20px;">
+                <div class="card-title">Session Info</div>
+                <div class="info-row">
+                    <div class="info-key">Name</div>
+                    <div class="info-val">{{ name }}</div>
+                </div>
+                <div class="info-row">
+                    <div class="info-key">Role</div>
+                    <div class="info-val">{{ role|capitalize }}</div>
+                </div>
+                <div class="info-row">
+                    <div class="info-key">Email</div>
+                    <div class="info-val">{{ email }}</div>
+                </div>
+                {% if profile_code %}
+                <div class="info-row">
+                    <div class="info-key">Profile Code</div>
+                    <div class="info-val"><span class="code-chip">{{ profile_code }}</span> <small
+                            style="color:var(--muted);font-size:11px;"> — save this!</small></div>
+                </div>
+                {% endif %}
+                {% if doctor_code %}
+                <div class="info-row">
+                    <div class="info-key">Doctor Code</div>
+                    <div class="info-val"><span class="code-chip">{{ doctor_code }}</span> <small
+                            style="color:var(--muted);font-size:11px;"> — save this!</small></div>
+                </div>
+                {% endif %}
+                {% if specialization %}
+                <div class="info-row">
+                    <div class="info-key">Specialization</div>
+                    <div class="info-val">
+                        <span
+                            style="background:#ede9fe;color:#4a1a8a;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600;">{{
+                            specialization }}</span>
+                    </div>
+                </div>
+                {% endif %}
+                {% if hospital %}
+                <div class="info-row">
+                    <div class="info-key">Hospital</div>
+                    <div class="info-val">🏥 {{ hospital }}</div>
+                </div>
+                {% endif %}
+            </div>
+            {% if role == 'patient' %}
+            <div class="overview-grid">
+                <div class="ov-tile" onclick="showSection('records')">
+                    <div class="ot-icon">📋</div>
+                    <div class="ot-title">My Records</div>
+                    <div class="ot-desc">View your encrypted health record</div>
+                </div>
+                <div class="ov-tile" onclick="showSection('requests', loadRequests)">
+                    <div class="ot-icon">📨</div>
+                    <div class="ot-title">Access Requests</div>
+                    <div class="ot-desc">Approve or deny doctor access</div>
+                </div>
+                <div class="ov-tile" onclick="showSection('notes', loadNotes)">
+                    <div class="ot-icon">📝</div>
+                    <div class="ot-title">Doctor Notes</div>
+                    <div class="ot-desc">Clinical notes from your doctors</div>
+                </div>
+                <div class="ov-tile" onclick="showSection('history', loadHistory)">
+                    <div class="ot-icon">⏱</div>
+                    <div class="ot-title">Login History</div>
+                    <div class="ot-desc">Recent sign-in activity</div>
+                </div>
+            </div>
+            <div class="alert alert-info" style="margin-top:20px;">🔒 Your private key is secured via Windows DPAPI — it
+                never leaves your device.</div>
+            {% else %}
+            <div class="overview-grid">
+                <div class="ov-tile" onclick="showSection('doc-request')">
+                    <div class="ot-icon">📨</div>
+                    <div class="ot-title">Request Access</div>
+                    <div class="ot-desc">Request patient record access</div>
+                </div>
+                <div class="ov-tile" onclick="showSection('doc-records')">
+                    <div class="ot-icon">📋</div>
+                    <div class="ot-title">Patient Records</div>
+                    <div class="ot-desc">Fetch & decrypt approved records</div>
+                </div>
+                <div class="ov-tile" onclick="showSection('doc-notes')">
+                    <div class="ot-icon">📝</div>
+                    <div class="ot-title">Add Note</div>
+                    <div class="ot-desc">Attach clinical notes to patients</div>
+                </div>
+                <div class="ov-tile" onclick="showSection('doc-qr')">
+                    <div class="ot-icon">📲</div>
+                    <div class="ot-title">My QR Code</div>
+                    <div class="ot-desc">Show QR for instant patient access</div>
+                </div>
+            </div>
+            <div class="alert alert-info" style="margin-top:20px;">🔐 Consent-first system — patient must approve every
+                access request. Access expires in 24 hours.</div>
+            {% endif %}
+        </div>
+
+        {% if role == 'patient' %}
+        <!-- ── MY RECORDS ── -->
+        <div class="section" id="sec-records">
+            <div class="page-head">
+                <h2>📋 My Records</h2>
+                <p>Unlock your encrypted health record with your password.</p>
+            </div>
+            <div class="card">
+                <div class="card-title">Unlock Record</div>
+                <div id="rec-alert"></div>
+                <div class="form-group"><label>Password</label><input type="password" id="rec-pw"
+                        placeholder="Enter your password"></div>
+                <button class="btn btn-primary" onclick="loadRecord()"><span id="rec-btn-txt">Unlock &amp;
+                        View</span></button>
+            </div>
+            <div class="card" id="rec-result" style="display:none;">
+                <div class="card-title">Your Health Record</div>
+                <div id="rec-fields"></div>
+            </div>
+        </div>
+
+        <!-- ── ACCESS REQUESTS ── -->
+        <div class="section" id="sec-requests">
+            <div class="page-head">
+                <h2>📨 Access Requests</h2>
+                <p>Doctors who have requested access to your records.</p>
+            </div>
+            <div id="req-loading" class="card">
+                <div class="spin spin-dark"></div> Loading…
+            </div>
+            <div id="req-list" style="display:none;"></div>
+            <!-- Password modal for approve -->
+            <div class="modal-backdrop" id="approve-modal">
+                <div class="modal">
+                    <h3>Confirm Approval</h3>
+                    <p>Enter your password to grant this doctor access to your records. Access will be valid for 24
+                        hours.</p>
+                    <div id="approve-alert"></div>
+                    <div class="form-group"><label>Password</label><input type="password" id="approve-pw"
+                            placeholder="Your password"></div>
+                    <div style="display:flex;gap:10px;margin-top:6px;">
+                        <button class="btn btn-primary btn-sm" onclick="confirmApprove()"><span
+                                id="approve-btn-txt">Approve Access</span></button>
+                        <button class="btn btn-sm" style="background:var(--border);color:var(--muted);"
+                            onclick="closeApprove()">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── DOCTOR NOTES ── -->
+        <div class="section" id="sec-notes">
+            <div class="page-head">
+                <h2>📝 Doctor Notes</h2>
+                <p>Clinical notes, diagnoses and prescriptions from your doctors.</p>
+            </div>
+            <div id="notes-loading" class="card">
+                <div class="spin spin-dark"></div> Loading…
+            </div>
+            <div id="notes-list" style="display:none;"></div>
+        </div>
+
+        <!-- ── LOGIN HISTORY ── -->
+        <div class="section" id="sec-history">
+            <div class="page-head">
+                <h2>⏱ Login History</h2>
+                <p>Your recent sign-in activity.</p>
+            </div>
+            <div id="hist-loading" class="card">
+                <div class="spin spin-dark"></div> Loading…
+            </div>
+            <div id="hist-list" style="display:none;"></div>
+        </div>
+        {% endif %}
+
+        {% if role == 'doctor' %}
+        <!-- ══════════ DOCTOR SECTIONS ══════════ -->
+
+        <!-- ── REQUEST ACCESS ── -->
+        <div class="section" id="sec-doc-request">
+            <div class="page-head">
+                <h2>📨 Request Patient Access</h2>
+                <p>The patient will be notified and can approve or deny.</p>
+            </div>
+            <div id="dreq-alert"></div>
+            <div class="card">
+                <div class="card-title">Patient Details</div>
+                <div class="form-group"><label>Patient Profile Code *</label><input type="text" id="dreq-pcode"
+                        placeholder="e.g. AB12CD34EF"></div>
+                <div class="form-group"><label>Your Password (to unlock your key)</label><input type="password"
+                        id="dreq-pw" placeholder="Your local password"></div>
+                <button class="btn btn-primary" onclick="docRequestAccess()" id="dreq-btn">📨 Send Access
+                    Request</button>
+            </div>
+            <div class="card" id="dreq-status" style="display:none;">
+                <div class="card-title">Request Status</div>
+                <div id="dreq-status-body"></div>
+            </div>
+        </div>
+
+        <!-- ── PATIENT RECORDS ── -->
+        <div class="section" id="sec-doc-records">
+            <div class="page-head">
+                <h2>📋 Patient Records</h2>
+                <p>View approved patient records. Access expires after 24 hours.</p>
+            </div>
+            <div id="drec-alert"></div>
+            <div class="card">
+                <div class="card-title">Fetch Record</div>
+                <div class="form-group"><label>Patient Profile Code *</label><input type="text" id="drec-pcode"
+                        placeholder="e.g. AB12CD34EF"></div>
+                <div class="form-group"><label>Your Password</label><input type="password" id="drec-pw"
+                        placeholder="Your local password"></div>
+                <button class="btn btn-primary" onclick="docFetchRecord()" id="drec-btn">📋 Fetch & Decrypt
+                    Record</button>
+            </div>
+            <div id="drec-result" style="display:none;"></div>
+        </div>
+
+        <!-- ── ADD NOTE ── -->
+        <div class="section" id="sec-doc-notes">
+            <div class="page-head">
+                <h2>📝 Add Clinical Note</h2>
+                <p>Attach notes to a patient profile. Only works while you have active approved access.</p>
+            </div>
+            <div id="dnote-alert"></div>
+            <div class="alert alert-info">🔒 Every note is stored with your name, doctor code, specialisation, hospital
+                and an exact timestamp.</div>
+            <div class="card">
+                <div class="card-title">Patient & Visit</div>
+                <div class="form-group"><label>Patient Profile Code *</label><input type="text" id="dnote-pcode"
+                        placeholder="e.g. AB12CD34EF"></div>
+                <div class="form-group"><label>Your Password *</label><input type="password" id="dnote-pw"
+                        placeholder="Verify your identity"></div>
+                <div class="form-group">
+                    <label>Note Type</label>
+                    <select id="dnote-type">
+                        <option value="General">General Observation</option>
+                        <option value="Diagnosis">Diagnosis</option>
+                        <option value="Prescription">Prescription / Medication</option>
+                        <option value="FollowUp">Follow-Up Required</option>
+                        <option value="LabResult">Lab / Test Result</option>
+                        <option value="Allergy">Allergy / Adverse Reaction</option>
+                        <option value="Surgical">Surgical Note</option>
+                        <option value="Emergency">Emergency Note</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Visit Date</label><input type="text" id="dnote-date"
+                        placeholder="YYYY-MM-DD"></div>
+                <div class="form-group"><label>Clinical Note *</label><textarea id="dnote-text"
+                        placeholder="Enter clinical observations, diagnosis details…"></textarea></div>
+                <div class="form-group">
+                    <label>Attach Photo (optional)</label>
+                    <input type="file" id="dnote-image" accept="image/*" onchange="previewDnoteImg()"
+                        style="font-size:13px;">
+                    <div id="dnote-img-preview" style="margin-top:8px;display:none;">
+                        <img id="dnote-img-thumb" src=""
+                            style="max-width:200px;max-height:140px;border-radius:8px;border:1.5px solid var(--border);object-fit:cover;">
+                        <button class="btn btn-sm"
+                            style="background:rgba(220,38,38,.1);color:var(--red);border:1px solid rgba(220,38,38,.25);margin-top:6px;"
+                            onclick="clearDnoteImg()">✕ Remove</button>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="docSubmitNote()" id="dnote-btn">📝 Save Note to Patient
+                    Profile</button>
+            </div>
+            <div id="dnote-notes-wrap" style="display:none;">
+                <div class="card">
+                    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+                        <span id="dnote-notes-title">My notes for this patient</span>
+                        <button class="btn btn-sm" style="background:var(--purple3);color:var(--purple);"
+                            onclick="docLoadMyNotes()">↻ Refresh</button>
+                    </div>
+                    <div id="dnote-notes-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── QR CODE ── -->
+        <div class="section" id="sec-doc-qr">
+            <div class="page-head">
+                <h2>📲 Your Doctor QR Code</h2>
+                <p>Show this QR to your patient for instant record access.</p>
+            </div>
+            <div class="card" style="text-align:center;">
+                <div class="card-title">Your Doctor QR</div>
+                <div id="doc-qr-wrap"
+                    style="display:inline-block;padding:16px;background:#fff;border-radius:12px;border:2px solid var(--border);margin:8px 0;">
+                </div>
+                <p style="color:var(--muted);font-size:12px;margin-top:10px;">Patient scans this with their Patient
+                    Portal</p>
+                <button class="btn btn-primary btn-sm" onclick="downloadDocQR()" style="margin-top:10px;">⬇ Download
+                    QR</button>
+            </div>
+            <div class="card">
+                <div class="card-title">Your Doctor Code (share manually)</div>
+                <div id="doc-qr-code"
+                    style="font-family:monospace;font-size:24px;font-weight:700;background:var(--purple3);color:#4a1a8a;padding:16px 24px;border-radius:12px;text-align:center;letter-spacing:.12em;border:2px dashed #7c3aed;">
+                    {{ doctor_code }}</div>
+                <p style="color:var(--muted);font-size:12px;margin-top:10px;">Patient can also type this code manually
+                    in their portal</p>
+            </div>
+            <div class="card">
+                <div class="card-title">How It Works</div>
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                    <div style="display:flex;gap:10px;align-items:flex-start;">
+                        <div
+                            style="width:26px;height:26px;border-radius:50%;background:var(--purple3);color:#4a1a8a;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                            1</div>
+                        <div><strong style="font-size:13px;">Doctor shows QR</strong>
+                            <div style="color:var(--muted);font-size:12px;">Display this QR on your screen or print it
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:flex-start;">
+                        <div
+                            style="width:26px;height:26px;border-radius:50%;background:var(--purple3);color:#4a1a8a;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                            2</div>
+                        <div><strong style="font-size:13px;">Patient scans it</strong>
+                            <div style="color:var(--muted);font-size:12px;">Patient opens their portal → scans your code
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:flex-start;">
+                        <div
+                            style="width:26px;height:26px;border-radius:50%;background:var(--purple3);color:#4a1a8a;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                            3</div>
+                        <div><strong style="font-size:13px;">Patient enters password</strong>
+                            <div style="color:var(--muted);font-size:12px;">Like a UPI PIN — unlocks and transfers the
+                                record</div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:flex-start;">
+                        <div
+                            style="width:26px;height:26px;border-radius:50%;background:var(--purple3);color:#4a1a8a;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                            4</div>
+                        <div><strong style="font-size:13px;">Doctor gets access</strong>
+                            <div style="color:var(--muted);font-size:12px;">Record appears in Patient Records with 24h
+                                access</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% endif %}
+    </main>
+
+
+
+    <script>
+        // ── Section switcher ───────────────────────────────────────────────────────
+        function showSection(name, loadFn) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('sec-' + name).classList.add('active');
+            // highlight sidebar – map section id to the nav button text
+            const _map = {
+                'home': 'home', 'records': 'record', 'requests': 'access', 'notes': 'note', 'history': 'history',
+                'doc-request': 'request access', 'doc-records': 'patient records', 'doc-notes': 'add note', 'doc-qr': 'qr'
+            };
+            const match = (_map[name] || name).toLowerCase();
+            document.querySelectorAll('.nav-btn').forEach(b => {
+                if (b.textContent.trim().toLowerCase().includes(match)) b.classList.add('active');
+            });
+            if (loadFn) loadFn();
+        }
+
+        // ── Helpers ────────────────────────────────────────────────────────────────
+        function showAlert(id, msg, type = 'error') {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+        }
+        function clearAlert(id) { const el = document.getElementById(id); if (el) el.innerHTML = ''; }
+
+        async function api(url, opts = {}) {
+            const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+            const d = await r.json();
+            return { ok: r.ok, status: r.status, data: d };
+        }
+
+        // ── MY RECORDS ─────────────────────────────────────────────────────────────
+        async function loadRecord() {
+            clearAlert('rec-alert');
+            const pw = document.getElementById('rec-pw').value;
+            if (!pw) { showAlert('rec-alert', '⚠️ Enter your password.'); return; }
+            document.getElementById('rec-btn-txt').innerHTML = '<span class="spin"></span> Unlocking…';
+            const { ok, data } = await api('/patient/record', {
+                method: 'POST', body: JSON.stringify({ password: pw })
+            });
+            document.getElementById('rec-btn-txt').textContent = 'Unlock & View';
+            if (!ok) { showAlert('rec-alert', '❌ ' + (data.error || 'Failed')); return; }
+            const rec = data.record || {};
+            const fields = document.getElementById('rec-fields');
+            fields.innerHTML = Object.entries(rec).map(([k, v]) =>
+                `<div class="info-row"><div class="info-key">${k}</div><div class="info-val">${v || '—'}</div></div>`
+            ).join('') || '<div class="empty-state">No record data found.</div>';
+            if (data.profile_code) {
+                fields.innerHTML += `<div class="info-row"><div class="info-key">Profile Code</div><div class="info-val"><span class="code-chip">${data.profile_code}</span></div></div>`;
+            }
+            document.getElementById('rec-result').style.display = 'block';
+        }
+
+        // ── ACCESS REQUESTS ────────────────────────────────────────────────────────
+        let _pendingApprove = null;
+
+        async function loadRequests() {
+            document.getElementById('req-loading').style.display = 'block';
+            document.getElementById('req-list').style.display = 'none';
+            const { ok, data } = await api('/patient/requests');
+            document.getElementById('req-loading').style.display = 'none';
+            const list = document.getElementById('req-list');
+            list.style.display = 'block';
+            const reqs = data.requests || [];
+            if (!ok || !reqs.length) {
+                list.innerHTML = `<div class="card"><div class="empty-state">📭 No pending access requests.</div></div>`;
+                return;
+            }
+            list.innerHTML = `<div class="card"><div class="card-title">Pending Requests (${reqs.length})</div>
+    <table class="tbl"><thead><tr>
+      <th>Doctor Code</th><th>Doctor Name</th><th>Status</th><th>Requested</th><th>Actions</th>
+    </tr></thead><tbody>` +
+                reqs.map(r => `<tr>
+      <td><span class="code-chip">${r.doctor_code || '—'}</span></td>
+      <td>${r.doctor_name || r.doctor_code || '—'}</td>
+      <td><span class="badge badge-pending">${r.status || 'pending'}</span></td>
+      <td>${r.requested_at ? new Date(r.requested_at).toLocaleString('en-IN') : '—'}</td>
+      <td style="display:flex;gap:6px;">
+        <button class="btn btn-approve btn-sm" onclick="openApprove('${r.id || r.request_id || ''}','${r.doctor_code || ''}')">✅ Approve</button>
+        <button class="btn btn-deny btn-sm" onclick="denyRequest('${r.id || r.request_id || ''}','${r.doctor_code || ''}',this)">❌ Deny</button>
+      </td>
+    </tr>`).join('') +
+                `</tbody></table></div>`;
+        }
+
+        function openApprove(reqId, docCode) {
+            _pendingApprove = { reqId, docCode };
+            document.getElementById('approve-pw').value = '';
+            clearAlert('approve-alert');
+            document.getElementById('approve-modal').classList.add('show');
+        }
+        function closeApprove() { document.getElementById('approve-modal').classList.remove('show'); }
+
+        async function confirmApprove() {
+            const pw = document.getElementById('approve-pw').value;
+            if (!pw) { showAlert('approve-alert', '⚠️ Password required.'); return; }
+            document.getElementById('approve-btn-txt').innerHTML = '<span class="spin"></span> Approving…';
+            const { ok, data } = await api('/patient/approve', {
+                method: 'POST',
+                body: JSON.stringify({ password: pw, request_id: _pendingApprove.reqId, doctor_code: _pendingApprove.docCode })
+            });
+            document.getElementById('approve-btn-txt').textContent = 'Approve Access';
+            if (!ok) { showAlert('approve-alert', '❌ ' + (data.error || 'Failed')); return; }
+            closeApprove();
+            loadRequests();
+        }
+
+        async function denyRequest(reqId, docCode, btn) {
+            if (!confirm('Deny this access request?')) return;
+            btn.disabled = true; btn.textContent = '…';
+            const { ok, data } = await api('/patient/deny', {
+                method: 'POST', body: JSON.stringify({ request_id: reqId, doctor_code: docCode })
+            });
+            if (!ok) { alert('Error: ' + (data.error || 'Failed to deny')); btn.disabled = false; btn.textContent = '❌ Deny'; return; }
+            loadRequests();
+        }
+
+        // ── DOCTOR NOTES ───────────────────────────────────────────────────────────
+        async function loadNotes() {
+            document.getElementById('notes-loading').style.display = 'block';
+            document.getElementById('notes-list').style.display = 'none';
+            const { ok, data } = await api('/patient/notes');
+            document.getElementById('notes-loading').style.display = 'none';
+            const list = document.getElementById('notes-list');
+            list.style.display = 'block';
+            if (!ok) {
+                list.innerHTML = `<div class="card"><div class="alert alert-error">❌ Failed to load notes: ${data.error || 'Server error'}</div></div>`;
+                return;
+            }
+            const notes = data.notes || [];
+            if (!notes.length) {
+                list.innerHTML = `<div class="card"><div class="empty-state">📝 No doctor notes yet.</div></div>`;
+                return;
+            }
+            list.innerHTML = notes.map(n => `
+    <div class="card" style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+        <div>
+          <strong>${n.doctor_name || 'Doctor'}</strong>
+          <span class="badge badge-note" style="margin-left:8px;">${n.note_type || 'Note'}</span>
+        </div>
+        <span style="color:var(--muted);font-size:12px;">${n.visit_date || (n.created_at ? new Date(n.created_at).toLocaleDateString('en-IN') : '')}</span>
+      </div>
+      <div style="color:var(--muted);font-size:12px;margin-bottom:6px;">
+        ${n.doctor_specialization ? `<span style="background:#ede9fe;color:#4a1a8a;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600;">${n.doctor_specialization}</span>` : ''}
+        ${n.doctor_hospital ? `<span style="margin-left:6px;">🏥 ${n.doctor_hospital}</span>` : ''}
+      </div>
+      <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;">${n.note || ''}</div>
+      ${n.image_filename ? imgCard('/patient/note_image/' + n.image_filename, n.image_filename) : ''}
+    </div>`).join('');
+        }
+
+        // ── LOGIN HISTORY ──────────────────────────────────────────────────────────
+        async function loadHistory() {
+            document.getElementById('hist-loading').style.display = 'block';
+            document.getElementById('hist-list').style.display = 'none';
+            const { ok, data } = await api('/patient/history');
+            document.getElementById('hist-loading').style.display = 'none';
+            const list = document.getElementById('hist-list');
+            list.style.display = 'block';
+            const hist = data.history || [];
+            if (!hist.length) {
+                list.innerHTML = `<div class="card"><div class="empty-state">⏱ No login history found.</div></div>`;
+                return;
+            }
+            list.innerHTML = `<div class="card"><div class="card-title">Recent Logins (${hist.length})</div>
+    <table class="tbl"><thead><tr><th>Date &amp; Time</th><th>IP Address</th></tr></thead><tbody>` +
+                hist.slice().reverse().map(h => `<tr>
+      <td>${new Date(h.ts || h.timestamp || '').toLocaleString('en-IN')}</td>
+      <td>${h.ip || '—'}</td>
+    </tr>`).join('') + `</tbody></table></div>`;
+        }
+
+        // Close modal on backdrop click
+        document.getElementById('approve-modal')?.addEventListener('click', e => {
+            if (e.target === e.currentTarget) closeApprove();
+        });
+
+        // ═══════════════════════════════════════════════════════════════════════
+        //  DOCTOR FUNCTIONS
+        // ═══════════════════════════════════════════════════════════════════════
+
+        const _ROLE = '{{ role }}';
+        const _DOC_CODE = '{{ doctor_code }}';
+        const _NAME = '{{ name }}';
+
+        // Apply role-specific colour theme
+        if (_ROLE === 'patient') document.body.classList.add('patient-theme');
+
+        // -- Section switcher fix for doctor pages --
+        const _origShow = showSection;
+        showSection = function (name, loadFn) {
+            _origShow(name, loadFn);
+            if (name === 'doc-qr') initDocQR();
+            if (name === 'doc-notes') { const d = document.getElementById('dnote-date'); if (d && !d.value) d.value = new Date().toISOString().slice(0, 10); }
+        };
+
+        // -- Request Access --
+        async function docRequestAccess() {
+            clearAlert('dreq-alert');
+            const pcode = document.getElementById('dreq-pcode').value.trim();
+            const pw = document.getElementById('dreq-pw').value;
+            if (!pcode) { showAlert('dreq-alert', '⚠️ Patient code required.'); return; }
+            if (!pw) { showAlert('dreq-alert', '⚠️ Password required.'); return; }
+            const btn = document.getElementById('dreq-btn');
+            btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Sending…';
+            try {
+                const { ok, data } = await api('/doctor/request_access', { method: 'POST', body: JSON.stringify({ patient_code: pcode, password: pw }) });
+                if (!ok) throw new Error(data.error || 'Failed');
+                showAlert('dreq-alert', '✅ Request sent! The patient will be notified.', 'success');
+                document.getElementById('dreq-status').style.display = 'block';
+                document.getElementById('dreq-status-body').innerHTML = `
+                    <div class="info-row"><div class="info-key">Request ID</div><div class="info-val"><span class="code-chip">${data.request_id || '—'}</span></div></div>
+                    <div class="info-row"><div class="info-key">Patient Code</div><div class="info-val">${pcode}</div></div>
+                    <div class="info-row"><div class="info-key">Status</div><div class="info-val"><span class="badge badge-pending">⏳ Pending</span></div></div>`;
+            } catch (e) { showAlert('dreq-alert', '❌ ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = '📨 Send Access Request'; }
+        }
+
+        // -- Fetch & Decrypt Record --
+        // Countdown timer handle for access expiry
+        let _expiryTimer = null;
+
+        function _startExpiryCountdown(expiresAt, elId) {
+            if (_expiryTimer) clearInterval(_expiryTimer);
+            const el = document.getElementById(elId);
+            if (!el || !expiresAt) return;
+            const expTs = new Date(expiresAt).getTime();
+            function _tick() {
+                const now = Date.now();
+                const diff = expTs - now;
+                if (diff <= 0) {
+                    clearInterval(_expiryTimer);
+                    el.innerHTML = '⏱ Access <strong style="color:var(--red)">EXPIRED</strong> — patient must re-approve.';
+                    el.style.background = 'rgba(220,38,38,.08)';
+                    el.style.borderColor = 'rgba(220,38,38,.25)';
+                    return;
+                }
+                const h = Math.floor(diff / 3600000);
+                const m = Math.floor((diff % 3600000) / 60000);
+                const s = Math.floor((diff % 60000) / 1000);
+                const hh = String(h).padStart(2, '0');
+                const mm = String(m).padStart(2, '0');
+                const ss = String(s).padStart(2, '0');
+                const color = diff < 3600000 ? 'var(--red)' : diff < 7200000 ? 'var(--amber)' : '#4a1a8a';
+                el.innerHTML = `⏱ Access expires in: <strong style="color:${color};font-variant-numeric:tabular-nums;">${hh}:${mm}:${ss}</strong> &nbsp;<span style="color:var(--muted);font-size:11px;">(${new Date(expiresAt).toLocaleString('en-IN')})</span>`;
+            }
+            _tick();
+            _expiryTimer = setInterval(_tick, 1000);
+        }
+
+        async function docFetchRecord() {
+            clearAlert('drec-alert');
+            const pcode = document.getElementById('drec-pcode').value.trim();
+            const pw = document.getElementById('drec-pw').value;
+            if (!pcode || !pw) { showAlert('drec-alert', '⚠️ Patient code and password required.'); return; }
+            const btn = document.getElementById('drec-btn');
+            btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Fetching &amp; decrypting…';
+            document.getElementById('drec-result').style.display = 'none';
+            try {
+                // Fetch record metadata (crypto verification, access check, expiry)
+                const { ok, data } = await api('/doctor/fetch_record', { method: 'POST', body: JSON.stringify({ patient_code: pcode, password: pw }) });
+                if (!ok) throw new Error(data.error || 'Failed');
+                const rec = data.record || {};
+
+                // Fetch notes from patient's LOCAL device (notes are deleted from
+                // server once patient views them — this is by design for decentralisation)
+                let notes = [];
+                try {
+                    const nr = await fetch(`/doctor/patient_notes/${pcode}`);
+                    const nd = await nr.json();
+                    notes = nd.notes || [];
+                } catch (_) {
+                    // fallback: use notes from fetch_record response (may be empty)
+                    notes = data.notes || [];
+                }
+
+                const result = document.getElementById('drec-result');
+                result.style.display = 'block';
+
+                // ── Record card ──────────────────────────────────────────────
+                const recRows = Object.entries(rec).filter(([k, v]) => v).map(([k, v]) =>
+                    `<div class="info-row"><div class="info-key">${k}</div><div class="info-val">${v}</div></div>`
+                ).join('');
+
+                // ── Notes section ────────────────────────────────────────────
+                const noteCards = notes.length === 0
+                    ? `<div class="empty-state" style="padding:24px;">📝 No previous notes for this patient.</div>`
+                    : notes.map(n => {
+                        const dateStr = n.visit_date || (n.created_at ? new Date(n.created_at).toLocaleDateString('en-IN') : '—');
+                        const timeStr = n.created_at ? new Date(n.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
+                        // Images live on patient device; proxy them through the patient note image route
+                        const imgHtml = n.image_filename
+                            ? imgCard('/patient/note_image/' + n.image_filename, n.image_filename)
+                            : '';
+                        return `
+                        <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:12px;">
+                          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                              <span style="font-size:22px;">👨‍⚕️</span>
+                              <div>
+                                <div style="font-weight:700;font-size:15px;">${n.doctor_name || 'Unknown Doctor'}</div>
+                                <div style="color:var(--muted);font-size:12px;">
+                                  ${n.doctor_specialization ? `<span style="background:#ede9fe;color:#4a1a8a;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600;">${n.doctor_specialization}</span>` : ''}
+                                  ${n.doctor_hospital ? `<span style="margin-left:6px;">🏥 ${n.doctor_hospital}</span>` : ''}
+                                </div>
+                              </div>
+                            </div>
+                            <div style="text-align:right;">
+                              <div style="font-size:13px;font-weight:600;color:var(--fg);">📅 ${dateStr}</div>
+                              ${timeStr ? `<div style="color:var(--muted);font-size:11px;">${timeStr}</div>` : ''}
+                            </div>
+                          </div>
+                          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                            <span class="badge" style="background:#e8f5ee;color:#166534;">${n.note_type || 'Note'}</span>
+                            <span style="color:var(--muted);font-size:11px;">Doctor Code: <code>${n.doctor_code || '—'}</code></span>
+                          </div>
+                          <div style="font-size:14px;line-height:1.7;white-space:pre-wrap;border-top:1px solid var(--border);padding-top:10px;">${n.note || n.note_text || ''}</div>
+                          ${imgHtml}
+                        </div>`;
+                    }).join('');
+
+                // Expiry comes from fetch_record; also try direct expiry endpoint
+                let expiresAt = data.expires_at || null;
+                if (!expiresAt) {
+                    try {
+                        const er = await fetch(`/doctor/access_expiry/${pcode}`);
+                        const ed = await er.json();
+                        expiresAt = ed.expires_at || null;
+                    } catch (_) { }
+                }
+
+                result.innerHTML = `
+                    <div class="access-timer" id="drec-expiry-bar">⏱ Checking access expiry…</div>
+                    <div class="record-card">
+                        <div class="record-header"><span>🏥 Patient Record</span><span style="font-size:12px;opacity:.8;">Profile: ${pcode}</span></div>
+                        <div class="record-body">
+                            ${recRows || '<div class="empty-state">No record data.</div>'}
+                            <div class="info-row"><div class="info-key">Signature</div><div class="info-val" style="color:${data.sig_valid ? 'var(--green)' : 'var(--red)'};">` +
+                    `${data.sig_valid ? '✅ Verified — data has not been tampered' : '⚠️ Signature invalid'}</div></div>
+                        </div>
+                    </div>
+                    <div style="margin-top:24px;">
+                        <div class="card-title" style="font-size:15px;margin-bottom:14px;">📝 Previous Clinical Notes (${notes.length})</div>
+                        ${noteCards}
+                    </div>`;
+
+                // Start live countdown timer AFTER innerHTML is set
+                if (expiresAt) {
+                    _startExpiryCountdown(expiresAt, 'drec-expiry-bar');
+                } else {
+                    const eb = document.getElementById('drec-expiry-bar');
+                    if (eb) eb.innerHTML = '⏱ Access expires: <strong>Unknown</strong>';
+                }
+
+            } catch (e) { showAlert('drec-alert', '❌ ' + e.message); }
+            finally { btn.disabled = false; btn.innerHTML = '📋 Fetch &amp; Decrypt Record'; }
+        }
+
+        // -- Add Note --
+        function previewDnoteImg() {
+            const file = document.getElementById('dnote-image').files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = e => { document.getElementById('dnote-img-thumb').src = e.target.result; document.getElementById('dnote-img-preview').style.display = 'block'; };
+            reader.readAsDataURL(file);
+        }
+        function clearDnoteImg() {
+            document.getElementById('dnote-image').value = '';
+            document.getElementById('dnote-img-thumb').src = '';
+            document.getElementById('dnote-img-preview').style.display = 'none';
+        }
+
+        async function docSubmitNote() {
+            clearAlert('dnote-alert');
+            const pcode = document.getElementById('dnote-pcode').value.trim();
+            const pw = document.getElementById('dnote-pw').value;
+            const noteType = document.getElementById('dnote-type').value;
+            const noteText = document.getElementById('dnote-text').value.trim();
+            const noteDate = document.getElementById('dnote-date').value;
+            if (!pcode) { showAlert('dnote-alert', '⚠️ Patient code required.'); return; }
+            if (!pw) { showAlert('dnote-alert', '⚠️ Password required.'); return; }
+            if (!noteText) { showAlert('dnote-alert', '⚠️ Note text required.'); return; }
+
+            let image_b64 = '', image_type = '';
+            const imgFile = document.getElementById('dnote-image').files[0];
+            if (imgFile) {
+                image_type = imgFile.type || 'image/jpeg';
+                image_b64 = await new Promise(res => { const r = new FileReader(); r.onload = e => res(e.target.result.split(',')[1]); r.readAsDataURL(imgFile); });
+            }
+
+            const btn = document.getElementById('dnote-btn');
+            btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Saving…';
+            try {
+                const { ok, data } = await api('/doctor/add_note', {
+                    method: 'POST', body: JSON.stringify({
+                        patient_code: pcode, password: pw, note_type: noteType, note_text: noteText, visit_date: noteDate, image_b64, image_type
+                    })
+                });
+                if (!ok) throw new Error(data.error || 'Failed');
+                showAlert('dnote-alert', `✅ Note saved! ID: <span style="font-family:monospace;font-size:12px;">${data.note_id || ''}</span>`, 'success');
+                document.getElementById('dnote-text').value = ''; clearDnoteImg();
+                document.getElementById('dnote-notes-wrap').style.display = 'block';
+                docLoadMyNotes();
+            } catch (e) { showAlert('dnote-alert', '❌ ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = '📝 Save Note to Patient Profile'; }
+        }
+
+        async function docLoadMyNotes() {
+            const pcode = document.getElementById('dnote-pcode').value.trim(); if (!pcode) return;
+            document.getElementById('dnote-notes-title').textContent = `My notes for patient ${pcode}`;
+            const box = document.getElementById('dnote-notes-list');
+            box.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px 0;">Loading…</div>';
+            try {
+                // Read from patient's LOCAL device — notes are deleted from server once patient views them
+                const res = await fetch(`/doctor/patient_notes/${pcode}`);
+                const nd = await res.json();
+                let notes = nd.notes || [];
+                // Filter to only this doctor's notes
+                if (_DOC_CODE) notes = notes.filter(n => n.doctor_code === _DOC_CODE);
+                if (!notes.length) { box.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px 0;">No notes yet.</div>'; return; }
+                const NTL = { General: 'General', Diagnosis: 'Diagnosis', Prescription: 'Prescription', FollowUp: 'Follow-Up', LabResult: 'Lab Result', Allergy: 'Allergy', Surgical: 'Surgical', Emergency: 'Emergency' };
+                box.innerHTML = notes.map(n => `
+                    <div style="border:1.5px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:10px;background:#f8f5ff;">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+                            <div><span class="badge badge-note">${NTL[n.note_type] || n.note_type}</span>${n.visit_date ? ` <span style="color:var(--muted);font-size:12px;">📅 ${n.visit_date}</span>` : ''}</div>
+                            <span style="color:var(--muted);font-size:11px;">${n.created_at ? new Date(n.created_at).toLocaleString('en-IN') : ''}</span>
+                        </div>
+                        <p style="font-size:13px;line-height:1.6;white-space:pre-wrap;">${(n.note_text || n.note || '').replace(/</g, '&lt;')}</p>
+                        ${n.image_filename ? imgCard('/patient/note_image/' + n.image_filename, n.image_filename) : ''}
+                        <div style="font-size:11px;color:var(--muted);margin-top:6px;font-style:italic;">⚠️ Notes saved on patient device — delete not available once synced locally.</div>
+                    </div>`).join('');
+            } catch (e) { box.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`; }
+        }
+
+        async function docDeleteNote(noteId) {
+            if (!confirm('Delete this note?')) return;
+            const pw = prompt('Enter your password to confirm:'); if (!pw) return;
+            try {
+                const { ok, data } = await api(`/doctor/delete_note/${noteId}`, { method: 'DELETE', body: JSON.stringify({ password: pw }) });
+                if (!ok) throw new Error(data.error || 'Delete failed');
+                docLoadMyNotes();
+            } catch (e) { alert('❌ ' + e.message); }
+        }
+
+        // -- QR Code --
+        let _qrDone = false;
+        function initDocQR() {
+            if (_ROLE !== 'doctor' || !_DOC_CODE) return;
+            const wrap = document.getElementById('doc-qr-wrap'); if (!wrap) return;
+            wrap.innerHTML = '';
+            const qrData = JSON.stringify({ type: 'medvault_doctor', doctor_code: _DOC_CODE, doctor_name: _NAME });
+            if (window.QRCode) {
+                new QRCode(wrap, { text: qrData, width: 220, height: 220, colorDark: '#4a1a8a', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H });
+                _qrDone = true;
+            } else {
+                setTimeout(() => {
+                    if (window.QRCode && !_qrDone) { wrap.innerHTML = ''; new QRCode(wrap, { text: qrData, width: 220, height: 220, colorDark: '#4a1a8a', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H }); _qrDone = true; }
+                    else if (!window.QRCode) { wrap.innerHTML = `<div style="padding:14px;background:var(--purple3);border-radius:8px;font-family:monospace;font-size:11px;word-break:break-all;">${qrData}</div>`; }
+                }, 600);
+            }
+        }
+        function downloadDocQR() {
+            const c = document.querySelector('#doc-qr-wrap canvas'); if (!c) return alert('QR not generated.');
+            const a = document.createElement('a'); a.download = 'doctor_qr_' + _DOC_CODE + '.png'; a.href = c.toDataURL(); a.click();
+        }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+        onerror="console.warn('QR lib unavailable')"></script>
+
+    <!-- ── Image lightbox ──────────────────────────────────────────────── -->
+    <div id="img-lightbox" onclick="if(event.target===this)closeLightbox()" style="
+        display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9999;
+        flex-direction:column;align-items:center;justify-content:center;gap:16px;">
+        <div style="display:flex;gap:12px;">
+            <button onclick="closeLightbox()" style="background:#fff2;color:#fff;border:none;border-radius:8px;
+            padding:8px 20px;font-size:14px;cursor:pointer;">✕ Close</button>
+            <button id="lb-download-btn" onclick="downloadUpscaled()" style="background:var(--purple);
+            color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:14px;cursor:pointer;">⬇ Download
+                (2×)</button>
+        </div>
+        <img id="lb-img" style="max-width:90vw;max-height:80vh;border-radius:12px;
+          image-rendering:crisp-edges;box-shadow:0 8px 40px rgba(0,0,0,.6);" alt="preview">
+        <canvas id="lb-canvas" style="display:none;"></canvas>
+    </div>
+    <script>
+        // ── Image helpers ───────────────────────────────────────────────
+        function imgCard(src, filename) {
+            const safe = src.replace(/"/g, '&quot;');
+            const name = (filename || 'image').replace(/"/g, '');
+            return `
+            <div style="margin-top:12px;">
+              <img src="${safe}" style="max-width:100%;max-height:280px;border-radius:10px;
+                  border:1.5px solid var(--border);object-fit:contain;display:block;cursor:zoom-in;"
+                  onerror="this.parentElement.style.display='none'"
+                  onclick="openLightbox('${safe}','${name}')"
+                  alt="attached image">
+              <div style="display:flex;gap:8px;margin-top:8px;">
+                <button class="btn btn-outline btn-sm" style="font-size:12px;padding:5px 12px;"
+                    onclick="openLightbox('${safe}','${name}')">🔍 Preview</button>
+                <button class="btn btn-outline btn-sm" style="font-size:12px;padding:5px 12px;"
+                    onclick="downloadUpscaledFrom('${safe}','${name}')">⬇ Download (2×)</button>
+              </div>
+            </div>`;
+        }
+
+        function openLightbox(src, filename) {
+            const lb = document.getElementById('img-lightbox');
+            const img = document.getElementById('lb-img');
+            img.src = src;
+            img.dataset.filename = filename;
+            lb.style.display = 'flex';
+        }
+        function closeLightbox() {
+            document.getElementById('img-lightbox').style.display = 'none';
+        }
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+        function downloadUpscaledFrom(src, filename) {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                const canvas = document.getElementById('lb-canvas');
+                canvas.width = img.naturalWidth * 2;
+                canvas.height = img.naturalHeight * 2;
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                const a = document.createElement('a');
+                a.download = '2x_' + (filename || 'image.png');
+                a.href = canvas.toDataURL('image/png');
+                a.click();
+            };
+            img.src = src;
+        }
+        function downloadUpscaled() {
+            const img = document.getElementById('lb-img');
+            downloadUpscaledFrom(img.src, img.dataset.filename || 'image.png');
+        }
+    </script>
+</body>
+
+</html>

@@ -1,154 +1,168 @@
 """
 common/secure_key_store.py
 ==========================
-Production-level RSA private key storage using Windows Credential Manager
-(DPAPI-backed) via the `keyring` library.
+RSA private key storage using Windows DPAPI via ctypes.
 
-Security properties
--------------------
-* Private key PEM bytes are base64-encoded and stored as a Windows Credential.
-* DPAPI encrypts the value using the current Windows user's SID + machine key.
-* Copying the project folder to another machine or user account yields an
-  unusable credential — decryption will fail silently and the key cannot be
-  extracted from the credential blob without the original Windows user session.
-* The decrypted private key exists only in process memory during the request
-  that needs it; it is never written to disk.
-* No silent plaintext fallback exists. Missing credentials raise a
-  clear KeyError so callers can surface a meaningful error to the user.
+Keys are encrypted with CryptProtectData (tied to current Windows user/machine)
+and stored as .dpapi files in %LOCALAPPDATA%\\MedVault\\keys\\.
 
-Why NOT the old approach
-------------------------
-plain `patient_private.pem`   → readable by any process with filesystem access.
-`doctor_private_wrapped.b64`  → stores a KEK-wrapped key; still a file target
-                                 for offline brute-force of the password.
+This avoids the 2560-byte size limit of Windows Credential Manager that causes
+CredWrite error 1783 with large RSA keys.
 """
 
-import base64
+import ctypes
+import ctypes.wintypes
 import logging
-from typing import Optional
-
-try:
-    import keyring
-    import keyring.errors
-    _KEYRING_AVAILABLE = True
-except ImportError:                          # pragma: no cover
-    _KEYRING_AVAILABLE = False
+import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# One service identifier shared across the whole app so all credentials are
-# grouped together in Windows Credential Manager under "medvault".
-_SERVICE = "medvault"
+# ── Storage location (outside project folder) ────────────────────────────────
+_KEYS_DIR = Path(
+    os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")
+) / "MedVault" / "keys"
 
 
-def _assert_keyring() -> None:
-    """Raise RuntimeError if keyring is not importable."""
-    if not _KEYRING_AVAILABLE:
-        raise RuntimeError(
-            "keyring library is not installed. "
-            "Run:  pip install keyring"
-        )
+# ── DPAPI via ctypes ─────────────────────────────────────────────────────────
 
+class _DATA_BLOB(ctypes.Structure):
+    _fields_ = [
+        ("cbData", ctypes.wintypes.DWORD),
+        ("pbData", ctypes.POINTER(ctypes.c_char)),
+    ]
+
+
+_crypt32 = ctypes.windll.crypt32
+_kernel32 = ctypes.windll.kernel32
+
+# BOOL CryptProtectData(DATA_BLOB*, LPCWSTR, DATA_BLOB*, PVOID, PVOID, DWORD, DATA_BLOB*)
+_crypt32.CryptProtectData.argtypes = [
+    ctypes.POINTER(_DATA_BLOB),  # pDataIn
+    ctypes.c_wchar_p,            # szDataDescr
+    ctypes.POINTER(_DATA_BLOB),  # pOptionalEntropy
+    ctypes.c_void_p,             # pvReserved
+    ctypes.c_void_p,             # pPromptStruct
+    ctypes.wintypes.DWORD,       # dwFlags
+    ctypes.POINTER(_DATA_BLOB),  # pDataOut
+]
+_crypt32.CryptProtectData.restype = ctypes.wintypes.BOOL
+
+# BOOL CryptUnprotectData(DATA_BLOB*, LPWSTR*, DATA_BLOB*, PVOID, PVOID, DWORD, DATA_BLOB*)
+_crypt32.CryptUnprotectData.argtypes = [
+    ctypes.POINTER(_DATA_BLOB),  # pDataIn
+    ctypes.POINTER(ctypes.c_wchar_p),  # ppszDataDescr
+    ctypes.POINTER(_DATA_BLOB),  # pOptionalEntropy
+    ctypes.c_void_p,             # pvReserved
+    ctypes.c_void_p,             # pPromptStruct
+    ctypes.wintypes.DWORD,       # dwFlags
+    ctypes.POINTER(_DATA_BLOB),  # pDataOut
+]
+_crypt32.CryptUnprotectData.restype = ctypes.wintypes.BOOL
+
+
+def _dpapi_encrypt(data: bytes) -> bytes:
+    """Encrypt bytes using DPAPI (current-user scope)."""
+    data_in = _DATA_BLOB(len(data), ctypes.create_string_buffer(data, len(data)))
+    data_out = _DATA_BLOB()
+
+    ok = _crypt32.CryptProtectData(
+        ctypes.byref(data_in),
+        "MedVault",          # description
+        None,                # no entropy
+        None,                # reserved
+        None,                # no prompt
+        0,                   # flags = user scope
+        ctypes.byref(data_out),
+    )
+    if not ok:
+        raise OSError(f"CryptProtectData failed (error {ctypes.GetLastError()})")
+
+    try:
+        encrypted = ctypes.string_at(data_out.pbData, data_out.cbData)
+    finally:
+        _kernel32.LocalFree(data_out.pbData)
+
+    return encrypted
+
+
+def _dpapi_decrypt(blob: bytes) -> bytes:
+    """Decrypt a DPAPI blob; returns plaintext bytes."""
+    data_in = _DATA_BLOB(len(blob), ctypes.create_string_buffer(blob, len(blob)))
+    data_out = _DATA_BLOB()
+    desc = ctypes.c_wchar_p()
+
+    ok = _crypt32.CryptUnprotectData(
+        ctypes.byref(data_in),
+        ctypes.byref(desc),
+        None,                # no entropy
+        None,                # reserved
+        None,                # no prompt
+        0,                   # flags
+        ctypes.byref(data_out),
+    )
+    if not ok:
+        raise OSError(f"CryptUnprotectData failed (error {ctypes.GetLastError()})")
+
+    try:
+        decrypted = ctypes.string_at(data_out.pbData, data_out.cbData)
+    finally:
+        _kernel32.LocalFree(data_out.pbData)
+
+    return decrypted
+
+
+def _safe_filename(credential_id: str) -> str:
+    """Convert credential ID to a safe filename."""
+    return (credential_id
+            .replace(":", "_")
+            .replace("/", "_")
+            .replace("\\", "_")
+            .replace(" ", "_")) + ".dpapi"
+
+
+# ── Public API ───────────────────────────────────────────────────────────────
 
 class SecureKeyStore:
     """
-    Namespaced wrapper around Windows Credential Manager for RSA private keys.
+    DPAPI-backed key storage.
 
-    Usage
-    -----
-    # During registration (key in memory, never touched a file):
-    SecureKeyStore.store_private_key("patient:f608wctx", priv_pem_bytes)
-
-    # During any operation that needs decryption:
-    priv_pem = SecureKeyStore.load_private_key("patient:f608wctx")
-    priv     = rsa_load_private(priv_pem)
-    # ... use priv, then let it go out of scope (GC clears memory)
-
-    # On explicit deletion / account removal:
-    SecureKeyStore.delete_private_key("patient:f608wctx")
+    Usage:
+        SecureKeyStore.store_private_key("patient__ABCD1234", pem_bytes)
+        pem = SecureKeyStore.load_private_key("patient__ABCD1234")
+        SecureKeyStore.delete_private_key("patient__ABCD1234")
     """
 
     @staticmethod
     def store_private_key(credential_id: str, pem_bytes: bytes) -> None:
-        """
-        Store RSA private key PEM bytes in Windows Credential Manager.
-
-        Parameters
-        ----------
-        credential_id : str
-            Unique identifier, e.g. "patient:<profile_code>" or
-            "doctor:<doctor_code>".
-        pem_bytes : bytes
-            Raw PEM-encoded private key (e.g. from rsa_serialize_private()).
-
-        Raises
-        ------
-        RuntimeError
-            If keyring is not installed.
-        keyring.errors.KeyringError
-            If Windows Credential Manager is unavailable.
-        """
-        _assert_keyring()
         if not isinstance(pem_bytes, (bytes, bytearray)):
             raise TypeError("pem_bytes must be bytes")
-        # base64-encode so the credential value is ASCII-safe
-        encoded = base64.b64encode(pem_bytes).decode("ascii")
-        keyring.set_password(_SERVICE, credential_id, encoded)
-        logger.info("[SecureKeyStore] stored key for '%s'", credential_id)
+        _KEYS_DIR.mkdir(parents=True, exist_ok=True)
+        encrypted = _dpapi_encrypt(bytes(pem_bytes))
+        path = _KEYS_DIR / _safe_filename(credential_id)
+        path.write_bytes(encrypted)
+        logger.info("[SecureKeyStore] key stored → %s", path)
 
     @staticmethod
     def load_private_key(credential_id: str) -> bytes:
-        """
-        Load RSA private key PEM bytes from Windows Credential Manager.
-
-        Parameters
-        ----------
-        credential_id : str
-            Same identifier used in store_private_key().
-
-        Returns
-        -------
-        bytes
-            Raw PEM bytes, ready to pass to rsa_load_private().
-
-        Raises
-        ------
-        KeyError
-            If no credential with this ID exists (e.g. re-registered elsewhere).
-        RuntimeError
-            If keyring is not installed.
-        """
-        _assert_keyring()
-        encoded: Optional[str] = keyring.get_password(_SERVICE, credential_id)
-        if encoded is None:
+        path = _KEYS_DIR / _safe_filename(credential_id)
+        if not path.exists():
             raise KeyError(
-                f"Private key '{credential_id}' not found in Windows Credential "
-                "Manager. The key may have been deleted or this account was "
-                "registered on a different machine/user. Please re-register."
+                f"Key '{credential_id}' not found at {path}. "
+                "The key may have been deleted or registered on another "
+                "machine/user. Please re-register."
             )
-        return base64.b64decode(encoded)
+        return _dpapi_decrypt(path.read_bytes())
 
     @staticmethod
     def exists(credential_id: str) -> bool:
-        """Return True if a credential for this ID exists in the store."""
-        _assert_keyring()
-        return keyring.get_password(_SERVICE, credential_id) is not None
+        return (_KEYS_DIR / _safe_filename(credential_id)).exists()
 
     @staticmethod
     def delete_private_key(credential_id: str) -> None:
-        """
-        Remove a credential from Windows Credential Manager.
-
-        Safe to call even if the credential does not exist.
-
-        Parameters
-        ----------
-        credential_id : str
-            Same identifier used in store_private_key().
-        """
-        _assert_keyring()
+        path = _KEYS_DIR / _safe_filename(credential_id)
         try:
-            keyring.delete_password(_SERVICE, credential_id)
-            logger.info("[SecureKeyStore] deleted key for '%s'", credential_id)
-        except keyring.errors.PasswordDeleteError:
-            pass   # already absent; treat as success
+            path.unlink()
+            logger.info("[SecureKeyStore] deleted → %s", path)
+        except FileNotFoundError:
+            pass

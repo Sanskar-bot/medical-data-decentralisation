@@ -79,6 +79,40 @@ def rsa_unwrap_key(priv, ct_b64: str) -> bytes:
         )
     )
 
+def rsa_hybrid_encrypt(pub, plaintext: bytes) -> str:
+    """
+    Hybrid encrypt: generate random AES key, encrypt data with AES-GCM,
+    then RSA-wrap the AES key.  Returns base64 string of:
+      RSA_wrapped_key(256) || nonce(12) || AES-GCM-ciphertext
+    Safe for any plaintext size.
+    """
+    aes_key = os.urandom(32)
+    aesgcm  = AESGCM(aes_key)
+    nonce   = os.urandom(12)
+    ct      = aesgcm.encrypt(nonce, plaintext, None)
+    wrapped = pub.encrypt(
+        aes_key,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None
+        )
+    )
+    return b64encode(wrapped + nonce + ct).decode()
+
+def rsa_hybrid_decrypt(priv, blob_b64: str) -> bytes:
+    """Decrypt a blob produced by rsa_hybrid_encrypt."""
+    raw = b64decode(blob_b64)
+    key_size = priv.key_size // 8   # 256 for RSA-2048
+    wrapped_key = raw[:key_size]
+    nonce       = raw[key_size:key_size+12]
+    ct          = raw[key_size+12:]
+    aes_key = priv.decrypt(
+        wrapped_key,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None
+        )
+    )
+    return AESGCM(aes_key).decrypt(nonce, ct, None)
+
 # ---------- Sign / verify (RSA-PSS with SHA256) ----------
 def rsa_sign(priv, data: bytes) -> str:
     sig = priv.sign(

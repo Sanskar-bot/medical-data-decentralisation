@@ -4,8 +4,9 @@ MedVault — START.py
 Run this one file to launch the entire system.
 
   Backend API     → http://127.0.0.1:5000
-  Patient Portal  → http://127.0.0.1:5001
-  Doctor Portal   → http://127.0.0.1:5002
+  Landing Page    → http://127.0.0.1:5003  ← entry point (login / sign up)
+  Patient Portal  → http://127.0.0.1:5001  ← served after auth
+  Doctor Portal   → http://127.0.0.1:5002  ← served after auth
 """
 import subprocess, sys, os, time, webbrowser, signal
 
@@ -15,9 +16,7 @@ procs  = []
 labels = []
 
 def start(label, script, port):
-    # FIX 1: Removed stdout=subprocess.PIPE — piping without a reader fills
-    # the OS buffer (~64 KB) and causes the child process to block/exit.
-    # Letting output flow directly to the terminal avoids the deadlock.
+    # Letting output flow directly to the terminal avoids deadlocks.
     p = subprocess.Popen([PY, script], cwd=ROOT)
     procs.append(p)
     labels.append(label)
@@ -52,6 +51,7 @@ print("""
 ╚══════════════════════════════════════════════════════╝
 """, flush=True)
 
+# 1. Backend API (must be first — portals depend on it)
 print("  ▶  Backend API       → http://127.0.0.1:5000", flush=True)
 start("Backend API", os.path.join(ROOT, "server", "server.py"), 5000)
 if not wait_for(5000, 15):
@@ -59,6 +59,7 @@ if not wait_for(5000, 15):
 else:
     print("  ✅  Backend ready", flush=True)
 
+# 2. Patient Portal (API handler — not opened in browser directly)
 print("  ▶  Patient Portal    → http://127.0.0.1:5001", flush=True)
 start("Patient Portal", os.path.join(ROOT, "portals", "patient_portal.py"), 5001)
 if not wait_for(5001, 12):
@@ -66,6 +67,7 @@ if not wait_for(5001, 12):
 else:
     print("  ✅  Patient portal ready", flush=True)
 
+# 3. Doctor Portal (API handler — not opened in browser directly)
 print("  ▶  Doctor Portal     → http://127.0.0.1:5002", flush=True)
 start("Doctor Portal", os.path.join(ROOT, "portals", "doctor_portal.py"), 5002)
 if not wait_for(5002, 12):
@@ -73,9 +75,20 @@ if not wait_for(5002, 12):
 else:
     print("  ✅  Doctor portal ready", flush=True)
 
+# 4. Landing Page (entry point — users log in / sign up here)
+print("  ▶  Landing Page      → http://127.0.0.1:5003", flush=True)
+start("Landing Page", os.path.join(ROOT, "portals", "landing.py"), 5003)
+if not wait_for(5003, 12):
+    print("  ⚠  Landing page slow to start", flush=True)
+else:
+    print("  ✅  Landing page ready", flush=True)
+
 print("""
 ╔══════════════════════════════════════════════════════╗
 ║  ✅  MedVault is running!                            ║
+║                                                      ║
+║  🌐  Entry Point     →  http://127.0.0.1:5003        ║
+║      (Login / Sign Up — start here)                  ║
 ║                                                      ║
 ║  🏥  Patient Portal  →  http://127.0.0.1:5001        ║
 ║  🩺  Doctor Portal   →  http://127.0.0.1:5002        ║
@@ -86,13 +99,10 @@ print("""
 """, flush=True)
 
 time.sleep(1)
-webbrowser.open("http://127.0.0.1:5001")
-time.sleep(0.4)
-webbrowser.open("http://127.0.0.1:5002")
+# Open only the landing page — users authenticate there first
+webbrowser.open("http://127.0.0.1:5003")
 
-# FIX 2: Replaced the broken `all(p.poll() is None ...)` loop.
-# The old loop exited silently the moment any process stopped, with no info
-# about which service failed or why. The new loop identifies the culprit by name.
+# Monitor all processes and exit if any crashes
 try:
     while True:
         time.sleep(1)
