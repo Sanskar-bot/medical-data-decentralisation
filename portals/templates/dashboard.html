@@ -1230,7 +1230,11 @@
                 <div class="card-title">New Lab Report</div>
                 <div class="form-group"><label>Patient Profile Code *</label><input type="text" id="dlr-pcode" placeholder="e.g. AB12CD34EF"></div>
                 <div class="form-group"><label>Report Type *</label><input type="text" id="dlr-type" placeholder="e.g. CBC, Lipid Panel, MRI Brain"></div>
-                <div class="form-group"><label>Results (JSON key-value)</label><textarea id="dlr-results" placeholder='{"Hemoglobin": "14.2 g/dL", "WBC": "7.8 K/uL"}' style="min-height:100px;"></textarea></div>
+                <div class="form-group"><label>Results <small style="color:var(--muted);font-weight:400;">(one per line: <code>Key: Value</code>, or paste JSON)</small></label><textarea id="dlr-results" placeholder="Hemoglobin: 14.2 g/dL
+WBC: 7.8 K/uL
+Platelets: 250 K/uL
+
+or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div>
                 <div class="form-group"><label>Notes</label><textarea id="dlr-notes" placeholder="Clinical interpretation or remarks…" style="min-height:70px;"></textarea></div>
                 <button class="btn btn-primary" onclick="docCreateLabReport()" id="dlr-btn">🧪 Submit Lab Report</button>
             </div>
@@ -1243,6 +1247,29 @@
 
     <script>
         // ── Section switcher ───────────────────────────────────────────────────────
+        function _resetSection(name) {
+            // Clear stale alerts and result panels when entering a section
+            const alertMap = {
+                'doc-request': ['dreq-alert'],
+                'doc-records': ['drec-alert'],
+                'doc-notes':   ['dnote-alert'],
+                'doc-emr-appointments': ['dappt-alert'],
+                'doc-emr-prescriptions': ['drx-alert'],
+                'doc-emr-lab-reports':   ['dlr-alert'],
+                'records':   ['rec-alert'],
+                'requests':  [],
+                'notes':     [],
+                'emr-profile': ['emrp-alert'],
+            };
+            const resultMap = {
+                'doc-request': ['dreq-status'],
+                'doc-records': ['drec-result'],
+                'doc-notes':   ['dnote-notes-wrap'],
+            };
+            (alertMap[name] || []).forEach(id => clearAlert(id));
+            (resultMap[name] || []).forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+        }
+
         function showSection(name, loadFn) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -1258,6 +1285,7 @@
             document.querySelectorAll('.nav-btn').forEach(b => {
                 if (b.textContent.trim().toLowerCase().includes(match)) b.classList.add('active');
             });
+            _resetSection(name);
             if (loadFn) loadFn();
         }
 
@@ -1726,7 +1754,17 @@
         }
         async function emrApi(url, opts = {}) {
             const r = await fetch(url, { headers: emrHeaders(), ...opts });
-            const d = await r.json();
+            let d;
+            try { d = await r.json(); } catch (_) { d = {}; }
+            // 401 → session expired or no JWT; give a friendly message
+            if (r.status === 401) {
+                const msg = (d.error || '').toLowerCase();
+                if (msg.includes('jwt') || msg.includes('token') || msg.includes('session') || msg.includes('no jwt')) {
+                    d.error = '🔒 Session expired or no active session. Please <a href="/logout" style="color:inherit;font-weight:700;">log out and log in again</a> to continue.';
+                } else if (!d.error) {
+                    d.error = 'Authentication required. Please log in.';
+                }
+            }
             return { ok: r.ok, status: r.status, data: d };
         }
 
@@ -1984,8 +2022,32 @@
             let results = {};
             const rawResults = g('dlr-results');
             if (rawResults) {
-                try { results = JSON.parse(rawResults); }
-                catch (_) { showAlert('dlr-alert', '⚠️ Results must be valid JSON, e.g. {"Hemoglobin": "14.2 g/dL"}'); return; }
+                // Try JSON first
+                try {
+                    results = JSON.parse(rawResults);
+                } catch (_) {
+                    // Fallback: parse "Key: Value" lines (one per line)
+                    const lines = rawResults.split('\n').map(l => l.trim()).filter(Boolean);
+                    const parsed = {};
+                    let parseFailed = false;
+                    for (const line of lines) {
+                        const colonIdx = line.indexOf(':');
+                        if (colonIdx === -1) { parseFailed = true; break; }
+                        const key = line.slice(0, colonIdx).trim();
+                        const val = line.slice(colonIdx + 1).trim();
+                        if (!key) { parseFailed = true; break; }
+                        parsed[key] = val;
+                    }
+                    if (parseFailed) {
+                        showAlert('dlr-alert', '⚠️ Could not parse results. Use one result per line (e.g., <code>Hemoglobin: 14.2 g/dL</code>) or valid JSON.');
+                        return;
+                    }
+                    results = parsed;
+                }
+                if (typeof results !== 'object' || Array.isArray(results)) {
+                    showAlert('dlr-alert', '⚠️ Results must be key-value pairs.');
+                    return;
+                }
             }
             const btn = document.getElementById('dlr-btn');
             btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Submitting…';

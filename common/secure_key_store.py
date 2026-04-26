@@ -23,93 +23,88 @@ _KEYS_DIR = Path(
     os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")
 ) / "MedVault" / "keys"
 
+import sys as _sys
 
 # ── DPAPI via ctypes ─────────────────────────────────────────────────────────
+_WINDOWS = _sys.platform == "win32"
 
-class _DATA_BLOB(ctypes.Structure):
-    _fields_ = [
-        ("cbData", ctypes.wintypes.DWORD),
-        ("pbData", ctypes.POINTER(ctypes.c_char)),
+if _WINDOWS:
+    class _DATA_BLOB(ctypes.Structure):
+        _fields_ = [
+            ("cbData", ctypes.wintypes.DWORD),
+            ("pbData", ctypes.POINTER(ctypes.c_char)),
+        ]
+
+    _crypt32 = ctypes.windll.crypt32
+    _kernel32 = ctypes.windll.kernel32
+
+    # BOOL CryptProtectData(DATA_BLOB*, LPCWSTR, DATA_BLOB*, PVOID, PVOID, DWORD, DATA_BLOB*)
+    _crypt32.CryptProtectData.argtypes = [
+        ctypes.POINTER(_DATA_BLOB),  # pDataIn
+        ctypes.c_wchar_p,            # szDataDescr
+        ctypes.POINTER(_DATA_BLOB),  # pOptionalEntropy
+        ctypes.c_void_p,             # pvReserved
+        ctypes.c_void_p,             # pPromptStruct
+        ctypes.wintypes.DWORD,       # dwFlags
+        ctypes.POINTER(_DATA_BLOB),  # pDataOut
     ]
+    _crypt32.CryptProtectData.restype = ctypes.wintypes.BOOL
 
+    # BOOL CryptUnprotectData(DATA_BLOB*, LPWSTR*, DATA_BLOB*, PVOID, PVOID, DWORD, DATA_BLOB*)
+    _crypt32.CryptUnprotectData.argtypes = [
+        ctypes.POINTER(_DATA_BLOB),  # pDataIn
+        ctypes.POINTER(ctypes.c_wchar_p),  # ppszDataDescr
+        ctypes.POINTER(_DATA_BLOB),  # pOptionalEntropy
+        ctypes.c_void_p,             # pvReserved
+        ctypes.c_void_p,             # pPromptStruct
+        ctypes.wintypes.DWORD,       # dwFlags
+        ctypes.POINTER(_DATA_BLOB),  # pDataOut
+    ]
+    _crypt32.CryptUnprotectData.restype = ctypes.wintypes.BOOL
 
-_crypt32 = ctypes.windll.crypt32
-_kernel32 = ctypes.windll.kernel32
+    def _dpapi_encrypt(data: bytes) -> bytes:
+        """Encrypt bytes using DPAPI (current-user scope)."""
+        data_in = _DATA_BLOB(len(data), ctypes.create_string_buffer(data, len(data)))
+        data_out = _DATA_BLOB()
+        ok = _crypt32.CryptProtectData(
+            ctypes.byref(data_in),
+            "MedVault",          # description
+            None, None, None, 0, ctypes.byref(data_out),
+        )
+        if not ok:
+            raise OSError(f"CryptProtectData failed (error {ctypes.GetLastError()})")
+        try:
+            return ctypes.string_at(data_out.pbData, data_out.cbData)
+        finally:
+            _kernel32.LocalFree(data_out.pbData)
 
-# BOOL CryptProtectData(DATA_BLOB*, LPCWSTR, DATA_BLOB*, PVOID, PVOID, DWORD, DATA_BLOB*)
-_crypt32.CryptProtectData.argtypes = [
-    ctypes.POINTER(_DATA_BLOB),  # pDataIn
-    ctypes.c_wchar_p,            # szDataDescr
-    ctypes.POINTER(_DATA_BLOB),  # pOptionalEntropy
-    ctypes.c_void_p,             # pvReserved
-    ctypes.c_void_p,             # pPromptStruct
-    ctypes.wintypes.DWORD,       # dwFlags
-    ctypes.POINTER(_DATA_BLOB),  # pDataOut
-]
-_crypt32.CryptProtectData.restype = ctypes.wintypes.BOOL
+    def _dpapi_decrypt(blob: bytes) -> bytes:
+        """Decrypt a DPAPI blob; returns plaintext bytes."""
+        data_in = _DATA_BLOB(len(blob), ctypes.create_string_buffer(blob, len(blob)))
+        data_out = _DATA_BLOB()
+        desc = ctypes.c_wchar_p()
+        ok = _crypt32.CryptUnprotectData(
+            ctypes.byref(data_in), ctypes.byref(desc),
+            None, None, None, 0, ctypes.byref(data_out),
+        )
+        if not ok:
+            raise OSError(f"CryptUnprotectData failed (error {ctypes.GetLastError()})")
+        try:
+            return ctypes.string_at(data_out.pbData, data_out.cbData)
+        finally:
+            _kernel32.LocalFree(data_out.pbData)
 
-# BOOL CryptUnprotectData(DATA_BLOB*, LPWSTR*, DATA_BLOB*, PVOID, PVOID, DWORD, DATA_BLOB*)
-_crypt32.CryptUnprotectData.argtypes = [
-    ctypes.POINTER(_DATA_BLOB),  # pDataIn
-    ctypes.POINTER(ctypes.c_wchar_p),  # ppszDataDescr
-    ctypes.POINTER(_DATA_BLOB),  # pOptionalEntropy
-    ctypes.c_void_p,             # pvReserved
-    ctypes.c_void_p,             # pPromptStruct
-    ctypes.wintypes.DWORD,       # dwFlags
-    ctypes.POINTER(_DATA_BLOB),  # pDataOut
-]
-_crypt32.CryptUnprotectData.restype = ctypes.wintypes.BOOL
-
-
-def _dpapi_encrypt(data: bytes) -> bytes:
-    """Encrypt bytes using DPAPI (current-user scope)."""
-    data_in = _DATA_BLOB(len(data), ctypes.create_string_buffer(data, len(data)))
-    data_out = _DATA_BLOB()
-
-    ok = _crypt32.CryptProtectData(
-        ctypes.byref(data_in),
-        "MedVault",          # description
-        None,                # no entropy
-        None,                # reserved
-        None,                # no prompt
-        0,                   # flags = user scope
-        ctypes.byref(data_out),
+else:
+    # fix #11: cross-platform fallback — plaintext storage (no DPAPI available on Linux/macOS)
+    logger.warning(
+        "[SecureKeyStore] Windows DPAPI not available — "
+        "keys will be stored in PLAINTEXT (development/Linux only)"
     )
-    if not ok:
-        raise OSError(f"CryptProtectData failed (error {ctypes.GetLastError()})")
+    def _dpapi_encrypt(data: bytes) -> bytes:  # type: ignore[misc]
+        return data  # no encryption
 
-    try:
-        encrypted = ctypes.string_at(data_out.pbData, data_out.cbData)
-    finally:
-        _kernel32.LocalFree(data_out.pbData)
-
-    return encrypted
-
-
-def _dpapi_decrypt(blob: bytes) -> bytes:
-    """Decrypt a DPAPI blob; returns plaintext bytes."""
-    data_in = _DATA_BLOB(len(blob), ctypes.create_string_buffer(blob, len(blob)))
-    data_out = _DATA_BLOB()
-    desc = ctypes.c_wchar_p()
-
-    ok = _crypt32.CryptUnprotectData(
-        ctypes.byref(data_in),
-        ctypes.byref(desc),
-        None,                # no entropy
-        None,                # reserved
-        None,                # no prompt
-        0,                   # flags
-        ctypes.byref(data_out),
-    )
-    if not ok:
-        raise OSError(f"CryptUnprotectData failed (error {ctypes.GetLastError()})")
-
-    try:
-        decrypted = ctypes.string_at(data_out.pbData, data_out.cbData)
-    finally:
-        _kernel32.LocalFree(data_out.pbData)
-
-    return decrypted
+    def _dpapi_decrypt(blob: bytes) -> bytes:  # type: ignore[misc]
+        return blob  # no decryption
 
 
 def _safe_filename(credential_id: str) -> str:

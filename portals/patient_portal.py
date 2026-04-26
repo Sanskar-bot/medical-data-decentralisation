@@ -40,6 +40,7 @@ else:
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV") != "development",  # fix #14
 )
 
 @app.after_request

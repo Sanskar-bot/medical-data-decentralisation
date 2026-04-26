@@ -44,6 +44,7 @@ else:
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV") != "development",  # fix #14
     PERMANENT_SESSION_LIFETIME=3600 * 8,   # 8-hour session
 )
 
@@ -280,8 +281,22 @@ def register_patient():
         session["email"]        = email
         session["profile_code"] = profile_code
         session["doctor_code"]  = ""
-        session["jwt_token"]    = ""
         session.permanent       = True
+
+        # ── Fetch JWT immediately so EMR endpoints work right away ────────────
+        try:
+            _lr = http.post(
+                f"{BACKEND}/auth/login",
+                json={"email": email, "password": password,
+                      "password_hash": hashlib.sha256(password.encode()).hexdigest()},
+                headers=_headers(), timeout=10,
+            )
+            if _lr.ok:
+                session["jwt_token"] = _lr.json().get("access_token", "")
+            else:
+                session["jwt_token"] = ""
+        except Exception:
+            session["jwt_token"] = ""
 
         return jsonify({
             "message":      "ok",
@@ -383,8 +398,22 @@ def register_doctor():
         session["doctor_code"]    = doctor_code
         session["specialization"] = spec
         session["hospital"]       = hosp
-        session["jwt_token"]      = ""
         session.permanent         = True
+
+        # ── Fetch JWT immediately so EMR endpoints work right away ────────────
+        try:
+            _lr = http.post(
+                f"{BACKEND}/auth/login",
+                json={"email": email, "password": password,
+                      "password_hash": hashlib.sha256(password.encode()).hexdigest()},
+                headers=_headers(), timeout=10,
+            )
+            if _lr.ok:
+                session["jwt_token"] = _lr.json().get("access_token", "")
+            else:
+                session["jwt_token"] = ""
+        except Exception:
+            session["jwt_token"] = ""
 
         return jsonify({
             "message":     "ok",
@@ -968,9 +997,13 @@ def emr_proxy(subpath):
         return jsonify({"error": "unauthenticated"}), 401
 
     jwt_token = session.get("jwt_token", "")
+    if not jwt_token:
+        return jsonify({
+            "error": "Session has no JWT token. Please log out and log in again to refresh your session."
+        }), 401
+
     headers = {**_headers()}
-    if jwt_token:
-        headers["Authorization"] = f"Bearer {jwt_token}"
+    headers["Authorization"] = f"Bearer {jwt_token}"
 
     url = f"{BACKEND}/emr/{subpath}"
     try:

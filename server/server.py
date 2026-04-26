@@ -61,7 +61,7 @@ if not os.path.exists(ACTIVE_REQUESTS_FILE):
 # -----------------------
 # Simple server-side cipher (Fernet) — used only if you need server-side symmetric encryption
 # -----------------------
-KEY_FILE = "server_key.key"
+KEY_FILE = os.path.join(SERVER_BASE_DIR, "server_key.key")  # fix #21: absolute path
 if not os.path.exists(KEY_FILE):
     key = Fernet.generate_key()
     with open(KEY_FILE, "wb") as f:
@@ -213,7 +213,7 @@ def register_user():
 #
 # Example (curl):
 # curl -X POST -H "Content-Type: application/json" -d '{"doctor_id":"uuid","doctor_code":"abcd","public_pem":"-----BEGIN..."}' http://127.0.0.1:5000/register_doctor
-import re
+import re  # single import — fix #28
 def _safe_filename(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_\-]", "_", name)
 
@@ -259,6 +259,8 @@ def register_doctor():
 # Purpose: append a CID (content identifier) to a patient entry in server_database.json (legacy / optional)
 @app.route("/upload_record", methods=["POST"])
 def upload_record():
+    auth_err = _require_api_key()  # fix #16
+    if auth_err: return auth_err
     global patient_db
     data = request.get_json(force=True)
     print("\n[POST] /upload_record →", data)
@@ -295,6 +297,11 @@ def upload_record():
 def get_patient_data(profile_code):
     auth_err = _require_api_key()
     if auth_err: return auth_err
+    # fix #3: path-traversal sanitisation
+    safe_code = re.sub(r"[^A-Za-z0-9_\-]", "", profile_code)
+    if not safe_code:
+        return jsonify({"error": "invalid_profile_code"}), 400
+    profile_code = safe_code
     """
     Fetch the encrypted data file for a patient and send it to the doctor.
     This implementation looks in two places (backwards-compatible):
@@ -368,6 +375,8 @@ def get_patient_data(profile_code):
 # }
 @app.route("/request_access_simple/<profile_code>", methods=["POST"])
 def request_access_simple(profile_code):
+    auth_err = _require_api_key()  # fix #1: was missing entirely
+    if auth_err: return auth_err
     try:
         payload = request.get_json(force=True)
     except Exception as e:
@@ -453,6 +462,11 @@ def request_access_simple(profile_code):
 def get_patient_public(profile_code):
     auth_err = _require_api_key()
     if auth_err: return auth_err
+    # fix #3: path-traversal sanitisation
+    safe_code = re.sub(r"[^A-Za-z0-9_\-]", "", profile_code)
+    if not safe_code:
+        return jsonify({"error": "invalid_profile_code"}), 400
+    profile_code = safe_code
     try:
         patient_meta_path = os.path.join(PATIENTS_DIR, f"{profile_code}.json")
         if not os.path.exists(patient_meta_path):
@@ -536,11 +550,16 @@ def get_wrapped_key_for_profile(profile_code):
     """
     Return wrapped keys for the specified profile. Looks under
     PATIENTS_DIR/<profile_code>/wrapped_keys/*.json and aggregates them.
-    FIX 3: Keys whose temp_key_expires_at has passed are silently excluded.
+    Keys whose temp_key_expires_at has passed are excluded.
     Response: {"wrapped_keys": { "<doctor_code>": {doctor_code, wrapped_key, uploaded_at}, ... } }
     """
     auth_err = _require_api_key()
     if auth_err: return auth_err
+    # fix #3: path-traversal sanitisation
+    safe_code = re.sub(r"[^A-Za-z0-9_\-]", "", profile_code)
+    if not safe_code:
+        return jsonify({"error": "invalid_profile_code"}), 400
+    profile_code = safe_code
     try:
         pk_dir = os.path.join(PATIENTS_DIR, profile_code, "wrapped_keys")
         if not os.path.isdir(pk_dir):
@@ -563,7 +582,8 @@ def get_wrapped_key_for_profile(profile_code):
                             print(f"[AUTH] Wrapped key for {fn} has expired — not returned.")
                             continue   # skip expired keys
                     except ValueError:
-                        pass  # malformed timestamp — allow through rather than block forever
+                        print(f"[WARN] malformed temp_key_expires_at in {fn} — denying access")  # fix #25
+                        continue  # treat as expired — deny rather than allow
                 dk = js.get("doctor_code") or os.path.splitext(fn)[0]
                 out[dk] = js
             except Exception:
@@ -753,6 +773,12 @@ def _cleanup_old_requests():
     finally:
         _threading.Timer(3600, _cleanup_old_requests).start()   # run again in 1 hour
 
+def _schedule_cleanup():
+    """Start the cleanup timer as a daemon thread (fix #20)."""
+    t = _threading.Timer(3600, _cleanup_old_requests)
+    t.daemon = True
+    t.start()
+
 # -----------------------
 # Application entrypoint
 # -----------------------
@@ -762,9 +788,25 @@ def _cleanup_old_requests():
 # ███  UPGRADE BLOCK — new endpoints added without touching existing ones  ███
 # ═══════════════════════════════════════════════════════════════════════════
 
-import hashlib, threading, shutil
+import hashlib, threading  # fix #27: removed unused shutil
 from functools import wraps
 from collections import defaultdict
+
+# ── Login history (fix #10 / #15) ────────────────────────────────────────
+LOGIN_HISTORY_FILE = os.path.join(SERVER_BASE_DIR, "login_history.json")
+if not os.path.exists(LOGIN_HISTORY_FILE):
+    save_json(LOGIN_HISTORY_FILE, [])  # must be a list, not {}
+
+_login_hist_lock = threading.Lock()
+
+def _append_login_history(entry: dict):
+    """Thread-safe, type-guarded append to login_history.json."""
+    with _login_hist_lock:
+        hist = load_json(LOGIN_HISTORY_FILE)
+        if not isinstance(hist, list):
+            hist = []
+        hist.append(entry)
+        save_json(LOGIN_HISTORY_FILE, hist[-500:])
 
 # ── Rate limiter (in-memory, resets on restart) ───────────────────────────
 _rate_store = defaultdict(list)   # ip -> [timestamps]
@@ -805,20 +847,30 @@ def audit(action, actor="", target="", detail=""):
 _otp_store = {}   # email -> {otp, expires, attempts}
 _otp_lock  = threading.Lock()
 
-import random, string
+import secrets as _secrets_otp, string  # fix #12: use cryptographically secure PRNG
 
 def _gen_otp():
-    return "".join(random.choices(string.digits, k=6))
+    return "".join(_secrets_otp.choice(string.digits) for _ in range(6))
 
 # ── JWT-lite (HMAC-SHA256, no extra library needed) ───────────────────────
 import hmac as _hmac, base64 as _b64
 
-_JWT_SECRET = open(_API_KEY_FILE).read().strip()
+# fix #19: read JWT secret lazily so key rotation takes effect without restart
+def _get_jwt_secret() -> str:
+    return open(_API_KEY_FILE).read().strip()
+
+# fix #7: in-memory token blocklist for logout / revocation
+import uuid as _uuid_mod
+_token_blocklist: set = set()
+_blocklist_lock = threading.Lock()
 
 def _jwt_encode(payload: dict) -> str:
+    if "jti" not in payload:  # fix #7: add unique token ID for revocation
+        payload["jti"] = str(_uuid_mod.uuid4())
+    secret = _get_jwt_secret()
     header  = _b64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b"=").decode()
     body    = _b64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
-    sig_raw = _hmac.new(_JWT_SECRET.encode(), f"{header}.{body}".encode(), hashlib.sha256).digest()
+    sig_raw = _hmac.new(secret.encode(), f"{header}.{body}".encode(), hashlib.sha256).digest()
     sig     = _b64.urlsafe_b64encode(sig_raw).rstrip(b"=").decode()
     return f"{header}.{body}.{sig}"
 
@@ -827,13 +879,16 @@ def _jwt_decode(token: str):
         parts = token.split(".")
         if len(parts) != 3: return None
         header, body, sig = parts
+        secret = _get_jwt_secret()  # fix #19: lazy read
         expected_sig = _b64.urlsafe_b64encode(
-            _hmac.new(_JWT_SECRET.encode(), f"{header}.{body}".encode(), hashlib.sha256).digest()
+            _hmac.new(secret.encode(), f"{header}.{body}".encode(), hashlib.sha256).digest()
         ).rstrip(b"=").decode()
         if not _hmac.compare_digest(sig, expected_sig): return None
         pad  = 4 - len(body) % 4
         data = json.loads(_b64.urlsafe_b64decode(body + "=" * pad))
         if data.get("exp", 0) < time.time(): return None
+        # fix #7: check token blocklist
+        if data.get("jti") in _token_blocklist: return None
         return data
     except Exception:
         return None
@@ -897,10 +952,10 @@ def auth_otp_send():
     exp = time.time() + 300   # 5 minutes
     with _otp_lock:
         _otp_store[email] = {"otp":otp,"expires":exp,"attempts":0}
-    # In production send via email; here we return it (dev mode)
-    print(f"[OTP] {email} → {otp}")
+    # fix #2: never return OTP in response — print to server console only
+    print(f"[DEV OTP] {email} → {otp}")
     audit("otp_sent", actor=email)
-    return jsonify({"message":"OTP sent","dev_otp":otp,"expires_in":300})
+    return jsonify({"message":"OTP sent","expires_in":300})
 
 @app.route("/auth/otp/verify", methods=["POST"])
 @rate_limited(max_calls=10, window=60)
@@ -1071,10 +1126,8 @@ def auth_login():
     user["last_login"] = datetime.now(timezone.utc).isoformat()
     save_json(USERS_DB_FILE, users)
 
-    # log history
-    history = load_json(LOGIN_HISTORY_FILE)
-    history.append({"email":email,"ts":user["last_login"],"ip":request.remote_addr})
-    save_json(LOGIN_HISTORY_FILE, history[-500:])  # keep last 500
+    # fix #10 + #15: thread-safe, type-guarded login history append
+    _append_login_history({"email":email,"ts":user["last_login"],"ip":request.remote_addr})
 
     # Use the externally-known code (profile_code / doctor_code) as the JWT `uid`
     # so EMR route checks like `p["uid"] == patient_id` work correctly.
@@ -1096,6 +1149,20 @@ def auth_login():
     })
     resp.set_cookie("access_token",access_token,httponly=True,samesite="Strict",max_age=3600)
     resp.set_cookie("refresh_token",refresh_token,httponly=True,samesite="Strict",max_age=604800)
+    return resp
+
+# fix #7: logout endpoint that revokes the current access token
+@app.route("/auth/logout", methods=["POST"])
+@_require_jwt()
+def auth_logout():
+    jti = request.jwt_payload.get("jti", "")
+    if jti:
+        with _blocklist_lock:
+            _token_blocklist.add(jti)
+    resp = jsonify({"message": "logged_out"})
+    resp.delete_cookie("access_token")
+    resp.delete_cookie("refresh_token")
+    audit("logout", actor=request.jwt_payload.get("sub", ""))
     return resp
 
 @app.route("/auth/refresh", methods=["POST"])
@@ -1166,6 +1233,7 @@ def upload_report():
         "created_at":datetime.now(timezone.utc).isoformat(),
     }
     records = load_json(RECORDS_DB_FILE)
+    if not isinstance(records, list): records = []  # fix #22
     records.append(record)
     save_json(RECORDS_DB_FILE, records)
     audit("report_upload", actor=doctor_jwt["sub"], target=patient_id)
@@ -1180,7 +1248,8 @@ def get_patient_reports(patient_id):
     if p["role"] == "patient" and p["uid"] != patient_id:
         return jsonify({"error":"forbidden"}), 403
     records = load_json(RECORDS_DB_FILE)
-    mine    = [r for r in records if r["patient_id"] == patient_id]
+    if not isinstance(records, list): records = []  # fix #22
+    mine    = [r for r in records if r.get("patient_id") == patient_id]
     # strip blob for listing — return only metadata
     listing = [{k:v for k,v in r.items() if k != "encrypted_report_blob"} for r in mine]
     return jsonify(listing)
@@ -1239,6 +1308,7 @@ def upload_image():
         "doctor_id":doctor_jwt["uid"],
     }
     imgs = load_json(IMAGES_DB_FILE)
+    if not isinstance(imgs, list): imgs = []  # fix #22
     imgs.append(img_record)
     save_json(IMAGES_DB_FILE, imgs)
     audit("image_upload", actor=doctor_jwt["sub"], target=record_id)
@@ -1361,6 +1431,7 @@ def respond_access():
 def doctor_patients():
     p  = request.jwt_payload
     db = load_json(ACCESS_DB_FILE)
+    if not isinstance(db, list): db = []  # fix #22
     return jsonify([x for x in db if x["doctor_id"]==p["uid"] and x["status"]=="approved"])
 
 # ═══════════════════════════
@@ -1398,85 +1469,10 @@ def user_search():
     for email, u in users.items():
         if u.get("role") != role: continue
         if q in email.lower() or q in u.get("name","").lower():
-            result.append({"id":u["id"],"name":u["name"],"email":email,
-                           "public_key":u.get("public_key","")})
+            result.append({"id":u["id"],"name":u["name"],"email":email})  # fix #23: no public_key
     return jsonify(result[:20])
 
-# ═══════════════════════════
-#   DOCTOR NOTES
-# ═══════════════════════════
 
-DOCTOR_NOTES_FILE = os.path.join(SERVER_BASE_DIR, "doctor_notes.json")
-if not os.path.exists(DOCTOR_NOTES_FILE):
-    save_json(DOCTOR_NOTES_FILE, [])
-
-NOTE_IMAGES_DIR = os.path.join(SERVER_BASE_DIR, "note_images")
-os.makedirs(NOTE_IMAGES_DIR, exist_ok=True)
-
-
-@app.route("/doctor_notes/patient/<patient_code>", methods=["GET"])
-def get_doctor_notes(patient_code):
-    """Return all doctor notes for a given patient profile code."""
-    auth_err = _require_api_key()
-    if auth_err: return auth_err
-    notes = load_json(DOCTOR_NOTES_FILE)
-    if not isinstance(notes, list):
-        notes = []
-    patient_notes = [n for n in notes if n.get("patient_code") == patient_code]
-    return jsonify({"notes": patient_notes}), 200
-
-
-@app.route("/doctor_notes/add", methods=["POST"])
-def add_doctor_note():
-    """Doctor adds a note for a patient (called from doctor portal)."""
-    auth_err = _require_api_key()
-    if auth_err: return auth_err
-    body = request.get_json(force=True) or {}
-    patient_code = body.get("patient_code", "").strip()
-    doctor_code  = body.get("doctor_code", "").strip()
-    note_text    = body.get("note", "").strip()
-    if not patient_code or not doctor_code or not note_text:
-        return jsonify({"error": "missing fields: patient_code, doctor_code, note"}), 400
-
-    # Handle optional image attachment
-    image_filename = ""
-    image_b64  = body.get("image_b64", "")
-    image_type = body.get("image_type", "image/jpeg")  # mime type
-    if image_b64:
-        try:
-            ext = image_type.split("/")[-1].replace("jpeg", "jpg")
-            image_filename = f"note_{str(uuid.uuid4())}.{ext}"
-            img_path = os.path.join(NOTE_IMAGES_DIR, image_filename)
-            import base64 as _b64
-            img_data = _b64.b64decode(image_b64)
-            with open(img_path, "wb") as f:
-                f.write(img_data)
-        except Exception as e:
-            print(f"[warn] could not save note image: {e}")
-            image_filename = ""
-
-    note_id = str(uuid.uuid4())
-    entry = {
-        "id":                    note_id,
-        "patient_code":          patient_code,
-        "doctor_code":           doctor_code,
-        "doctor_name":           body.get("doctor_name", ""),
-        "doctor_specialization": body.get("doctor_specialization", ""),
-        "doctor_hospital":       body.get("doctor_hospital", ""),
-        "note_type":             body.get("note_type", "General"),
-        "note":                  note_text,
-        "visit_date":            body.get("visit_date", ""),
-        "image_filename":        image_filename,
-        "image_type":            image_type if image_filename else "",
-        "created_at":            datetime.now(timezone.utc).isoformat(),
-    }
-    notes = load_json(DOCTOR_NOTES_FILE)
-    if not isinstance(notes, list):
-        notes = []
-    notes.append(entry)
-    save_json(DOCTOR_NOTES_FILE, notes)
-    audit("doctor_note_added", actor=doctor_code, target=patient_code)
-    return jsonify({"status": "ok", "note_id": note_id}), 201
 
 
 @app.route("/note_images/<filename>", methods=["GET"])
@@ -1515,6 +1511,8 @@ def delete_doctor_note(note_id):
 #   SECURITY HEADERS MIDDLEWARE
 # ═══════════════════════════
 
+_ALLOWED_ORIGINS = {"http://127.0.0.1:5001", "http://127.0.0.1:5002", "http://127.0.0.1:5003"}
+
 @app.after_request
 def security_headers(resp):
     resp.headers["X-Content-Type-Options"]  = "nosniff"
@@ -1522,10 +1520,23 @@ def security_headers(resp):
     resp.headers["X-XSS-Protection"]        = "1; mode=block"
     resp.headers["Strict-Transport-Security"]= "max-age=31536000; includeSubDomains"
     resp.headers["Referrer-Policy"]         = "no-referrer"
-    resp.headers["Access-Control-Allow-Origin"]  = "http://127.0.0.1:5001, http://127.0.0.1:5002"
+    # fix #6: dynamic single-origin CORS (multi-origin string is invalid)
+    origin = request.headers.get("Origin", "")
+    if origin in _ALLOWED_ORIGINS:
+        resp.headers["Access-Control-Allow-Origin"] = origin
+    resp.headers["Vary"]                         = "Origin"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type,X-API-Key,Authorization"
     resp.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
     resp.headers["Access-Control-Allow-Credentials"] = "true"
+    # fix #13: Content-Security-Policy
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self' http://127.0.0.1:5000; "
+        "frame-ancestors 'none';"
+    )
     return resp
 
 print("[UPGRADE] New auth/report/image/access endpoints loaded ✓")
@@ -1547,7 +1558,7 @@ print("[EMR] EMR module loaded ✓")
 
 if __name__ == "__main__":
     print(" Server running on http://127.0.0.1:5000")
-    _cleanup_old_requests()
+    _schedule_cleanup()  # fix #20: use daemon timer via scheduler, not direct call
     app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False, threaded=True)
 # ═══════════════════════════════════════════════════════════════════════
 # ███  DOCTOR NOTES  —  added as non-breaking extension  ███
@@ -1683,6 +1694,11 @@ def doctor_notes_for_patient(patient_code):
     auth_err = _require_api_key()
     if auth_err:
         return auth_err
+    # fix #3: path-traversal sanitisation
+    safe_code = re.sub(r"[^A-Za-z0-9_\-]", "", patient_code)
+    if not safe_code:
+        return jsonify({"error": "invalid_patient_code"}), 400
+    patient_code = safe_code
     notes = _load_notes()
     mine  = [n for n in notes if n.get("patient_code") == patient_code]
     doc_filter = (request.args.get("doctor_code") or "").strip()

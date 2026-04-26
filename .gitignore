@@ -24,3 +24,27 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Server generated / sensitive — fix #4, #5, #30
+server/api_key.txt
+server/flask_secret.key
+server/server_key.key
+server/audit.log
+server/users_db.json
+server/doctor_notes.json
+server/records_db.json
+server/images_db.json
+server/access_db.json
+server/login_history.json
+server/active_requests.json
+server/server_database.json
+server/doctor_database.json
+server/emr_data/
+server/uploads/
+server/note_images/
+server/Patients/
+server/Doctors/
+server/users/
+client/Users/
+doctor/Doctors/
+*.log

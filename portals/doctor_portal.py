@@ -48,6 +48,7 @@ else:
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV") != "development",  # fix #14
 )
 
 @app.after_request
@@ -77,6 +78,49 @@ def doc_dir(code):
     return None
 
 
+def unlock_doctor_private_key(doc_code: str, password: str):
+    """Unlock a doctor's RSA private key from the local credential store.
+
+    Returns (priv_pem: bytes, priv_obj) on success.
+    Raises ValueError with a user-friendly message on any failure:
+      - "Password must be at least 8 characters"
+      - "Doctor profile not found on this machine"
+      - "Private key not found in credential store – re-register on this machine"
+      - "Wrong password – please use the same password you registered with"
+    """
+    if not password:
+        raise ValueError("Password is required")
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters")
+
+    folder = doc_dir(doc_code)
+    if not folder:
+        raise ValueError("Doctor profile not found on this machine")
+
+    kp_path = os.path.join(folder, "key_protection.json")
+    try:
+        kp = json.load(open(kp_path))
+    except FileNotFoundError:
+        raise ValueError("Key-protection file missing – re-register on this machine")
+
+    try:
+        salt = b64decode(kp["salt_b64"])
+        kek, _ = derive_kek_from_password(password, salt=salt)
+        wrapped_bytes = SecureKeyStore.load_private_key(f"doctor__{doc_code}")
+        priv_pem = unwrap_key_with_kek(kek, wrapped_bytes.decode())
+        priv_obj = rsa_load_private(priv_pem)
+        return priv_pem, priv_obj
+    except KeyError:
+        raise ValueError(
+            "Private key not found in credential store – re-register on this machine"
+        )
+    except Exception:
+        # KEK derivation succeeded but unwrap failed → genuinely wrong password
+        raise ValueError(
+            "Wrong password – please use the same password you registered with"
+        )
+
+
 
 # ── API ────────────────────────────────────────────────────────────────────
 @app.route("/")
@@ -95,6 +139,7 @@ def api_register():
     hosp = d.get("hospital",""); email = d.get("email",""); pw = d.get("password","")
     if not name: return jsonify({"error":"Name is required"}), 400
     if not pw:   return jsonify({"error":"Password is required"}), 400
+    if len(pw) < 8: return jsonify({"error":"Password must be at least 8 characters"}), 400
 
     priv, pub = generate_rsa_keypair()
     doctor_id   = str(uuid.uuid4())
@@ -161,22 +206,13 @@ def api_request_access():
     d         = request.get_json(force=True)
     doc_code  = d.get("doctor_code",""); pat_code = d.get("patient_code",""); pw = d.get("password","")
 
-    folder = doc_dir(doc_code)
-    if not folder: return jsonify({"error":"Doctor profile not found on this machine"}), 404
-
-    # load doctor private key
     try:
-        kp       = json.load(open(os.path.join(folder,"key_protection.json")))
-        salt     = b64decode(kp["salt_b64"])
-        kek,_    = derive_kek_from_password(pw, salt=salt)
-        wrapped_bytes = SecureKeyStore.load_private_key(f"doctor__{doc_code}")
-        priv_pem = unwrap_key_with_kek(kek, wrapped_bytes.decode())
-        rsa_load_private(priv_pem)
-    except KeyError:
-        return jsonify({"error": "Private key not found. Re-register on this machine."}), 404
-    except Exception:
-        return jsonify({"error":"Wrong password"}), 401
+        _, _ = unlock_doctor_private_key(doc_code, pw)
+    except ValueError as e:
+        code = 404 if "not found" in str(e).lower() else 401
+        return jsonify({"error": str(e)}), code
 
+    folder  = doc_dir(doc_code)
     pub_pem = open(os.path.join(folder,"doctor_public.pem"),"rb").read().decode()
     meta    = json.load(open(os.path.join(folder,"doctor_data.json")))
 
@@ -217,22 +253,11 @@ def api_fetch_record():
     d        = request.get_json(force=True)
     doc_code = d.get("doctor_code",""); pat_code = d.get("patient_code",""); pw = d.get("password","")
 
-    folder = doc_dir(doc_code)
-    if not folder: return jsonify({"error":"Doctor profile not found"}), 404
-
-    # unlock private key from credential store
     try:
-        kp       = json.load(open(os.path.join(folder,"key_protection.json")))
-        salt     = b64decode(kp["salt_b64"])
-        kek,_    = derive_kek_from_password(pw, salt=salt)
-        wrapped_bytes = SecureKeyStore.load_private_key(f"doctor__{doc_code}")
-        priv_pem = unwrap_key_with_kek(kek, wrapped_bytes.decode())
-        priv     = rsa_load_private(priv_pem)
-    except KeyError:
-        return jsonify({"error": "Private key not found in credential store. "
-                                 "Re-register on this machine."}), 404
-    except Exception:
-        return jsonify({"error":"Wrong password"}), 401
+        _, priv = unlock_doctor_private_key(doc_code, pw)
+    except ValueError as e:
+        code = 404 if "not found" in str(e).lower() else 401
+        return jsonify({"error": str(e)}), code
 
     # fetch encrypted record from backend
     try:
@@ -398,25 +423,17 @@ def api_add_note():
         return jsonify({}), 200
     body = request.get_json(force=True) or {}
 
-    # Local password verification before sending to backend
     doc_code = body.get("doctor_code", "").strip()
     pw       = body.get("password", "")
-    folder   = doc_dir(doc_code)
-    if not folder:
-        return jsonify({"error": "Doctor profile not found on this machine"}), 404
-    try:
-        kp      = json.load(open(os.path.join(folder, "key_protection.json")))
-        salt    = b64decode(kp["salt_b64"])
-        kek, _  = derive_kek_from_password(pw, salt=salt)
-        wrapped_bytes = SecureKeyStore.load_private_key(f"doctor__{doc_code}")
-        unwrap_key_with_kek(kek, wrapped_bytes.decode())   # validates password
-    except KeyError:
-        return jsonify({"error": "Private key not found in credential store. "
-                                 "Re-register on this machine."}), 404
-    except Exception:
-        return jsonify({"error": "Wrong password"}), 401
 
-    meta = json.load(open(os.path.join(folder, "doctor_data.json")))
+    try:
+        unlock_doctor_private_key(doc_code, pw)   # validates password only
+    except ValueError as e:
+        code = 404 if "not found" in str(e).lower() else 401
+        return jsonify({"error": str(e)}), code
+
+    folder = doc_dir(doc_code)
+    meta   = json.load(open(os.path.join(folder, "doctor_data.json")))
     try:
         r = http.post(f"{BACKEND}/doctor_notes/add",
             json={
@@ -469,21 +486,11 @@ def api_delete_note(note_id):
     doc_code = body.get("doctor_code", "").strip()
     pw       = body.get("password", "")
 
-    # Local password check
-    folder = doc_dir(doc_code)
-    if not folder:
-        return jsonify({"error": "Doctor profile not found"}), 404
     try:
-        kp      = json.load(open(os.path.join(folder, "key_protection.json")))
-        salt    = b64decode(kp["salt_b64"])
-        kek, _  = derive_kek_from_password(pw, salt=salt)
-        wrapped_bytes = SecureKeyStore.load_private_key(f"doctor__{doc_code}")
-        unwrap_key_with_kek(kek, wrapped_bytes.decode())   # validates password
-    except KeyError:
-        return jsonify({"error": "Private key not found in credential store. "
-                                 "Re-register on this machine."}), 404
-    except Exception:
-        return jsonify({"error": "Wrong password"}), 401
+        unlock_doctor_private_key(doc_code, pw)   # validates password only
+    except ValueError as e:
+        code = 404 if "not found" in str(e).lower() else 401
+        return jsonify({"error": str(e)}), code
 
     try:
         r = http.delete(f"{BACKEND}/doctor_notes/{note_id}",
