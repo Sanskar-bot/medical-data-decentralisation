@@ -35,7 +35,7 @@ python-dotenv==1.2.1
 python-whois==0.9.4
 pywin32-ctypes==0.2.3
 PyYAML==6.0.3
-python-barcode==0.15.1
+python-barcode==0.16.1
 qrcode==8.2
 requests==2.32.3
 setuptools==80.9.0

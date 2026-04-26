@@ -797,13 +797,24 @@ def doctor_load_profile():
         d = request.get_json(force=True) or {}
         doc_code = session.get("doctor_code", "")
         pw = d.get("password", "")
-        r = http.post(
-            f"{DOCTOR_PORTAL}/api/load_profile",
-            json={"doctor_code": doc_code, "password": pw},
-            cookies={"session": request.cookies.get("session", "")},
-            headers=_fwd_headers(), timeout=10,
-        )
-        return jsonify(r.json()), r.status_code
+        try:
+            r = http.post(
+                f"{DOCTOR_PORTAL}/api/load_profile",
+                json={"doctor_code": doc_code, "password": pw},
+                cookies={"session": request.cookies.get("session", "")},
+                headers=_fwd_headers(), timeout=10,
+            )
+            return jsonify(r.json()), r.status_code
+        except (http.exceptions.ConnectionError, http.exceptions.Timeout):
+            # Fallback: return doctor info from session cache
+            return jsonify({
+                "name":           session.get("name", ""),
+                "doctor_code":    doc_code,
+                "specialization": session.get("specialization", ""),
+                "hospital":       session.get("hospital", ""),
+                "email":          session.get("email", ""),
+                "_portal_fallback": True,
+            }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
@@ -815,17 +826,28 @@ def doctor_request_access():
     if err: return err
     try:
         d = request.get_json(force=True) or {}
-        r = http.post(
-            f"{DOCTOR_PORTAL}/api/request_access",
-            json={
-                "doctor_code": session.get("doctor_code", ""),
-                "patient_code": d.get("patient_code", ""),
-                "password": d.get("password", ""),
-            },
-            cookies={"session": request.cookies.get("session", "")},
-            headers=_fwd_headers(), timeout=10,
-        )
-        return jsonify(r.json()), r.status_code
+        try:
+            r = http.post(
+                f"{DOCTOR_PORTAL}/api/request_access",
+                json={
+                    "doctor_code": session.get("doctor_code", ""),
+                    "patient_code": d.get("patient_code", ""),
+                    "password": d.get("password", ""),
+                },
+                cookies={"session": request.cookies.get("session", "")},
+                headers=_fwd_headers(), timeout=10,
+            )
+            return jsonify(r.json()), r.status_code
+        except (http.exceptions.ConnectionError, http.exceptions.Timeout):
+            # Fallback: call backend request-access endpoint directly
+            hdrs = {**_headers()}
+            jwt = session.get("jwt_token", "")
+            if jwt: hdrs["Authorization"] = f"Bearer {jwt}"
+            rb = http.post(f"{BACKEND}/request_access",
+                json={"doctor_code": session.get("doctor_code", ""),
+                      "patient_code": d.get("patient_code", "")},
+                headers=hdrs, timeout=10)
+            return jsonify(rb.json()), rb.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
@@ -837,17 +859,20 @@ def doctor_fetch_record():
     if err: return err
     try:
         d = request.get_json(force=True) or {}
-        r = http.post(
-            f"{DOCTOR_PORTAL}/api/fetch_record",
-            json={
-                "doctor_code": session.get("doctor_code", ""),
-                "patient_code": d.get("patient_code", ""),
-                "password": d.get("password", ""),
-            },
-            cookies={"session": request.cookies.get("session", "")},
-            headers=_fwd_headers(), timeout=10,
-        )
-        return jsonify(r.json()), r.status_code
+        try:
+            r = http.post(
+                f"{DOCTOR_PORTAL}/api/fetch_record",
+                json={
+                    "doctor_code": session.get("doctor_code", ""),
+                    "patient_code": d.get("patient_code", ""),
+                    "password": d.get("password", ""),
+                },
+                cookies={"session": request.cookies.get("session", "")},
+                headers=_fwd_headers(), timeout=10,
+            )
+            return jsonify(r.json()), r.status_code
+        except (http.exceptions.ConnectionError, http.exceptions.Timeout):
+            return jsonify({"error": "Doctor Portal (port 5002) is not running. Please start it with: python portals/doctor_portal.py"}), 503
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
@@ -860,13 +885,72 @@ def doctor_add_note():
     try:
         d = request.get_json(force=True) or {}
         d["doctor_code"] = session.get("doctor_code", "")
-        r = http.post(
-            f"{DOCTOR_PORTAL}/api/add_note",
-            json=d,
-            cookies={"session": request.cookies.get("session", "")},
-            headers=_fwd_headers(), timeout=30,
-        )
-        return jsonify(r.json()), r.status_code
+        try:
+            r = http.post(
+                f"{DOCTOR_PORTAL}/api/add_note",
+                json=d,
+                cookies={"session": request.cookies.get("session", "")},
+                headers=_fwd_headers(), timeout=10,
+            )
+            return jsonify(r.json()), r.status_code
+        except (http.exceptions.ConnectionError, http.exceptions.Timeout):
+            # ── Fallback: doctor_portal not reachable — call backend directly ──
+            # Doctor is already JWT-authenticated via session; we compose the
+            # note payload from session metadata (name, specialization, hospital)
+            # which was loaded from local doctor_data.json at login time.
+            doc_code = session.get("doctor_code", "")
+            pw       = d.get("password", "")
+
+            # If we have doctor_code and password, verify locally before saving
+            if doc_code and pw:
+                try:
+                    PORTALS_DIR = os.path.dirname(os.path.abspath(__file__))
+                    DOCTORS_DIR_L = os.path.join(ROOT, "doctor", "Doctors")
+                    from common.crypto_utils import derive_kek_from_password, unwrap_key_with_kek, rsa_load_private
+                    from common.secure_key_store import SecureKeyStore
+                    from base64 import b64decode as _b64
+                    # Walk doctor folders looking for this doctor_code
+                    _folder = None
+                    for _df in os.listdir(DOCTORS_DIR_L):
+                        _meta_path = os.path.join(DOCTORS_DIR_L, _df, "doctor_data.json")
+                        if os.path.exists(_meta_path):
+                            try:
+                                _m = json.load(open(_meta_path, encoding="utf-8"))
+                                if _m.get("doctor_code") == doc_code:
+                                    _folder = os.path.join(DOCTORS_DIR_L, _df)
+                                    break
+                            except Exception:
+                                pass
+                    if _folder:
+                        _kp_path = os.path.join(_folder, "key_protection.json")
+                        if os.path.exists(_kp_path):
+                            _kp   = json.load(open(_kp_path, encoding="utf-8"))
+                            _salt = _b64(_kp["salt_b64"])
+                            _kek, _ = derive_kek_from_password(pw, salt=_salt)
+                            _wb  = SecureKeyStore.load_private_key(f"doctor__{doc_code}")
+                            unwrap_key_with_kek(_kek, _wb.decode())  # raises if wrong pw
+                except Exception as ve:
+                    return jsonify({"error": f"Password verification failed: {ve}"}), 401
+
+            # Build note payload from session-cached doctor metadata
+            note_payload = {
+                "patient_code":          d.get("patient_code", ""),
+                "doctor_code":           doc_code,
+                "doctor_name":           session.get("name", ""),
+                "doctor_specialization": session.get("specialization", ""),
+                "doctor_hospital":       session.get("hospital", ""),
+                "note_type":             d.get("note_type", "General"),
+                "note":                  d.get("note_text", ""),
+                "visit_date":            d.get("visit_date", ""),
+                "image_b64":             d.get("image_b64", ""),
+                "image_type":            d.get("image_type", ""),
+            }
+            hdrs = {**_headers()}
+            jwt = session.get("jwt_token", "")
+            if jwt:
+                hdrs["Authorization"] = f"Bearer {jwt}"
+            rb = http.post(f"{BACKEND}/doctor_notes/add", json=note_payload, headers=hdrs, timeout=30)
+            return jsonify(rb.json()), rb.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
