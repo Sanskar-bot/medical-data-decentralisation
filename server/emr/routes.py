@@ -1,0 +1,410 @@
+"""
+emr/routes.py — Flask Blueprint with all EMR API endpoints.
+
+Reuses the auth decorators and helpers defined in server.py:
+  _require_jwt, rate_limited, audit, load_json, save_json
+
+The blueprint is registered by server.py with:
+    from emr.routes import emr_bp
+    app.register_blueprint(emr_bp)
+"""
+
+import os
+import json
+import time
+from datetime import datetime, timezone
+from functools import wraps
+
+from flask import Blueprint, request, jsonify
+
+# ── EMR sub-modules ───────────────────────────────────────────────────────────
+from . import models, store
+
+emr_bp = Blueprint("emr", __name__, url_prefix="/emr")
+
+# ── Late-bound references to server.py helpers ────────────────────────────────
+# These are resolved at request-time via current_app so there's no circular
+# import.  server.py attaches them to app.config during blueprint registration.
+
+def _get_helper(name):
+    from flask import current_app
+    return current_app.config.get(f"EMR_{name}")
+
+
+def _require_jwt_deco(roles=None):
+    """Wrap server.py's _require_jwt so it works inside the blueprint."""
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            fn = _get_helper("require_jwt")
+            if fn is None:
+                return jsonify({"error": "auth not configured"}), 500
+            # _require_jwt returns a decorator; we need to call it
+            inner = fn(roles=roles)(f)
+            return inner(*args, **kwargs)
+        # Flask needs a unique endpoint name
+        wrapper.__name__ = f.__name__
+        return wrapper
+    return decorator
+
+
+def _audit(action, actor="", target="", detail=""):
+    fn = _get_helper("audit")
+    if fn:
+        fn(action, actor=actor, target=target, detail=detail)
+
+
+def _rate_limited(max_calls=10, window=60):
+    """Lazy wrapper for server.py's rate_limited.  Defers helper lookup to
+    request-time so it works even when the blueprint is imported outside an
+    app context (e.g. during tests or at module load)."""
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            fn = _get_helper("rate_limited")
+            if fn:
+                # Apply the real rate limiter at request time
+                inner = fn(max_calls=max_calls, window=window)(f)
+                return inner(*args, **kwargs)
+            return f(*args, **kwargs)
+        wrapper.__name__ = f.__name__
+        return wrapper
+    return decorator
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#   PATIENT PROFILE ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@emr_bp.route("/patient/<patient_id>/profile", methods=["GET"])
+@_require_jwt_deco()
+def get_patient_profile(patient_id):
+    """Fetch extended EMR profile for a patient."""
+    p = request.jwt_payload
+    # Patient can only see own profile; doctors and admins can see any
+    if p.get("role") == "patient" and p.get("uid") != patient_id:
+        return jsonify({"error": "forbidden"}), 403
+
+    profile = store.get_profile(patient_id)
+    if not profile:
+        return jsonify({"error": "profile_not_found",
+                        "hint": "Use PUT to create the profile first"}), 404
+    return jsonify(profile), 200
+
+
+@emr_bp.route("/patient/<patient_id>/profile", methods=["PUT"])
+@_require_jwt_deco()
+@_rate_limited(max_calls=10, window=60)
+def upsert_patient_profile(patient_id):
+    """Create or update a patient's extended EMR profile."""
+    p = request.jwt_payload
+    if p.get("role") == "patient" and p.get("uid") != patient_id:
+        return jsonify({"error": "forbidden"}), 403
+
+    body = request.get_json(force=True) or {}
+    body["patient_id"] = patient_id
+
+    errors = models.validate_patient_profile(body)
+    if errors:
+        return jsonify({"error": "validation_failed", "details": errors}), 400
+
+    existing = store.get_profile(patient_id)
+    if existing:
+        # Partial update — merge incoming fields into existing
+        for key in ("name", "age", "gender", "blood_group",
+                     "medical_history", "allergies", "emergency_contact",
+                     "past_visits"):
+            if key in body:
+                existing[key] = body[key]
+        existing["updated_at"] = models._now_iso()
+        store.upsert_profile(existing)
+        _audit("emr_profile_updated", actor=p.get("sub", ""), target=patient_id)
+        return jsonify(existing), 200
+    else:
+        profile = models.new_patient_profile(body)
+        store.upsert_profile(profile)
+        _audit("emr_profile_created", actor=p.get("sub", ""), target=patient_id)
+        return jsonify(profile), 201
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#   APPOINTMENT ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@emr_bp.route("/appointments", methods=["POST"])
+@_require_jwt_deco(roles=["doctor", "admin"])
+@_rate_limited(max_calls=20, window=60)
+def create_appointment():
+    body = request.get_json(force=True) or {}
+    jwt_p = request.jwt_payload
+
+    # Auto-fill doctor_id from JWT if not provided
+    if not body.get("doctor_id"):
+        body["doctor_id"] = jwt_p.get("uid", "")
+
+    errors = models.validate_appointment(body)
+    if errors:
+        return jsonify({"error": "validation_failed", "details": errors}), 400
+
+    appt = models.new_appointment(body)
+    store.add_appointment(appt)
+    _audit("appointment_created", actor=jwt_p.get("sub", ""),
+           target=body["patient_id"], detail=f"id={appt['id']}")
+    return jsonify(appt), 201
+
+
+@emr_bp.route("/appointments/patient/<patient_id>", methods=["GET"])
+@_require_jwt_deco()
+def list_patient_appointments(patient_id):
+    p = request.jwt_payload
+    if p.get("role") == "patient" and p.get("uid") != patient_id:
+        return jsonify({"error": "forbidden"}), 403
+    appts = store.appointments_for_patient(patient_id)
+    appts.sort(key=lambda a: a.get("date_time", ""), reverse=True)
+    return jsonify(appts), 200
+
+
+@emr_bp.route("/appointments/doctor/<doctor_id>", methods=["GET"])
+@_require_jwt_deco(roles=["doctor", "admin"])
+def list_doctor_appointments(doctor_id):
+    p = request.jwt_payload
+    if p.get("role") == "doctor" and p.get("uid") != doctor_id:
+        return jsonify({"error": "forbidden"}), 403
+    appts = store.appointments_for_doctor(doctor_id)
+    appts.sort(key=lambda a: a.get("date_time", ""), reverse=True)
+    return jsonify(appts), 200
+
+
+@emr_bp.route("/appointments/<appointment_id>", methods=["PUT"])
+@_require_jwt_deco(roles=["doctor", "admin"])
+def update_appointment(appointment_id):
+    body = request.get_json(force=True) or {}
+    jwt_p = request.jwt_payload
+
+    existing = store.get_appointment(appointment_id)
+    if not existing:
+        return jsonify({"error": "appointment_not_found"}), 404
+
+    # Only the assigned doctor or admin can update
+    if jwt_p.get("role") == "doctor" and existing["doctor_id"] != jwt_p.get("uid"):
+        return jsonify({"error": "forbidden"}), 403
+
+    # Allowed update fields
+    allowed = {"date_time", "reason", "status", "notes"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    updates["updated_at"] = models._now_iso()
+
+    # Validate status if changing
+    if "status" in updates:
+        s = updates["status"].lower()
+        if s not in models.APPOINTMENT_STATUSES:
+            return jsonify({"error": f"invalid status: {s}"}), 400
+        updates["status"] = s
+
+    result = store.update_appointment(appointment_id, updates)
+    _audit("appointment_updated", actor=jwt_p.get("sub", ""),
+           target=existing["patient_id"], detail=f"id={appointment_id}")
+    return jsonify(result), 200
+
+
+@emr_bp.route("/appointments/<appointment_id>", methods=["DELETE"])
+@_require_jwt_deco(roles=["doctor", "admin"])
+def delete_appointment(appointment_id):
+    jwt_p = request.jwt_payload
+
+    existing = store.get_appointment(appointment_id)
+    if not existing:
+        return jsonify({"error": "appointment_not_found"}), 404
+
+    if jwt_p.get("role") == "doctor" and existing["doctor_id"] != jwt_p.get("uid"):
+        return jsonify({"error": "forbidden"}), 403
+
+    store.delete_appointment(appointment_id)
+    _audit("appointment_deleted", actor=jwt_p.get("sub", ""),
+           target=existing["patient_id"], detail=f"id={appointment_id}")
+    return jsonify({"message": "deleted", "id": appointment_id}), 200
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#   E-PRESCRIPTION ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@emr_bp.route("/prescriptions", methods=["POST"])
+@_require_jwt_deco(roles=["doctor", "admin"])
+@_rate_limited(max_calls=20, window=60)
+def create_prescription():
+    body  = request.get_json(force=True) or {}
+    jwt_p = request.jwt_payload
+
+    if not body.get("doctor_id"):
+        body["doctor_id"] = jwt_p.get("uid", "")
+    body["doctor_email"] = jwt_p.get("sub", "")
+
+    errors = models.validate_prescription(body)
+    if errors:
+        return jsonify({"error": "validation_failed", "details": errors}), 400
+
+    rx = models.new_prescription(body)
+    store.add_prescription(rx)
+    _audit("prescription_created", actor=jwt_p.get("sub", ""),
+           target=body["patient_id"], detail=f"id={rx['id']}")
+    return jsonify(rx), 201
+
+
+@emr_bp.route("/prescriptions/patient/<patient_id>", methods=["GET"])
+@_require_jwt_deco()
+def list_patient_prescriptions(patient_id):
+    p = request.jwt_payload
+    if p.get("role") == "patient" and p.get("uid") != patient_id:
+        return jsonify({"error": "forbidden"}), 403
+    rxs = store.prescriptions_for_patient(patient_id)
+    rxs.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    return jsonify(rxs), 200
+
+
+@emr_bp.route("/prescriptions/<prescription_id>", methods=["GET"])
+@_require_jwt_deco()
+def get_prescription(prescription_id):
+    p  = request.jwt_payload
+    rx = store.get_prescription(prescription_id)
+    if not rx:
+        return jsonify({"error": "prescription_not_found"}), 404
+    # Patient can only fetch own prescriptions
+    if p.get("role") == "patient" and p.get("uid") != rx["patient_id"]:
+        return jsonify({"error": "forbidden"}), 403
+    return jsonify(rx), 200
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#   LAB REPORT ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@emr_bp.route("/lab-reports", methods=["POST"])
+@_require_jwt_deco(roles=["doctor", "admin"])
+@_rate_limited(max_calls=20, window=60)
+def create_lab_report():
+    body  = request.get_json(force=True) or {}
+    jwt_p = request.jwt_payload
+
+    if not body.get("doctor_id"):
+        body["doctor_id"] = jwt_p.get("uid", "")
+    body["doctor_email"] = jwt_p.get("sub", "")
+
+    errors = models.validate_lab_report(body)
+    if errors:
+        return jsonify({"error": "validation_failed", "details": errors}), 400
+
+    report = models.new_lab_report(body)
+    store.add_lab_report(report)
+    _audit("lab_report_created", actor=jwt_p.get("sub", ""),
+           target=body["patient_id"], detail=f"id={report['id']}")
+    return jsonify(report), 201
+
+
+@emr_bp.route("/lab-reports/patient/<patient_id>", methods=["GET"])
+@_require_jwt_deco()
+def list_patient_lab_reports(patient_id):
+    p = request.jwt_payload
+    if p.get("role") == "patient" and p.get("uid") != patient_id:
+        return jsonify({"error": "forbidden"}), 403
+    reports = store.lab_reports_for_patient(patient_id)
+    reports.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    return jsonify(reports), 200
+
+
+@emr_bp.route("/lab-reports/<report_id>", methods=["GET"])
+@_require_jwt_deco()
+def get_lab_report(report_id):
+    p      = request.jwt_payload
+    report = store.get_lab_report(report_id)
+    if not report:
+        return jsonify({"error": "lab_report_not_found"}), 404
+    if p.get("role") == "patient" and p.get("uid") != report["patient_id"]:
+        return jsonify({"error": "forbidden"}), 403
+    return jsonify(report), 200
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#   ADMIN ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@emr_bp.route("/admin/users", methods=["GET"])
+@_require_jwt_deco(roles=["admin"])
+def admin_list_users():
+    """List all registered users (admin only)."""
+    fn = _get_helper("load_users")
+    if not fn:
+        return jsonify({"error": "not configured"}), 500
+    users = fn()
+    safe = []
+    for email, u in users.items():
+        safe.append({
+            "id":    u.get("id"),
+            "name":  u.get("name"),
+            "email": email,
+            "role":  u.get("role"),
+            "created_at": u.get("created_at"),
+            "last_login": u.get("last_login"),
+            "locked":     u.get("locked", False),
+        })
+    return jsonify(safe), 200
+
+
+@emr_bp.route("/admin/users/<user_id>/role", methods=["PUT"])
+@_require_jwt_deco(roles=["admin"])
+@_rate_limited(max_calls=5, window=60)
+def admin_change_role(user_id):
+    """Change a user's role (admin only)."""
+    body = request.get_json(force=True) or {}
+    new_role = body.get("role", "")
+    if new_role not in ("patient", "doctor", "admin"):
+        return jsonify({"error": "invalid role"}), 400
+
+    fn_load = _get_helper("load_users")
+    fn_save = _get_helper("save_users")
+    if not fn_load or not fn_save:
+        return jsonify({"error": "not configured"}), 500
+
+    users = fn_load()
+    target = None
+    for email, u in users.items():
+        if u.get("id") == user_id:
+            target = u
+            target_email = email
+            break
+    if not target:
+        return jsonify({"error": "user_not_found"}), 404
+
+    target["role"] = new_role
+    fn_save(users)
+    jwt_p = request.jwt_payload
+    _audit("admin_role_change", actor=jwt_p.get("sub", ""),
+           target=target_email, detail=f"new_role={new_role}")
+    return jsonify({"message": "role_updated", "user_id": user_id, "role": new_role}), 200
+
+
+@emr_bp.route("/admin/stats", methods=["GET"])
+@_require_jwt_deco(roles=["admin"])
+def admin_stats():
+    """Return high-level system statistics."""
+    fn = _get_helper("load_users")
+    users = fn() if fn else {}
+
+    profiles      = store.list_profiles()
+    appointments  = store._read("appointments")
+    prescriptions = store._read("prescriptions")
+    lab_reports   = store._read("lab_reports")
+
+    role_counts = {}
+    for u in users.values():
+        r = u.get("role", "unknown")
+        role_counts[r] = role_counts.get(r, 0) + 1
+
+    return jsonify({
+        "total_users":        len(users),
+        "users_by_role":      role_counts,
+        "emr_profiles":       len(profiles),
+        "total_appointments": len(appointments),
+        "total_prescriptions":len(prescriptions),
+        "total_lab_reports":  len(lab_reports),
+    }), 200

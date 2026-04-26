@@ -700,6 +700,11 @@
             Requests</button>
         <button class="nav-btn" onclick="showSection('notes', loadNotes)"><span class="ico">📝</span> Doctor
             Notes</button>
+        <span class="nav-label">EMR</span>
+        <button class="nav-btn" onclick="showSection('emr-profile', loadEmrProfile)"><span class="ico">🩺</span> EMR Profile</button>
+        <button class="nav-btn" onclick="showSection('emr-appointments', loadPatientAppointments)"><span class="ico">📅</span> Appointments</button>
+        <button class="nav-btn" onclick="showSection('emr-prescriptions', loadPatientPrescriptions)"><span class="ico">💊</span> Prescriptions</button>
+        <button class="nav-btn" onclick="showSection('emr-lab-reports', loadPatientLabReports)"><span class="ico">🧪</span> Lab Reports</button>
         <button class="nav-btn" onclick="showSection('history', loadHistory)"><span class="ico">⏱</span> Login
             History</button>
         {% else %}
@@ -708,6 +713,10 @@
         <button class="nav-btn" onclick="showSection('doc-records')"><span class="ico">📋</span> Patient
             Records</button>
         <button class="nav-btn" onclick="showSection('doc-notes')"><span class="ico">📝</span> Add Note</button>
+        <span class="nav-label">EMR</span>
+        <button class="nav-btn" onclick="showSection('doc-emr-appointments', docLoadAppointments)"><span class="ico">📅</span> Appointments</button>
+        <button class="nav-btn" onclick="showSection('doc-emr-prescriptions')"><span class="ico">💊</span> Prescriptions</button>
+        <button class="nav-btn" onclick="showSection('doc-emr-lab-reports')"><span class="ico">🧪</span> Lab Reports</button>
         <button class="nav-btn" onclick="showSection('doc-qr')"><span class="ico">📲</span> My QR Code</button>
         {% endif %}
 
@@ -791,6 +800,26 @@
                     <div class="ot-icon">📝</div>
                     <div class="ot-title">Doctor Notes</div>
                     <div class="ot-desc">Clinical notes from your doctors</div>
+                </div>
+                <div class="ov-tile" onclick="showSection('emr-profile', loadEmrProfile)">
+                    <div class="ot-icon">🩺</div>
+                    <div class="ot-title">EMR Profile</div>
+                    <div class="ot-desc">Blood group, allergies &amp; medical history</div>
+                </div>
+                <div class="ov-tile" onclick="showSection('emr-appointments', loadPatientAppointments)">
+                    <div class="ot-icon">📅</div>
+                    <div class="ot-title">Appointments</div>
+                    <div class="ot-desc">Your scheduled &amp; past appointments</div>
+                </div>
+                <div class="ov-tile" onclick="showSection('emr-prescriptions', loadPatientPrescriptions)">
+                    <div class="ot-icon">💊</div>
+                    <div class="ot-title">Prescriptions</div>
+                    <div class="ot-desc">E-prescriptions from your doctors</div>
+                </div>
+                <div class="ov-tile" onclick="showSection('emr-lab-reports', loadPatientLabReports)">
+                    <div class="ot-icon">🧪</div>
+                    <div class="ot-title">Lab Reports</div>
+                    <div class="ot-desc">Lab &amp; diagnostic reports</div>
                 </div>
                 <div class="ov-tile" onclick="showSection('history', loadHistory)">
                     <div class="ot-icon">⏱</div>
@@ -901,6 +930,78 @@
             </div>
             <div id="hist-list" style="display:none;"></div>
         </div>
+
+        <!-- ── EMR PROFILE ── -->
+        <div class="section" id="sec-emr-profile">
+            <div class="page-head">
+                <h2>🩺 EMR Profile</h2>
+                <p>Your extended medical record — blood group, allergies, medical history.</p>
+            </div>
+            <div id="emrp-alert"></div>
+            <div class="card">
+                <div class="card-title">Basic Info</div>
+                <div class="form-group"><label>Blood Group</label>
+                    <select id="emrp-bg" style="max-width:200px;">
+                        <option value="">— select —</option>
+                        <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+                        <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Age</label><input type="text" id="emrp-age" placeholder="e.g. 28" style="max-width:120px;"></div>
+                <div class="form-group"><label>Gender</label>
+                    <select id="emrp-gender" style="max-width:200px;">
+                        <option value="">— select —</option>
+                        <option value="male">Male</option><option value="female">Female</option>
+                        <option value="other">Other</option><option value="prefer_not_to_say">Prefer not to say</option>
+                    </select>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">Medical History &amp; Allergies</div>
+                <div class="form-group"><label>Medical History (comma-separated)</label>
+                    <textarea id="emrp-history" placeholder="e.g. Diabetes Type 2, Hypertension"></textarea></div>
+                <div class="form-group"><label>Allergies (comma-separated)</label>
+                    <textarea id="emrp-allergies" placeholder="e.g. Penicillin, Peanuts"></textarea></div>
+            </div>
+            <div class="card">
+                <div class="card-title">Emergency Contact</div>
+                <div class="form-group"><label>Name</label><input type="text" id="emrp-ec-name" placeholder="Contact name"></div>
+                <div class="form-group"><label>Phone</label><input type="text" id="emrp-ec-phone" placeholder="+91 XXXXX XXXXX"></div>
+                <div class="form-group"><label>Relation</label><input type="text" id="emrp-ec-rel" placeholder="e.g. Spouse, Parent"></div>
+            </div>
+            <button class="btn btn-primary" onclick="saveEmrProfile()" id="emrp-btn">💾 Save EMR Profile</button>
+        </div>
+
+        <!-- ── PATIENT APPOINTMENTS ── -->
+        <div class="section" id="sec-emr-appointments">
+            <div class="page-head">
+                <h2>📅 My Appointments</h2>
+                <p>Scheduled and past appointments with your doctors.</p>
+            </div>
+            <div id="pappt-loading" class="card"><div class="spin spin-dark"></div> Loading…</div>
+            <div id="pappt-list" style="display:none;"></div>
+        </div>
+
+        <!-- ── PATIENT PRESCRIPTIONS ── -->
+        <div class="section" id="sec-emr-prescriptions">
+            <div class="page-head">
+                <h2>💊 My Prescriptions</h2>
+                <p>E-prescriptions issued by your doctors.</p>
+            </div>
+            <div id="prx-loading" class="card"><div class="spin spin-dark"></div> Loading…</div>
+            <div id="prx-list" style="display:none;"></div>
+        </div>
+
+        <!-- ── PATIENT LAB REPORTS ── -->
+        <div class="section" id="sec-emr-lab-reports">
+            <div class="page-head">
+                <h2>🧪 My Lab Reports</h2>
+                <p>Diagnostic and laboratory reports submitted by your doctors.</p>
+            </div>
+            <div id="plr-loading" class="card"><div class="spin spin-dark"></div> Loading…</div>
+            <div id="plr-list" style="display:none;"></div>
+        </div>
+
         {% endif %}
 
         {% if role == 'doctor' %}
@@ -1073,6 +1174,68 @@
             </div>
         </div>
 
+        <!-- ── DOCTOR APPOINTMENTS ── -->
+        <div class="section" id="sec-doc-emr-appointments">
+            <div class="page-head">
+                <h2>📅 Appointments</h2>
+                <p>Book appointments for your patients and view your upcoming schedule.</p>
+            </div>
+            <div id="dappt-alert"></div>
+            <div class="card">
+                <div class="card-title">Book New Appointment</div>
+                <div class="form-group"><label>Patient Profile Code *</label><input type="text" id="dappt-pcode" placeholder="e.g. AB12CD34EF"></div>
+                <div class="form-group"><label>Date &amp; Time * (ISO 8601)</label><input type="text" id="dappt-dt" placeholder="2026-05-10T10:30:00"></div>
+                <div class="form-group"><label>Reason</label><input type="text" id="dappt-reason" placeholder="e.g. Follow-up consultation"></div>
+                <div class="form-group"><label>Notes</label><textarea id="dappt-notes" placeholder="Additional notes…" style="min-height:70px;"></textarea></div>
+                <button class="btn btn-primary" onclick="docCreateAppointment()" id="dappt-btn">📅 Book Appointment</button>
+            </div>
+            <div class="card" style="margin-top:18px;">
+                <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+                    <span>My Appointments</span>
+                    <button class="btn btn-sm" style="background:var(--purple3);color:var(--purple);" onclick="docLoadAppointments()">↻ Refresh</button>
+                </div>
+                <div id="dappt-list"><div class="empty-state">Loading…</div></div>
+            </div>
+        </div>
+
+        <!-- ── DOCTOR PRESCRIPTIONS ── -->
+        <div class="section" id="sec-doc-emr-prescriptions">
+            <div class="page-head">
+                <h2>💊 E-Prescriptions</h2>
+                <p>Write digital prescriptions. They are immediately visible to the patient.</p>
+            </div>
+            <div id="drx-alert"></div>
+            <div class="card">
+                <div class="card-title">New Prescription</div>
+                <div class="form-group"><label>Patient Profile Code *</label><input type="text" id="drx-pcode" placeholder="e.g. AB12CD34EF"></div>
+                <div class="form-group"><label>Diagnosis</label><input type="text" id="drx-diagnosis" placeholder="e.g. Viral Upper Respiratory Infection"></div>
+                <div class="form-group"><label>Notes</label><textarea id="drx-notes" placeholder="Additional instructions…" style="min-height:70px;"></textarea></div>
+                <div class="form-group">
+                    <label>Medications</label>
+                    <div id="drx-meds"></div>
+                    <button class="btn btn-sm" style="background:var(--purple3);color:var(--purple);margin-top:8px;" onclick="drxAddMed()">+ Add Medication</button>
+                </div>
+                <button class="btn btn-primary" onclick="docCreatePrescription()" id="drx-btn" style="margin-top:6px;">💊 Issue Prescription</button>
+            </div>
+        </div>
+
+        <!-- ── DOCTOR LAB REPORTS ── -->
+        <div class="section" id="sec-doc-emr-lab-reports">
+            <div class="page-head">
+                <h2>🧪 Lab Reports</h2>
+                <p>Submit lab and diagnostic reports for your patients.</p>
+            </div>
+            <div id="dlr-alert"></div>
+            <div class="card">
+                <div class="card-title">New Lab Report</div>
+                <div class="form-group"><label>Patient Profile Code *</label><input type="text" id="dlr-pcode" placeholder="e.g. AB12CD34EF"></div>
+                <div class="form-group"><label>Report Type *</label><input type="text" id="dlr-type" placeholder="e.g. CBC, Lipid Panel, MRI Brain"></div>
+                <div class="form-group"><label>Results (JSON key-value)</label><textarea id="dlr-results" placeholder='{"Hemoglobin": "14.2 g/dL", "WBC": "7.8 K/uL"}' style="min-height:100px;"></textarea></div>
+                <div class="form-group"><label>Notes</label><textarea id="dlr-notes" placeholder="Clinical interpretation or remarks…" style="min-height:70px;"></textarea></div>
+                <button class="btn btn-primary" onclick="docCreateLabReport()" id="dlr-btn">🧪 Submit Lab Report</button>
+            </div>
+        </div>
+
         {% endif %}
     </main>
 
@@ -1087,7 +1250,9 @@
             // highlight sidebar – map section id to the nav button text
             const _map = {
                 'home': 'home', 'records': 'record', 'requests': 'access', 'notes': 'note', 'history': 'history',
-                'doc-request': 'request access', 'doc-records': 'patient records', 'doc-notes': 'add note', 'doc-qr': 'qr'
+                'doc-request': 'request access', 'doc-records': 'patient records', 'doc-notes': 'add note', 'doc-qr': 'qr',
+                'emr-profile': 'emr profile', 'emr-appointments': 'appointments', 'emr-prescriptions': 'prescriptions', 'emr-lab-reports': 'lab reports',
+                'doc-emr-appointments': 'appointments', 'doc-emr-prescriptions': 'prescriptions', 'doc-emr-lab-reports': 'lab reports'
             };
             const match = (_map[name] || name).toLowerCase();
             document.querySelectorAll('.nav-btn').forEach(b => {
@@ -1543,6 +1708,298 @@
         function downloadDocQR() {
             const c = document.querySelector('#doc-qr-wrap canvas'); if (!c) return alert('QR not generated.');
             const a = document.createElement('a'); a.download = 'doctor_qr_' + _DOC_CODE + '.png'; a.href = c.toDataURL(); a.click();
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        //  EMR FUNCTIONS — PATIENT
+        // ═══════════════════════════════════════════════════════════════════════
+        const _UID = '{{ uid }}';
+        // Use session-injected token first (landing.py login stores JWT in Flask session,
+        // not localStorage), fall back to localStorage for backward compat.
+        const _SESSION_JWT = '{{ jwt_token }}';
+        const _JWT = () => _SESSION_JWT || localStorage.getItem('jwt_token') || '';
+        function emrHeaders() {
+            const h = { 'Content-Type': 'application/json' };
+            const t = _JWT();
+            if (t) h['Authorization'] = 'Bearer ' + t;
+            return h;
+        }
+        async function emrApi(url, opts = {}) {
+            const r = await fetch(url, { headers: emrHeaders(), ...opts });
+            const d = await r.json();
+            return { ok: r.ok, status: r.status, data: d };
+        }
+
+        // ── EMR Profile ──────────────────────────────────────────────────────
+        async function loadEmrProfile() {
+            if (!_UID) return;
+            clearAlert('emrp-alert');
+            try {
+                const { ok, data } = await emrApi('/api/emr/patient/' + _UID + '/profile');
+                if (ok && data.patient_id) {
+                    const sel = v => document.getElementById(v);
+                    sel('emrp-bg').value = data.blood_group || '';
+                    sel('emrp-age').value = data.age || '';
+                    sel('emrp-gender').value = data.gender || '';
+                    sel('emrp-history').value = (data.medical_history || []).join(', ');
+                    sel('emrp-allergies').value = (data.allergies || []).join(', ');
+                    sel('emrp-ec-name').value = (data.emergency_contact || {}).name || '';
+                    sel('emrp-ec-phone').value = (data.emergency_contact || {}).phone || '';
+                    sel('emrp-ec-rel').value = (data.emergency_contact || {}).relation || '';
+                    showAlert('emrp-alert', '✅ Profile loaded.', 'success');
+                    setTimeout(() => clearAlert('emrp-alert'), 2000);
+                }
+            } catch (e) { showAlert('emrp-alert', '❌ ' + e.message); }
+        }
+
+        async function saveEmrProfile() {
+            if (!_UID) { showAlert('emrp-alert', '⚠️ Not logged in.'); return; }
+            clearAlert('emrp-alert');
+            const g = id => document.getElementById(id);
+            const toList = s => s.split(',').map(x => x.trim()).filter(Boolean);
+            const body = {
+                blood_group: g('emrp-bg').value,
+                age: g('emrp-age').value,
+                gender: g('emrp-gender').value,
+                medical_history: toList(g('emrp-history').value),
+                allergies: toList(g('emrp-allergies').value),
+                emergency_contact: { name: g('emrp-ec-name').value, phone: g('emrp-ec-phone').value, relation: g('emrp-ec-rel').value }
+            };
+            const btn = g('emrp-btn');
+            btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Saving…';
+            try {
+                const { ok, data } = await emrApi('/api/emr/patient/' + _UID + '/profile', {
+                    method: 'PUT', body: JSON.stringify(body)
+                });
+                if (!ok) throw new Error(data.error || JSON.stringify(data.details || 'Failed'));
+                showAlert('emrp-alert', '✅ EMR Profile saved successfully!', 'success');
+            } catch (e) { showAlert('emrp-alert', '❌ ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = '💾 Save EMR Profile'; }
+        }
+
+        // ── Patient Appointments ─────────────────────────────────────────────
+        async function loadPatientAppointments() {
+            if (!_UID) return;
+            document.getElementById('pappt-loading').style.display = 'block';
+            document.getElementById('pappt-list').style.display = 'none';
+            try {
+                const { ok, data } = await emrApi('/api/emr/appointments/patient/' + _UID);
+                document.getElementById('pappt-loading').style.display = 'none';
+                const list = document.getElementById('pappt-list');
+                list.style.display = 'block';
+                if (!ok || !Array.isArray(data) || !data.length) {
+                    list.innerHTML = '<div class="card"><div class="empty-state">📅 No appointments found.</div></div>'; return;
+                }
+                list.innerHTML = '<div class="card"><div class="card-title">Appointments (' + data.length + ')</div>' +
+                    '<table class="tbl"><thead><tr><th>Date &amp; Time</th><th>Doctor</th><th>Reason</th><th>Status</th></tr></thead><tbody>' +
+                    data.map(a => `<tr>
+                        <td>${a.date_time ? new Date(a.date_time).toLocaleString('en-IN') : '—'}</td>
+                        <td><span class="code-chip" style="font-size:11px;">${a.doctor_id || '—'}</span></td>
+                        <td>${a.reason || '—'}</td>
+                        <td><span class="badge" style="background:${a.status==='scheduled'?'rgba(5,150,105,.12)':a.status==='completed'?'rgba(100,100,200,.12)':'rgba(220,38,38,.1)'};color:${a.status==='scheduled'?'var(--green)':a.status==='completed'?'#4a1a8a':'var(--red)'};">${a.status || '—'}</span></td>
+                    </tr>`).join('') + '</tbody></table></div>';
+            } catch (e) {
+                document.getElementById('pappt-loading').style.display = 'none';
+                document.getElementById('pappt-list').style.display = 'block';
+                document.getElementById('pappt-list').innerHTML = '<div class="card"><div class="alert alert-error">❌ ' + e.message + '</div></div>';
+            }
+        }
+
+        // ── Patient Prescriptions ────────────────────────────────────────────
+        async function loadPatientPrescriptions() {
+            if (!_UID) return;
+            document.getElementById('prx-loading').style.display = 'block';
+            document.getElementById('prx-list').style.display = 'none';
+            try {
+                const { ok, data } = await emrApi('/api/emr/prescriptions/patient/' + _UID);
+                document.getElementById('prx-loading').style.display = 'none';
+                const list = document.getElementById('prx-list');
+                list.style.display = 'block';
+                if (!ok || !Array.isArray(data) || !data.length) {
+                    list.innerHTML = '<div class="card"><div class="empty-state">💊 No prescriptions found.</div></div>'; return;
+                }
+                list.innerHTML = data.map(rx => `
+                    <div class="card" style="margin-bottom:14px;">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+                            <div><strong>Prescription</strong> <span class="code-chip" style="font-size:10px;margin-left:6px;">${rx.id ? rx.id.slice(0,8) : ''}…</span></div>
+                            <span style="color:var(--muted);font-size:12px;">${rx.created_at ? new Date(rx.created_at).toLocaleDateString('en-IN') : ''}</span>
+                        </div>
+                        ${rx.diagnosis ? `<div style="margin-bottom:6px;"><span class="badge badge-note">Diagnosis</span> <span style="font-size:13px;margin-left:6px;">${rx.diagnosis}</span></div>` : ''}
+                        <div style="margin-top:8px;">
+                            <div class="card-title" style="margin-bottom:6px;">Medications</div>
+                            <table class="tbl"><thead><tr><th>Name</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr></thead><tbody>
+                            ${(rx.medications||[]).map(m=>`<tr><td>${m.name||'—'}</td><td>${m.dosage||'—'}</td><td>${m.frequency||'—'}</td><td>${m.duration||'—'}</td></tr>`).join('')}
+                            </tbody></table>
+                        </div>
+                        ${rx.notes ? `<div style="margin-top:8px;color:var(--muted);font-size:12px;">📝 ${rx.notes}</div>` : ''}
+                    </div>`).join('');
+            } catch (e) {
+                document.getElementById('prx-loading').style.display = 'none';
+                document.getElementById('prx-list').style.display = 'block';
+                document.getElementById('prx-list').innerHTML = '<div class="card"><div class="alert alert-error">❌ ' + e.message + '</div></div>';
+            }
+        }
+
+        // ── Patient Lab Reports ──────────────────────────────────────────────
+        async function loadPatientLabReports() {
+            if (!_UID) return;
+            document.getElementById('plr-loading').style.display = 'block';
+            document.getElementById('plr-list').style.display = 'none';
+            try {
+                const { ok, data } = await emrApi('/api/emr/lab-reports/patient/' + _UID);
+                document.getElementById('plr-loading').style.display = 'none';
+                const list = document.getElementById('plr-list');
+                list.style.display = 'block';
+                if (!ok || !Array.isArray(data) || !data.length) {
+                    list.innerHTML = '<div class="card"><div class="empty-state">🧪 No lab reports found.</div></div>'; return;
+                }
+                list.innerHTML = data.map(r => `
+                    <div class="card" style="margin-bottom:14px;">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+                            <strong>🧪 ${r.report_type || 'Lab Report'}</strong>
+                            <span style="color:var(--muted);font-size:12px;">${r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : ''}</span>
+                        </div>
+                        ${r.results && Object.keys(r.results).length ? `<table class="tbl"><thead><tr><th>Test</th><th>Result</th></tr></thead><tbody>` +
+                            Object.entries(r.results).map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('') + `</tbody></table>` : ''}
+                        ${r.notes ? `<div style="margin-top:8px;color:var(--muted);font-size:12px;">📝 ${r.notes}</div>` : ''}
+                    </div>`).join('');
+            } catch (e) {
+                document.getElementById('plr-loading').style.display = 'none';
+                document.getElementById('plr-list').style.display = 'block';
+                document.getElementById('plr-list').innerHTML = '<div class="card"><div class="alert alert-error">❌ ' + e.message + '</div></div>';
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        //  EMR FUNCTIONS — DOCTOR
+        // ═══════════════════════════════════════════════════════════════════════
+
+        // ── Doctor Appointments ──────────────────────────────────────────────
+        async function docCreateAppointment() {
+            clearAlert('dappt-alert');
+            const g = id => document.getElementById(id).value.trim();
+            const pcode = g('dappt-pcode'), dt = g('dappt-dt');
+            if (!pcode) { showAlert('dappt-alert', '⚠️ Patient code required.'); return; }
+            if (!dt)    { showAlert('dappt-alert', '⚠️ Date & time required (ISO 8601 format).'); return; }
+            const btn = document.getElementById('dappt-btn');
+            btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Booking…';
+            try {
+                const { ok, data } = await emrApi('/api/emr/appointments', {
+                    method: 'POST', body: JSON.stringify({
+                        patient_id: pcode, date_time: dt,
+                        reason: g('dappt-reason'), notes: document.getElementById('dappt-notes').value.trim()
+                    })
+                });
+                if (!ok) throw new Error(data.error || JSON.stringify(data.details || 'Failed'));
+                showAlert('dappt-alert', '✅ Appointment booked! ID: <span style="font-family:monospace;font-size:11px;">' + (data.id||'').slice(0,8) + '…</span>', 'success');
+                ['dappt-pcode','dappt-dt','dappt-reason','dappt-notes'].forEach(id => document.getElementById(id).value = '');
+                docLoadAppointments();
+            } catch (e) { showAlert('dappt-alert', '❌ ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = '📅 Book Appointment'; }
+        }
+
+        async function docLoadAppointments() {
+            if (_ROLE !== 'doctor' || !_DOC_CODE) return;
+            const box = document.getElementById('dappt-list');
+            if (!box) return;
+            box.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px;">Loading…</div>';
+            try {
+                const { ok, data } = await emrApi('/api/emr/appointments/doctor/' + _DOC_CODE);
+                if (!ok || !Array.isArray(data) || !data.length) {
+                    box.innerHTML = '<div class="empty-state">📅 No appointments yet.</div>'; return;
+                }
+                box.innerHTML = '<table class="tbl"><thead><tr><th>Date &amp; Time</th><th>Patient</th><th>Reason</th><th>Status</th><th></th></tr></thead><tbody>' +
+                    data.map(a => `<tr>
+                        <td>${a.date_time ? new Date(a.date_time).toLocaleString('en-IN') : '—'}</td>
+                        <td><span class="code-chip" style="font-size:11px;">${a.patient_id||'—'}</span></td>
+                        <td>${a.reason||'—'}</td>
+                        <td><span class="badge" style="background:${a.status==='scheduled'?'rgba(5,150,105,.12)':a.status==='completed'?'rgba(100,100,200,.12)':'rgba(220,38,38,.1)'};color:${a.status==='scheduled'?'var(--green)':a.status==='completed'?'#4a1a8a':'var(--red)'};">${a.status||'—'}</span></td>
+                        <td><button class="btn btn-sm" style="background:rgba(5,150,105,.12);color:var(--green);border:1px solid rgba(5,150,105,.3);" onclick="docMarkApptDone('${a.id}')">✓ Done</button></td>
+                    </tr>`).join('') + '</tbody></table>';
+            } catch (e) { box.innerHTML = '<div class="alert alert-error">❌ ' + e.message + '</div>'; }
+        }
+
+        async function docMarkApptDone(id) {
+            try {
+                const { ok, data } = await emrApi('/api/emr/appointments/' + id, {
+                    method: 'PUT', body: JSON.stringify({ status: 'completed' })
+                });
+                if (!ok) throw new Error(data.error || 'Failed');
+                docLoadAppointments();
+            } catch (e) { alert('❌ ' + e.message); }
+        }
+
+        // ── Doctor Prescriptions ─────────────────────────────────────────────
+        function drxAddMed() {
+            const box = document.getElementById('drx-meds');
+            const idx = box.querySelectorAll('.drx-med-row').length;
+            const row = document.createElement('div');
+            row.className = 'drx-med-row';
+            row.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;margin-bottom:8px;align-items:center;';
+            row.innerHTML = `
+                <input type="text" placeholder="Drug name *" style="max-width:100%;">
+                <input type="text" placeholder="Dosage" style="max-width:100%;">
+                <input type="text" placeholder="Frequency" style="max-width:100%;">
+                <input type="text" placeholder="Duration" style="max-width:100%;">
+                <button class="btn btn-sm" style="background:rgba(220,38,38,.1);color:var(--red);border:1px solid rgba(220,38,38,.25);padding:6px 10px;" onclick="this.parentElement.remove()">✕</button>`;
+            box.appendChild(row);
+        }
+
+        async function docCreatePrescription() {
+            clearAlert('drx-alert');
+            const g = id => document.getElementById(id).value.trim();
+            const pcode = g('drx-pcode');
+            if (!pcode) { showAlert('drx-alert', '⚠️ Patient code required.'); return; }
+            const medRows = document.querySelectorAll('#drx-meds .drx-med-row');
+            if (!medRows.length) { showAlert('drx-alert', '⚠️ Add at least one medication.'); return; }
+            const medications = [];
+            for (const row of medRows) {
+                const inputs = row.querySelectorAll('input');
+                if (!inputs[0].value.trim()) { showAlert('drx-alert', '⚠️ Each medication must have a name.'); return; }
+                medications.push({ name: inputs[0].value.trim(), dosage: inputs[1].value.trim(), frequency: inputs[2].value.trim(), duration: inputs[3].value.trim() });
+            }
+            const btn = document.getElementById('drx-btn');
+            btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Issuing…';
+            try {
+                const { ok, data } = await emrApi('/api/emr/prescriptions', {
+                    method: 'POST', body: JSON.stringify({
+                        patient_id: pcode, diagnosis: g('drx-diagnosis'), notes: g('drx-notes'), medications
+                    })
+                });
+                if (!ok) throw new Error(data.error || JSON.stringify(data.details || 'Failed'));
+                showAlert('drx-alert', '✅ Prescription issued! ID: <span style="font-family:monospace;font-size:11px;">' + (data.id||'').slice(0,8) + '…</span>', 'success');
+                ['drx-pcode','drx-diagnosis','drx-notes'].forEach(id => document.getElementById(id).value = '');
+                document.getElementById('drx-meds').innerHTML = '';
+            } catch (e) { showAlert('drx-alert', '❌ ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = '💊 Issue Prescription'; }
+        }
+
+        // ── Doctor Lab Reports ───────────────────────────────────────────────
+        async function docCreateLabReport() {
+            clearAlert('dlr-alert');
+            const g = id => document.getElementById(id).value.trim();
+            const pcode = g('dlr-pcode'), rtype = g('dlr-type');
+            if (!pcode) { showAlert('dlr-alert', '⚠️ Patient code required.'); return; }
+            if (!rtype) { showAlert('dlr-alert', '⚠️ Report type required.'); return; }
+            let results = {};
+            const rawResults = g('dlr-results');
+            if (rawResults) {
+                try { results = JSON.parse(rawResults); }
+                catch (_) { showAlert('dlr-alert', '⚠️ Results must be valid JSON, e.g. {"Hemoglobin": "14.2 g/dL"}'); return; }
+            }
+            const btn = document.getElementById('dlr-btn');
+            btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Submitting…';
+            try {
+                const { ok, data } = await emrApi('/api/emr/lab-reports', {
+                    method: 'POST', body: JSON.stringify({
+                        patient_id: pcode, report_type: rtype, results, notes: g('dlr-notes')
+                    })
+                });
+                if (!ok) throw new Error(data.error || JSON.stringify(data.details || 'Failed'));
+                showAlert('dlr-alert', '✅ Lab report submitted! ID: <span style="font-family:monospace;font-size:11px;">' + (data.id||'').slice(0,8) + '…</span>', 'success');
+                ['dlr-pcode','dlr-type','dlr-results','dlr-notes'].forEach(id => document.getElementById(id).value = '');
+            } catch (e) { showAlert('dlr-alert', '❌ ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = '🧪 Submit Lab Report'; }
         }
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"

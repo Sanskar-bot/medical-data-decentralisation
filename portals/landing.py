@@ -117,6 +117,8 @@ def dashboard():
         doctor_code=doctor_code,
         specialization=spec,
         hospital=hosp,
+        uid=session.get("profile_code", "") if role == "patient" else doctor_code,
+        jwt_token=session.get("jwt_token", ""),
     )
 
 
@@ -951,6 +953,45 @@ def doctor_access_expiry(patient_code):
         return jsonify({"expires_at": None}), 200
     except Exception as e:
         return jsonify({"expires_at": None, "error": str(e)}), 200
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#   EMR MODULE PROXY ROUTES  (landing → backend /emr/*)
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/emr/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+def emr_proxy(subpath):
+    """Generic proxy for all /emr/* endpoints on the backend."""
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+
+    jwt_token = session.get("jwt_token", "")
+    headers = {**_headers()}
+    if jwt_token:
+        headers["Authorization"] = f"Bearer {jwt_token}"
+
+    url = f"{BACKEND}/emr/{subpath}"
+    try:
+        if request.method == "GET":
+            r = http.get(url, headers=headers, params=request.args, timeout=10)
+        elif request.method == "DELETE":
+            r = http.delete(url, headers=headers, json=request.get_json(silent=True), timeout=10)
+        elif request.method == "PUT":
+            r = http.put(url, headers=headers, json=request.get_json(force=True), timeout=10)
+        else:  # POST
+            r = http.post(url, headers=headers, json=request.get_json(force=True), timeout=10)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+# Alias so dashboard JS can call /api/emr/* and land here too
+@app.route("/api/emr/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+def api_emr_proxy(subpath):
+    """Alias of emr_proxy — dashboard JS sends requests to /api/emr/*."""
+    return emr_proxy(subpath)
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────

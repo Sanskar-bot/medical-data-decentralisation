@@ -509,6 +509,35 @@ def api_note_image(filename):
         return jsonify({"error": str(e)}), 502
 
 
+# ════════════════════════════════════════════════════════════════════════════
+#   EMR MODULE PROXY ROUTES  (doctor portal → backend /emr/*)
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/emr/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+@login_required(role="doctor")
+def emr_proxy(subpath):
+    """Generic proxy for all /emr/* endpoints on the backend."""
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    headers = bh()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    url = f"{BACKEND}/emr/{subpath}"
+    try:
+        if request.method == "GET":
+            r = http.get(url, headers=headers, params=request.args, timeout=10)
+        elif request.method == "DELETE":
+            r = http.delete(url, headers=headers, json=request.get_json(silent=True), timeout=10)
+        elif request.method == "PUT":
+            r = http.put(url, headers=headers, json=request.get_json(force=True), timeout=10)
+        else:  # POST
+            r = http.post(url, headers=headers, json=request.get_json(force=True), timeout=10)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
 if __name__ == "__main__":
     print("  Doctor Portal → http://127.0.0.1:5002")
-    app.run(host="127.0.0.1", port=5002, debug=False)
+    app.run(host="127.0.0.1", port=5002, debug=False)

@@ -954,7 +954,7 @@ def auth_register():
 
     if not name or not pw_hash or not pub_key:
         return jsonify({"error":"missing_fields"}), 400
-    if role not in ("patient","doctor"):
+    if role not in ("patient","doctor","admin"):
         return jsonify({"error":"invalid_role"}), 400
 
     uid = str(uuid.uuid4())
@@ -1076,9 +1076,12 @@ def auth_login():
     history.append({"email":email,"ts":user["last_login"],"ip":request.remote_addr})
     save_json(LOGIN_HISTORY_FILE, history[-500:])  # keep last 500
 
-    access_token  = _jwt_encode({"sub":email,"uid":user["id"],"role":user["role"],
-                                  "exp":time.time()+900})      # 15 min
-    refresh_token = _jwt_encode({"sub":email,"uid":user["id"],"role":user["role"],
+    # Use the externally-known code (profile_code / doctor_code) as the JWT `uid`
+    # so EMR route checks like `p["uid"] == patient_id` work correctly.
+    jwt_uid = (user.get("profile_code") or user.get("doctor_code") or user["id"])
+    access_token  = _jwt_encode({"sub":email,"uid":jwt_uid,"role":user["role"],
+                                  "exp":time.time()+3600})      # 1 hour
+    refresh_token = _jwt_encode({"sub":email,"uid":jwt_uid,"role":user["role"],
                                   "purpose":"refresh","exp":time.time()+604800})  # 7 days
 
     audit("login", actor=email)
@@ -1091,7 +1094,7 @@ def auth_login():
         "public_key":user["public_key"],
         "encrypted_private_key":user["encrypted_private_key"],
     })
-    resp.set_cookie("access_token",access_token,httponly=True,samesite="Strict",max_age=900)
+    resp.set_cookie("access_token",access_token,httponly=True,samesite="Strict",max_age=3600)
     resp.set_cookie("refresh_token",refresh_token,httponly=True,samesite="Strict",max_age=604800)
     return resp
 
@@ -1526,6 +1529,21 @@ def security_headers(resp):
     return resp
 
 print("[UPGRADE] New auth/report/image/access endpoints loaded ✓")
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ███  EMR MODULE — Blueprint registration                                ███
+# ═══════════════════════════════════════════════════════════════════════════
+from emr.routes import emr_bp
+
+# Inject server helpers so the blueprint can use them without circular imports
+app.config["EMR_require_jwt"]  = _require_jwt
+app.config["EMR_audit"]        = audit
+app.config["EMR_rate_limited"] = rate_limited
+app.config["EMR_load_users"]   = lambda: load_json(USERS_DB_FILE)
+app.config["EMR_save_users"]   = lambda data: save_json(USERS_DB_FILE, data)
+
+app.register_blueprint(emr_bp)
+print("[EMR] EMR module loaded ✓")
 
 if __name__ == "__main__":
     print(" Server running on http://127.0.0.1:5000")
