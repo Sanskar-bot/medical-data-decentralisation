@@ -114,6 +114,7 @@ def dashboard():
         role=role,
         name=session.get("name", "User"),
         email=session.get("email", ""),
+        username=session.get("username", ""),
         profile_code=session.get("profile_code", ""),
         doctor_code=doctor_code,
         specialization=spec,
@@ -165,6 +166,7 @@ def login():
         session["role"]         = role
         session["name"]         = data.get("name", "")
         session["email"]        = email
+        session["username"]     = data.get("username", "")
         session["user_id"]      = data.get("user_id", "")
         session["profile_code"] = pcode if role == "patient" else ""
         session["doctor_code"]  = dcode if role == "doctor" else ""
@@ -198,12 +200,17 @@ def register_patient():
         d        = request.get_json(force=True) or {}
         name     = (d.get("name") or "").strip()
         email    = (d.get("email") or "").strip().lower()
+        username = (d.get("username") or "").strip().lower()
         age      = (d.get("age") or "").strip()
         notes    = d.get("notes", "")
         password = d.get("password") or ""
 
         if not name:     return jsonify({"error": "Name is required"}), 400
         if not email:    return jsonify({"error": "Email is required"}), 400
+        if not username: return jsonify({"error": "Username is required"}), 400
+        import re
+        if not re.match(r"^[a-z0-9_\.]+$", username):
+            return jsonify({"error": "Username can only contain lowercase letters, numbers, dot, or underscore"}), 400
         if not password: return jsonify({"error": "Password is required"}), 400
         if len(password) < 8:
             return jsonify({"error": "Password must be at least 8 characters"}), 400
@@ -262,14 +269,16 @@ def register_patient():
 
         # ── Create users_db entry (enables /auth/login after logout) ────────────
         try:
-            http.post(
+            resp = http.post(
                 f"{BACKEND}/internal/register_user_db",
-                json={"email": email, "name": name, "role": "patient",
+                json={"email": email, "username": username, "name": name, "role": "patient",
                       "password_hash": hashlib.sha256(password.encode()).hexdigest(),
                       "profile_code": profile_code,
                       "public_key": pub_pem.decode("utf-8")},
                 headers=_headers(), timeout=10,
             )
+            if resp.status_code == 409:
+                return jsonify({"error": resp.json().get("error", "Username or email is already taken. Try a different username.")}), 409
         except Exception as e:
             app.logger.warning("backend /internal/register_user_db failed: %s", e)
 
@@ -279,6 +288,7 @@ def register_patient():
         session["role"]         = "patient"
         session["name"]         = name
         session["email"]        = email
+        session["username"]     = username
         session["profile_code"] = profile_code
         session["doctor_code"]  = ""
         session.permanent       = True
@@ -318,11 +328,17 @@ def register_doctor():
         d        = request.get_json(force=True) or {}
         name     = (d.get("name") or "").strip()
         email    = (d.get("email") or "").strip().lower()
+        username = (d.get("username") or "").strip().lower()
         spec     = (d.get("specialization") or "").strip()
         hosp     = (d.get("hospital") or "").strip()
         password = d.get("password") or ""
 
         if not name:     return jsonify({"error": "Name is required"}), 400
+        if not email:    return jsonify({"error": "Email is required"}), 400
+        if not username: return jsonify({"error": "Username is required"}), 400
+        import re
+        if not re.match(r"^[a-z0-9_\.]+$", username):
+            return jsonify({"error": "Username can only contain lowercase letters, numbers, dot, or underscore"}), 400
         if not password: return jsonify({"error": "Password is required"}), 400
         if len(password) < 8:
             return jsonify({"error": "Password must be at least 8 characters"}), 400
@@ -376,15 +392,17 @@ def register_doctor():
 
         # ── Create users_db entry (enables /auth/login after logout) ────────────
         try:
-            http.post(
+            resp = http.post(
                 f"{BACKEND}/internal/register_user_db",
-                json={"email": email, "name": name, "role": "doctor",
+                json={"email": email, "username": username, "name": name, "role": "doctor",
                       "password_hash": hashlib.sha256(password.encode()).hexdigest(),
                       "profile_code": doctor_code,
                       "doctor_code": doctor_code,
                       "public_key": pub_pem.decode("utf-8")},
                 headers=_headers(), timeout=10,
             )
+            if resp.status_code == 409:
+                return jsonify({"error": resp.json().get("error", "Username or email is already taken. Try a different username.")}), 409
         except Exception as e:
             app.logger.warning("backend register_user_db failed: %s", e)
 
@@ -394,6 +412,7 @@ def register_doctor():
         session["role"]           = "doctor"
         session["name"]           = name
         session["email"]          = email
+        session["username"]       = username
         session["profile_code"]   = ""
         session["doctor_code"]    = doctor_code
         session["specialization"] = spec

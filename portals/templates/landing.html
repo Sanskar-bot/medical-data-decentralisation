@@ -295,9 +295,14 @@ footer { color: var(--text-muted); font-size: 12px; text-align: center; margin-t
           </div>
           <div class="form-row">
             <div class="form-group">
+              <label for="p-username">Username *</label>
+              <input id="p-username" type="text" placeholder="ananya_sharma" required>
+            </div>
+            <div class="form-group">
               <label for="p-email">Email *</label>
               <input id="p-email" type="email" placeholder="ananya@email.com" required>
             </div>
+          </div>
             <div class="form-group">
               <label for="p-age">Age</label>
               <input id="p-age" type="text" placeholder="28">
@@ -328,9 +333,14 @@ footer { color: var(--text-muted); font-size: 12px; text-align: center; margin-t
           </div>
           <div class="form-row">
             <div class="form-group">
+              <label for="d-username">Username *</label>
+              <input id="d-username" type="text" placeholder="dr_priya" required>
+            </div>
+            <div class="form-group">
               <label for="d-email">Email</label>
               <input id="d-email" type="email" placeholder="priya@hospital.com">
             </div>
+          </div>
             <div class="form-group">
               <label for="d-spec">Specialization</label>
               <input id="d-spec" type="text" placeholder="Cardiologist">
@@ -468,13 +478,16 @@ async function handleRegister(e, role) {
     if (pw !== pw2) { showAlert('reg-alert', '❌ Passwords do not match.'); return; }
     if (pw.length < 8) { showAlert('reg-alert', '❌ Password must be at least 8 characters.'); return; }
     payload = { ...payload,
-      name:  document.getElementById('p-name').value.trim(),
-      email: document.getElementById('p-email').value.trim(),
-      age:   document.getElementById('p-age').value.trim(),
+      name:     document.getElementById('p-name').value.trim(),
+      email:    document.getElementById('p-email').value.trim(),
+      username: document.getElementById('p-username').value.trim(),
+      age:      document.getElementById('p-age').value.trim(),
       password: pw,
     };
     if (!payload.name) { showAlert('reg-alert', '❌ Name is required.'); return; }
     if (!payload.email) { showAlert('reg-alert', '❌ Email is required.'); return; }
+    if (!payload.username) { showAlert('reg-alert', '❌ Username is required.'); return; }
+    if (!/^[a-z0-9_\.]+$/.test(payload.username)) { showAlert('reg-alert', '❌ Username can only contain lowercase letters, numbers, dots, and underscores.'); return; }
   } else {
     const pw  = document.getElementById('d-pw').value;
     const pw2 = document.getElementById('d-pw2').value;
@@ -483,11 +496,14 @@ async function handleRegister(e, role) {
     payload = { ...payload,
       name:           document.getElementById('d-name').value.trim(),
       email:          document.getElementById('d-email').value.trim(),
+      username:       document.getElementById('d-username').value.trim(),
       specialization: document.getElementById('d-spec').value.trim(),
       hospital:       document.getElementById('d-hosp').value.trim(),
       password:       pw,
     };
     if (!payload.name) { showAlert('reg-alert', '❌ Name is required.'); return; }
+    if (!payload.username) { showAlert('reg-alert', '❌ Username is required.'); return; }
+    if (!/^[a-z0-9_\.]+$/.test(payload.username)) { showAlert('reg-alert', '❌ Username can only contain lowercase letters, numbers, dots, and underscores.'); return; }
   }
 
   setLoading(btnId, true, btnText);

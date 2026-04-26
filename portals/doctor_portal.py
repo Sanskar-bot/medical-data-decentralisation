@@ -6,7 +6,7 @@ Serves the doctor-facing web UI and handles all crypto on the doctor's machine.
 import json, os, sys, uuid, secrets
 from datetime import datetime, timezone, timedelta
 from base64 import b64encode, b64decode
-from flask import Flask, request, jsonify, send_file, session, redirect
+from flask import Flask, request, jsonify, send_file, session, redirect, Response
 import requests as http
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -62,8 +62,10 @@ def api_key():
     kf = os.path.join(ROOT, "server", "api_key.txt")
     return open(kf).read().strip() if os.path.exists(kf) else ""
 
-def bh(): return {"X-API-Key": api_key(), "Content-Type": "application/json"}
-
+def bh(token=""):
+    h = {"X-API-Key": api_key(), "Content-Type": "application/json"}
+    if token: h["Authorization"] = f"Bearer {token}"
+    return h
 def doc_dir(code):
     # find by doctor_code inside any subfolder
     for d in os.listdir(DOCTORS_DIR):
@@ -413,6 +415,35 @@ def api_audit_log():
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({"error":str(e)}), 502
+
+@app.route("/api/doctor/appointment-requests", methods=["GET"])
+@login_required(role="doctor")
+def proxy_doctor_appointments():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        r = http.get(f"{BACKEND}/api/doctor/appointment-requests", headers=bh(token), timeout=8)
+        return jsonify(r.json()), r.status_code
+    except Exception as e: return jsonify({"error": str(e)}), 502
+
+@app.route("/api/doctor/appointment-requests/<req_id>/respond", methods=["POST"])
+@login_required(role="doctor")
+def proxy_doctor_respond_appointment(req_id):
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        r = http.post(f"{BACKEND}/api/doctor/appointment-requests/{req_id}/respond", json=request.get_json(force=True), headers=bh(token), timeout=8)
+        return jsonify(r.json()), r.status_code
+    except Exception as e: return jsonify({"error": str(e)}), 502
+
+@app.route("/api/doctor/qr", methods=["GET"])
+@login_required(role="doctor")
+def proxy_doctor_qr():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        r = http.get(f"{BACKEND}/api/doctor/qr", headers=bh(token), timeout=8)
+        # Note: qr returns an image
+        return Response(r.content, content_type=r.headers.get("Content-Type", "image/png"))
+    except Exception as e: return jsonify({"error": str(e)}), 502
+
 # ── DOCTOR NOTES ──────────────────────────────────────────────────────────
 
 @app.route("/api/add_note", methods=["POST", "OPTIONS"])

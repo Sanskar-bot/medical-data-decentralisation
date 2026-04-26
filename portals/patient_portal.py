@@ -3,7 +3,7 @@
 import os, sys, json, time, secrets
 from datetime import datetime, timezone, timedelta
 from base64 import b64encode, b64decode
-from flask import Flask, request, jsonify, send_file, session, redirect
+from flask import Flask, request, jsonify, send_file, session, redirect, Response
 import requests as http
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -455,10 +455,45 @@ def api_note_image(filename):
                      headers={"X-API-Key": api_key()}, timeout=10, stream=True)
         if not r.ok:
             return jsonify({"error": "image not found"}), 404
-        from flask import Response
         return Response(r.content, content_type=r.headers.get("Content-Type", "image/jpeg"))
     except Exception as e:
         return jsonify({"error": str(e)}), 502
+
+@app.route("/api/patient/appointment-request", methods=["POST"])
+@login_required(role="patient")
+def proxy_appointment_request():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        r = http.post(f"{BACKEND}/api/patient/appointment-request", json=request.get_json(force=True), headers=bh(token), timeout=8)
+        return jsonify(r.json()), r.status_code
+    except Exception as e: return jsonify({"error": str(e)}), 502
+
+@app.route("/api/patient/appointment-requests", methods=["GET"])
+@login_required(role="patient")
+def proxy_patient_appointments():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        r = http.get(f"{BACKEND}/api/patient/appointment-requests", headers=bh(token), timeout=8)
+        return jsonify(r.json()), r.status_code
+    except Exception as e: return jsonify({"error": str(e)}), 502
+
+@app.route("/api/patient/barcode", methods=["GET"])
+@login_required(role="patient")
+def proxy_patient_barcode():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        r = http.get(f"{BACKEND}/api/patient/barcode", headers=bh(token), timeout=8)
+        return Response(r.content, content_type=r.headers.get("Content-Type", "image/png"))
+    except Exception as e: return jsonify({"error": str(e)}), 502
+
+@app.route("/api/patient/qr", methods=["GET"])
+@login_required(role="patient")
+def proxy_patient_qr():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        r = http.get(f"{BACKEND}/api/patient/qr", headers=bh(token), timeout=8)
+        return Response(r.content, content_type=r.headers.get("Content-Type", "image/png"))
+    except Exception as e: return jsonify({"error": str(e)}), 502
 
 # ── EMR MODULE PROXY ROUTES  (patient portal → backend /emr/*) ─────────────
 

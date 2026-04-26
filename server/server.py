@@ -1001,20 +1001,25 @@ def auth_register():
         return jsonify({"error":"email_already_registered"}), 409
 
     name     = (body.get("name","") or "").strip()
+    username = (body.get("username","") or "").strip().lower()
     role     = body.get("role","patient")
     pw_hash  = body.get("password_hash","")      # bcrypt hash from client
     pub_key  = body.get("public_key","")
     enc_priv = body.get("encrypted_private_key","")
     phone    = body.get("phone","")
 
-    if not name or not pw_hash or not pub_key:
+    if not name or not pw_hash or not pub_key or not username:
         return jsonify({"error":"missing_fields"}), 400
     if role not in ("patient","doctor","admin"):
         return jsonify({"error":"invalid_role"}), 400
+        
+    for u in users.values():
+        if u.get("username") == username and u.get("email") != email:
+            return jsonify({"error":"username_taken"}), 409
 
     uid = str(uuid.uuid4())
     users[email] = {
-        "id":uid,"name":name,"email":email,"phone":phone,
+        "id":uid,"name":name,"email":email,"username":username,"phone":phone,
         "role":role,"password_hash":pw_hash,
         "public_key":pub_key,"encrypted_private_key":enc_priv,
         "profile_photo_url":"","created_at":datetime.now(timezone.utc).isoformat(),
@@ -1032,14 +1037,20 @@ def internal_register_user_db():
     if auth_err: return auth_err
     body     = request.get_json(force=True) or {}
     email    = (body.get("email","") or "").strip().lower()
+    username = (body.get("username","") or "").strip().lower()
     name     = (body.get("name","") or "").strip()
     pw_hash  = body.get("password_hash","")
     role     = body.get("role","patient")
     pub_key  = body.get("public_key","")
     enc_priv = body.get("encrypted_private_key","")
-    if not email or not name or not pw_hash:
+    if not email or not name or not pw_hash or not username:
         return jsonify({"error":"missing_fields"}), 400
     users = load_json(USERS_DB_FILE)
+    
+    for u in users.values():
+        if u.get("username") == username and u.get("email") != email:
+            return jsonify({"error":"username_taken", "message": "Username is already taken"}), 409
+            
     profile_code = body.get("profile_code", "")
     doctor_code  = body.get("doctor_code", "")
     if email in users:
@@ -1047,6 +1058,7 @@ def internal_register_user_db():
         # Always update role and password hash for the registering role
         # (handles same email used for both patient and doctor)
         existing["role"]          = role
+        existing["username"]      = username
         existing["password_hash"] = pw_hash
         if pub_key:
             existing["public_key"] = pub_key
@@ -1058,7 +1070,7 @@ def internal_register_user_db():
         return jsonify({"message":"updated","user_id":existing["id"]}), 200
     uid = str(uuid.uuid4())
     users[email] = {
-        "id":uid,"name":name,"email":email,"phone":"",
+        "id":uid,"name":name,"email":email,"username":username,"phone":"",
         "role":role,"password_hash":pw_hash,
         "public_key":pub_key,"encrypted_private_key":enc_priv,
         "profile_code":profile_code,
@@ -1141,6 +1153,7 @@ def auth_login():
     resp = jsonify({
         "message":"ok","role":user["role"],
         "name":user["name"],"user_id":user["id"],
+        "username":user.get("username", ""),
         "profile_code":user.get("profile_code", ""),
         "doctor_code": user.get("doctor_code", "") or user.get("profile_code","") if user["role"]=="doctor" else "",
         "access_token":access_token,"refresh_token":refresh_token,
@@ -1150,6 +1163,23 @@ def auth_login():
     resp.set_cookie("access_token",access_token,httponly=True,samesite="Strict",max_age=3600)
     resp.set_cookie("refresh_token",refresh_token,httponly=True,samesite="Strict",max_age=604800)
     return resp
+
+# ── Username Resolver ────────────────────────────────
+@app.route("/api/resolve_username/<username>", methods=["GET"])
+def resolve_username(username):
+    auth_err = _require_api_key()
+    if auth_err: return auth_err
+    users = load_json(USERS_DB_FILE)
+    for u in users.values():
+        if u.get("username", "").lower() == username.lower():
+            return jsonify({
+                "username": u.get("username"),
+                "profile_code": u.get("profile_code", ""),
+                "doctor_code": u.get("doctor_code", ""),
+                "role": u.get("role", "patient"),
+                "name": u.get("name", "")
+            }), 200
+    return jsonify({"error": "user_not_found"}), 404
 
 # fix #7: logout endpoint that revokes the current access token
 @app.route("/auth/logout", methods=["POST"])
@@ -1555,6 +1585,165 @@ app.config["EMR_save_users"]   = lambda data: save_json(USERS_DB_FILE, data)
 
 app.register_blueprint(emr_bp)
 print("[EMR] EMR module loaded ✓")
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ███  APPOINTMENTS & QR / BARCODE ENDPOINTS                              ███
+# ═══════════════════════════════════════════════════════════════════════════
+
+APPOINTMENTS_DB_FILE = os.path.join(SERVER_BASE_DIR, "appointments_db.json")
+if not os.path.exists(APPOINTMENTS_DB_FILE):
+    save_json(APPOINTMENTS_DB_FILE, [])
+
+@app.route("/api/patient/appointment-request", methods=["POST"])
+@_require_jwt(roles=["patient"])
+def request_appointment():
+    body = request.get_json(force=True) or {}
+    patient = request.jwt_payload
+    doctor_username = body.get("doctor_username", "").strip()
+    date = body.get("date", "").strip()
+    time = body.get("time", "").strip()
+    notes = body.get("notes", "").strip()
+
+    if not doctor_username or not date or not time:
+        return jsonify({"error": "missing_fields"}), 400
+
+    req_id = str(uuid.uuid4())
+    entry = {
+        "id": req_id,
+        "patient_id": patient["uid"],
+        "patient_username": patient.get("sub"), # fallback if not found
+        "doctor_username": doctor_username,
+        "date": date,
+        "time": time,
+        "notes": notes,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    # Resolve Patient Username for clarity
+    users = load_json(USERS_DB_FILE)
+    if patient["sub"] in users:
+        entry["patient_username"] = users[patient["sub"]].get("username", patient["sub"])
+        entry["patient_name"] = users[patient["sub"]].get("name", "")
+
+    db = load_json(APPOINTMENTS_DB_FILE)
+    db.append(entry)
+    save_json(APPOINTMENTS_DB_FILE, db)
+    audit("appointment_requested", actor=patient["sub"], target=doctor_username)
+    return jsonify({"message": "requested", "appointment": entry}), 201
+
+@app.route("/api/patient/appointment-requests", methods=["GET"])
+@_require_jwt(roles=["patient"])
+def get_patient_appointments():
+    patient = request.jwt_payload
+    db = load_json(APPOINTMENTS_DB_FILE)
+    # Find requests where patient_id matches
+    requests = [r for r in db if r.get("patient_id") == patient["uid"]]
+    return jsonify({"appointments": requests}), 200
+
+@app.route("/api/doctor/appointment-requests", methods=["GET"])
+@_require_jwt(roles=["doctor"])
+def get_doctor_appointments():
+    doc = request.jwt_payload
+    users = load_json(USERS_DB_FILE)
+    doc_username = ""
+    if doc["sub"] in users:
+        doc_username = users[doc["sub"]].get("username", "")
+
+    db = load_json(APPOINTMENTS_DB_FILE)
+    requests = []
+    if doc_username:
+        requests = [r for r in db if r.get("doctor_username") == doc_username]
+    return jsonify({"appointments": requests}), 200
+
+@app.route("/api/doctor/appointment-requests/<req_id>/respond", methods=["POST"])
+@_require_jwt(roles=["doctor"])
+def respond_appointment(req_id):
+    body = request.get_json(force=True) or {}
+    status = body.get("status")
+    if status not in ("accepted", "rejected", "rescheduled", "completed"):
+        return jsonify({"error": "invalid_status"}), 400
+
+    doc = request.jwt_payload
+    users = load_json(USERS_DB_FILE)
+    doc_username = ""
+    if doc["sub"] in users:
+        doc_username = users[doc["sub"]].get("username", "")
+
+    db = load_json(APPOINTMENTS_DB_FILE)
+    found = False
+    for r in db:
+        if r["id"] == req_id:
+            if r.get("doctor_username") != doc_username:
+                return jsonify({"error": "forbidden"}), 403
+            r["status"] = status
+            if status == "rescheduled":
+                r["date"] = body.get("date", r["date"])
+                r["time"] = body.get("time", r["time"])
+            r["updated_at"] = datetime.now(timezone.utc).isoformat()
+            found = True
+            break
+            
+    if not found:
+        return jsonify({"error": "not_found"}), 404
+        
+    save_json(APPOINTMENTS_DB_FILE, db)
+    audit(f"appointment_{status}", actor=doc["sub"])
+    return jsonify({"message": "updated"}), 200
+
+import io
+import qrcode
+import barcode
+from barcode.writer import ImageWriter
+from flask import send_file
+
+@app.route("/api/patient/qr", methods=["GET"])
+@_require_jwt(roles=["patient"])
+def patient_qr():
+    patient = request.jwt_payload
+    users = load_json(USERS_DB_FILE)
+    username = patient["sub"]
+    if patient["sub"] in users:
+        username = users[patient["sub"]].get("username", patient["sub"])
+        
+    url = f"http://127.0.0.1:5002/scan/patient/{username}"
+    qr = qrcode.make(url)
+    img_io = io.BytesIO()
+    qr.save(img_io, 'PNG')
+    img_io.seek(0)
+    return send_file(img_io, mimetype='image/png')
+
+@app.route("/api/doctor/qr", methods=["GET"])
+@_require_jwt(roles=["doctor"])
+def doctor_qr():
+    doc = request.jwt_payload
+    users = load_json(USERS_DB_FILE)
+    username = doc["sub"]
+    if doc["sub"] in users:
+        username = users[doc["sub"]].get("username", doc["sub"])
+
+    url = f"http://127.0.0.1:5001/doctor/public/{username}"
+    qr = qrcode.make(url)
+    img_io = io.BytesIO()
+    qr.save(img_io, 'PNG')
+    img_io.seek(0)
+    return send_file(img_io, mimetype='image/png')
+
+@app.route("/api/patient/barcode", methods=["GET"])
+@_require_jwt(roles=["patient"])
+def patient_barcode():
+    patient = request.jwt_payload
+    users = load_json(USERS_DB_FILE)
+    username = patient["sub"]
+    if patient["sub"] in users:
+        username = users[patient["sub"]].get("username", patient["sub"])
+
+    # Code128 is good for alphanumeric
+    CODE = barcode.get_barcode_class('code128')
+    bc = CODE(username, writer=ImageWriter())
+    img_io = io.BytesIO()
+    bc.write(img_io)
+    img_io.seek(0)
+    return send_file(img_io, mimetype='image/png')
 
 if __name__ == "__main__":
     print(" Server running on http://127.0.0.1:5000")
