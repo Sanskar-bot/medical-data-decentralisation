@@ -1087,7 +1087,7 @@ def internal_register_user_db():
 @rate_limited(max_calls=10, window=60)
 def auth_login():
     body  = request.get_json(force=True) or {}
-    email = (body.get("email","") or "").strip().lower()
+    identifier = (body.get("email","") or "").strip().lower()
     # Callers send either:
     #   password_hash  — pre-hashed SHA-256 hex (legacy portals)
     #   password       — plaintext (new landing.py path)
@@ -1095,7 +1095,16 @@ def auth_login():
     pw_hash  = body.get("password_hash","")
 
     users = load_json(USERS_DB_FILE)
-    user  = users.get(email)
+    # Primary lookup: treat identifier as email key
+    user  = users.get(identifier)
+    email = identifier  # will be overridden below if username lookup succeeds
+    if not user:
+        # Fallback: treat identifier as username — scan all records
+        for _key, _u in users.items():
+            if isinstance(_u, dict) and (_u.get("username","") or "").lower() == identifier:
+                user  = _u
+                email = _key  # the actual email key in users_db
+                break
     if not user:
         return jsonify({"error":"invalid_credentials"}), 401
     if user.get("locked"):
@@ -1701,12 +1710,12 @@ from flask import send_file
 def patient_qr():
     patient = request.jwt_payload
     users = load_json(USERS_DB_FILE)
-    username = patient["sub"]
+    patient_id = patient["sub"]
     if patient["sub"] in users:
-        username = users[patient["sub"]].get("username", patient["sub"])
+        # Get permanent Patient ID (profile_code)
+        patient_id = users[patient["sub"]].get("profile_code") or users[patient["sub"]].get("username", patient["sub"])
         
-    url = f"http://127.0.0.1:5002/scan/patient/{username}"
-    qr = qrcode.make(url)
+    qr = qrcode.make(patient_id)
     img_io = io.BytesIO()
     qr.save(img_io, 'PNG')
     img_io.seek(0)
@@ -1733,13 +1742,14 @@ def doctor_qr():
 def patient_barcode():
     patient = request.jwt_payload
     users = load_json(USERS_DB_FILE)
-    username = patient["sub"]
+    patient_id = patient["sub"]
     if patient["sub"] in users:
-        username = users[patient["sub"]].get("username", patient["sub"])
+        # Get permanent Patient ID (profile_code)
+        patient_id = users[patient["sub"]].get("profile_code") or users[patient["sub"]].get("username", patient["sub"])
 
     # Code128 is good for alphanumeric
     CODE = barcode.get_barcode_class('code128')
-    bc = CODE(username, writer=ImageWriter())
+    bc = CODE(patient_id, writer=ImageWriter())
     img_io = io.BytesIO()
     bc.write(img_io)
     img_io.seek(0)

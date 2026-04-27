@@ -1,12 +1,12 @@
-# Graph Report - medical-data-decentralisation  (2026-04-26)
+# Graph Report - medical-data-decentralisation  (2026-04-27)
 
 ## Corpus Check
-- 22 files · ~42,166 words
+- 28 files · ~53,492 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 296 nodes · 673 edges · 15 communities detected
-- Extraction: 72% EXTRACTED · 28% INFERRED · 0% AMBIGUOUS · INFERRED: 189 edges (avg confidence: 0.78)
+- 502 nodes · 1031 edges · 37 communities detected
+- Extraction: 76% EXTRACTED · 24% INFERRED · 0% AMBIGUOUS · INFERRED: 250 edges (avg confidence: 0.76)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -23,115 +23,273 @@
 - [[_COMMUNITY_Community 10|Community 10]]
 - [[_COMMUNITY_Community 11|Community 11]]
 - [[_COMMUNITY_Community 12|Community 12]]
-- [[_COMMUNITY_Community 13|Community 13]]
-- [[_COMMUNITY_Community 14|Community 14]]
+- [[_COMMUNITY_Community 17|Community 17]]
+- [[_COMMUNITY_Community 18|Community 18]]
+- [[_COMMUNITY_Community 19|Community 19]]
+- [[_COMMUNITY_Community 20|Community 20]]
+- [[_COMMUNITY_Community 21|Community 21]]
+- [[_COMMUNITY_Community 22|Community 22]]
+- [[_COMMUNITY_Community 23|Community 23]]
+- [[_COMMUNITY_Community 24|Community 24]]
+- [[_COMMUNITY_Community 25|Community 25]]
+- [[_COMMUNITY_Community 26|Community 26]]
+- [[_COMMUNITY_Community 27|Community 27]]
+- [[_COMMUNITY_Community 28|Community 28]]
+- [[_COMMUNITY_Community 29|Community 29]]
+- [[_COMMUNITY_Community 30|Community 30]]
+- [[_COMMUNITY_Community 31|Community 31]]
+- [[_COMMUNITY_Community 32|Community 32]]
+- [[_COMMUNITY_Community 33|Community 33]]
+- [[_COMMUNITY_Community 34|Community 34]]
+- [[_COMMUNITY_Community 35|Community 35]]
+- [[_COMMUNITY_Community 36|Community 36]]
+- [[_COMMUNITY_Community 37|Community 37]]
+- [[_COMMUNITY_Community 38|Community 38]]
+- [[_COMMUNITY_Community 39|Community 39]]
+- [[_COMMUNITY_Community 40|Community 40]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `exists()` - 45 edges
-2. `derive_kek_from_password()` - 24 edges
-3. `load_json()` - 24 edges
-4. `_require_api_key()` - 19 edges
-5. `unwrap_key_with_kek()` - 18 edges
-6. `bh()` - 17 edges
-7. `audit()` - 15 edges
-8. `save_json()` - 14 edges
-9. `main()` - 13 edges
-10. `SecureKeyStore` - 13 edges
+1. `exists()` - 50 edges
+2. `SecureKeyStore` - 37 edges
+3. `load_json()` - 31 edges
+4. `_auth_headers()` - 28 edges
+5. `derive_kek_from_password()` - 26 edges
+6. `bh()` - 22 edges
+7. `unwrap_key_with_kek()` - 20 edges
+8. `_require_api_key()` - 20 edges
+9. `_headers()` - 18 edges
+10. `audit()` - 17 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `SecureKeyStore` --uses--> `Redirect to landing if not logged in.`  [INFERRED]
-  common\secure_key_store.py → portals\landing.py
-- `SecureKeyStore` --uses--> `Build headers that carry the Flask session cookie to doctor_portal.`  [INFERRED]
-  common\secure_key_store.py → portals\landing.py
-- `SecureKeyStore` --uses--> `Return temp_key_expires_at for the logged-in doctor's wrapped key.     Falls ba`  [INFERRED]
-  common\secure_key_store.py → portals\landing.py
-- `start()` --calls--> `_cleanup_old_requests()`  [INFERRED]
-  START.py → server\server.py
-- `load_patient_private()` --calls--> `exists()`  [INFERRED]
-  client\respond_request.py → common\secure_key_store.py
+- `Unlock a doctor's RSA private key from the local credential store.      Return` --uses--> `SecureKeyStore`  [INFERRED]
+  portals\doctor_portal.py → common\secure_key_store.py
+- `Doctor adds a clinical note to a patient profile. Server enforces access check.` --uses--> `SecureKeyStore`  [INFERRED]
+  portals\doctor_portal.py → common\secure_key_store.py
+- `Fetch all notes for a patient; returns filtered list for this doctor.` --uses--> `SecureKeyStore`  [INFERRED]
+  portals\doctor_portal.py → common\secure_key_store.py
+- `Doctor deletes their own note.` --uses--> `SecureKeyStore`  [INFERRED]
+  portals\doctor_portal.py → common\secure_key_store.py
+- `Proxy note images from the backend server for display in the doctor portal.` --uses--> `SecureKeyStore`  [INFERRED]
+  portals\doctor_portal.py → common\secure_key_store.py
 
 ## Communities
 
 ### Community 0 - "Community 0"
-Cohesion: 0.12
-Nodes (31): _api_key(), dashboard(), doctor_access_expiry(), doctor_add_note(), doctor_delete_note(), doctor_fetch_record(), doctor_load_profile(), doctor_note_image() (+23 more)
+Cohesion: 0.04
+Nodes (93): api_lookup_doctor(), exists(), _append_login_history(), approve_request(), audit(), auth_login(), auth_login_history(), auth_logout() (+85 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.13
-Nodes (30): derive_kek_from_password(), unwrap_key_with_kek(), api_add_note(), api_audit_log(), api_delete_note(), api_doctor_notes_list(), api_doctor_patients(), api_fetch_record() (+22 more)
+Cohesion: 0.06
+Nodes (71): Doctor adds a clinical note to a patient profile. Server enforces access check., Fetch all notes for a patient; returns filtered list for this doctor., Doctor deletes their own note., Proxy note images from the backend server for display in the doctor portal., api_emr_proxy(), _api_key(), api_resolve_patient(), dashboard() (+63 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.12
-Nodes (31): aesgcm_encrypt(), Encrypt plaintext with AES-GCM.     Returns dict with base64-encoded nonce, cip, Wrap (encrypt) a symmetric key with recipient's RSA public key using OAEP., rsa_load_public(), rsa_wrap_key(), api_approve(), api_deny(), api_key() (+23 more)
+Cohesion: 0.06
+Nodes (65): new_appointment(), new_lab_report(), new_patient_profile(), new_prescription(), _now_iso(), emr/models.py — Data schemas and validation for EMR entities.  Each model is a p, Return list of missing required field names., Return list of validation error strings (empty = valid). (+57 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.11
-Nodes (27): aesgcm_decrypt(), rsa_load_private(), rsa_verify(), auto_locate_doctor_folder(), auto_locate_doctor_folder(), get_encrypted_data(), get_wrapped_key(), load_doctor_private_from_folder() (+19 more)
+Cohesion: 0.07
+Nodes (52): aesgcm_decrypt(), rsa_load_private(), rsa_unwrap_key(), rsa_verify(), unwrap_key_with_kek(), api_add_note(), api_audit_log(), api_delete_note() (+44 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.12
-Nodes (27): add_doctor_note(), audit(), auth_login_history(), auth_me(), delete_doctor_note(), doctor_patients(), download_image(), get_images_for_record() (+19 more)
+Cohesion: 0.07
+Nodes (18): app(), _auth_headers(), _clean_emr_data(), _init_dirs(), jwt_encode(), _make_jwt(), tests/test_emr_api.py — Automated tests for the EMR module endpoints.  Uses Flas, Ensure the server data directories exist before importing. (+10 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.15
-Nodes (20): generate_aes_key(), generate_rsa_keypair(), Decrypt a blob produced by rsa_hybrid_encrypt., Return a 32-byte AES key (AES-256)., Hybrid encrypt: generate random AES key, encrypt data with AES-GCM,     then RS, rsa_hybrid_decrypt(), rsa_hybrid_encrypt(), rsa_serialize_private() (+12 more)
+Cohesion: 0.12
+Nodes (34): aesgcm_encrypt(), derive_kek_from_password(), generate_aes_key(), generate_rsa_keypair(), Decrypt a blob produced by rsa_hybrid_encrypt., Return a 32-byte AES key (AES-256)., Encrypt plaintext with AES-GCM.     Returns dict with base64-encoded nonce, cip, Wrap (encrypt) a symmetric key with recipient's RSA public key using OAEP. (+26 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.14
-Nodes (19): approve_on_server(), fetch_active_requests(), load_local_user_json(), load_patient_private(), main(), Robustly load client/Users/<profile_code>/user_data.json.      Uses the script, Ask user password once and unwrap K_data from local_json['key_protection']., Call POST /approve_request with required payload. (+11 more)
+Cohesion: 0.1
+Nodes (36): rsa_load_public(), api_approve(), api_deny(), api_key(), api_load_profile(), api_note_image(), api_patient_notes(), api_qr_transfer() (+28 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.13
-Nodes (18): auth_login(), auth_otp_send(), auth_otp_verify(), auth_refresh(), auth_register(), _gen_otp(), get_patient_reports(), get_report() (+10 more)
+Cohesion: 0.22
+Nodes (13): approve_on_server(), fetch_active_requests(), load_local_user_json(), load_patient_private(), main(), Robustly load client/Users/<profile_code>/user_data.json.      Uses the script, Ask user password once and unwrap K_data from local_json['key_protection']., Call POST /approve_request with required payload. (+5 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.16
-Nodes (11): approve_request(), _cleanup_old_requests(), get_request_status(), Return the active requests list or [] on error (non-fatal)., Write active requests atomically to prevent corruption on crash., Return a single request object by request_id, or 404 if not found., Remove stale entries from active_requests.json, then reschedule itself., _read_active_requests() (+3 more)
+Cohesion: 0.27
+Nodes (9): _DATA_BLOB, delete_private_key(), _dpapi_decrypt(), _dpapi_encrypt(), common/secure_key_store.py ========================== RSA private key storage, Convert credential ID to a safe filename., Encrypt bytes using DPAPI (current-user scope)., Decrypt a DPAPI blob; returns plaintext bytes. (+1 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.15
-Nodes (13): get_all_active_requests(), get_doctor_notes(), get_patient_data(), get_patient_public(), get_wrapped_key_for_profile(), Return all doctor notes for a given patient profile code., Serve a saved note image file., Return array of all active requests. Clients should filter by profile_code. (+5 more)
-
-### Community 10 - "Community 10"
-Cohesion: 0.27
-Nodes (10): _DATA_BLOB, delete_private_key(), _dpapi_decrypt(), _dpapi_encrypt(), common/secure_key_store.py ========================== RSA private key storage, Convert credential ID to a safe filename., Encrypt bytes using DPAPI (current-user scope)., Decrypt a DPAPI blob; returns plaintext bytes. (+2 more)
-
-### Community 11 - "Community 11"
 Cohesion: 0.33
 Nodes (9): fetch_all_active_requests(), fetch_request_status_by_id(), find_doctor_folder_by_code(), load_local_doctor(), poll_for_update(), post_request(), Automatically locate doctor folder using doctor_code only., Polls server until request status != 'pending' or until timeout.     Returns th (+1 more)
 
-### Community 12 - "Community 12"
+### Community 10 - "Community 10"
 Cohesion: 0.22
 Nodes (8): check_password(), hash_password(), _is_json_request(), login_required(), True when the caller expects a JSON response (API / XHR call)., Return a werkzeug pbkdf2:sha256 hash of *raw*., Verify *raw* against *stored*.      Handles two hash formats:       1. werkze, Decorator that enforces Flask-session authentication.      Also accepts a vali
 
-### Community 13 - "Community 13"
-Cohesion: 0.25
-Nodes (9): _doctor_has_active_access(), doctor_notes_add(), doctor_notes_delete(), doctor_notes_for_patient(), _load_notes(), Return True iff the doctor has a non-expired wrapped key for this patient., Returns all notes for this patient.     Protected by API key — both doctor and, Doctor deletes their own note.     Requires: X-API-Key + JSON body { "doctor_co (+1 more)
+### Community 11 - "Community 11"
+Cohesion: 0.83
+Nodes (3): main(), print_separator(), register()
 
-### Community 14 - "Community 14"
+### Community 12 - "Community 12"
 Cohesion: 1.0
 Nodes (2): main(), try_decrypt()
 
+### Community 17 - "Community 17"
+Cohesion: 1.0
+Nodes (1): Encrypt bytes using DPAPI (current-user scope).
+
+### Community 18 - "Community 18"
+Cohesion: 1.0
+Nodes (1): Decrypt a DPAPI blob; returns plaintext bytes.
+
+### Community 19 - "Community 19"
+Cohesion: 1.0
+Nodes (1): Convert credential ID to a safe filename.
+
+### Community 20 - "Community 20"
+Cohesion: 1.0
+Nodes (1): DPAPI-backed key storage.      Usage:         SecureKeyStore.store_private_ke
+
+### Community 21 - "Community 21"
+Cohesion: 1.0
+Nodes (1): Return the active requests list or [] on error (non-fatal).
+
+### Community 22 - "Community 22"
+Cohesion: 1.0
+Nodes (1): Return array of all active requests. Clients should filter by profile_code.
+
+### Community 23 - "Community 23"
+Cohesion: 1.0
+Nodes (1): Return a single request object by request_id, or 404 if not found.
+
+### Community 24 - "Community 24"
+Cohesion: 1.0
+Nodes (1): Return wrapped keys for the specified profile. Looks under     PATIENTS_DIR/<pr
+
+### Community 25 - "Community 25"
+Cohesion: 1.0
+Nodes (1): Remove stale entries from active_requests.json, then reschedule itself.
+
+### Community 26 - "Community 26"
+Cohesion: 1.0
+Nodes (1): Decorator — validates JWT and optionally checks role.
+
+### Community 27 - "Community 27"
+Cohesion: 1.0
+Nodes (1): Send (simulated) OTP to email. In prod: plug in SendGrid/SES.
+
+### Community 28 - "Community 28"
+Cohesion: 1.0
+Nodes (1): Full registration: name, email, role, password_hash (bcrypt done client-side or
+
+### Community 29 - "Community 29"
+Cohesion: 1.0
+Nodes (1): Called by landing.py during registration to create a users_db entry,     enabli
+
+### Community 30 - "Community 30"
+Cohesion: 1.0
+Nodes (1): Doctor uploads an encrypted visit report (hybrid encryption).     Body: patient
+
+### Community 31 - "Community 31"
+Cohesion: 1.0
+Nodes (1): Patient or approved doctor fetches encrypted report list.
+
+### Community 32 - "Community 32"
+Cohesion: 1.0
+Nodes (1): Fetch single encrypted report (patient or approved doctor).
+
+### Community 33 - "Community 33"
+Cohesion: 1.0
+Nodes (1): Upload encrypted medical image binary.     Multipart form: record_id, file_hash
+
+### Community 34 - "Community 34"
+Cohesion: 1.0
+Nodes (1): Return all doctor notes for a given patient profile code.
+
+### Community 35 - "Community 35"
+Cohesion: 1.0
+Nodes (1): Doctor adds a note for a patient (called from doctor portal).
+
+### Community 36 - "Community 36"
+Cohesion: 1.0
+Nodes (1): Serve a saved note image file.
+
+### Community 37 - "Community 37"
+Cohesion: 1.0
+Nodes (1): Delete a doctor note by its ID.
+
+### Community 38 - "Community 38"
+Cohesion: 1.0
+Nodes (1): Return True iff the doctor has a non-expired wrapped key for this patient.
+
+### Community 39 - "Community 39"
+Cohesion: 1.0
+Nodes (1): Returns all notes for this patient.     Protected by API key — both doctor and
+
+### Community 40 - "Community 40"
+Cohesion: 1.0
+Nodes (1): Doctor deletes their own note.     Requires: X-API-Key + JSON body { "doctor_co
+
 ## Knowledge Gaps
-- **53 isolated node(s):** `Return list of all active requests from server (or raise).`, `Load patient private key object. Accepts folder or file path.`, `Robustly load client/Users/<profile_code>/user_data.json.      Uses the script`, `Ask user password once and unwrap K_data from local_json['key_protection'].`, `Call POST /approve_request with required payload.` (+48 more)
+- **107 isolated node(s):** `Return list of all active requests from server (or raise).`, `Load patient private key object. Accepts folder or file path.`, `Robustly load client/Users/<profile_code>/user_data.json.      Uses the script`, `Ask user password once and unwrap K_data from local_json['key_protection'].`, `Call POST /approve_request with required payload.` (+102 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 14`** (3 nodes): `main()`, `try_decrypt()`, `diag_decrypt.py`
+- **Thin community `Community 12`** (3 nodes): `main()`, `try_decrypt()`, `diag_decrypt.py`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 17`** (1 nodes): `Encrypt bytes using DPAPI (current-user scope).`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 18`** (1 nodes): `Decrypt a DPAPI blob; returns plaintext bytes.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 19`** (1 nodes): `Convert credential ID to a safe filename.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 20`** (1 nodes): `DPAPI-backed key storage.      Usage:         SecureKeyStore.store_private_ke`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 21`** (1 nodes): `Return the active requests list or [] on error (non-fatal).`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 22`** (1 nodes): `Return array of all active requests. Clients should filter by profile_code.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 23`** (1 nodes): `Return a single request object by request_id, or 404 if not found.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 24`** (1 nodes): `Return wrapped keys for the specified profile. Looks under     PATIENTS_DIR/<pr`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 25`** (1 nodes): `Remove stale entries from active_requests.json, then reschedule itself.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 26`** (1 nodes): `Decorator — validates JWT and optionally checks role.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 27`** (1 nodes): `Send (simulated) OTP to email. In prod: plug in SendGrid/SES.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 28`** (1 nodes): `Full registration: name, email, role, password_hash (bcrypt done client-side or`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 29`** (1 nodes): `Called by landing.py during registration to create a users_db entry,     enabli`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 30`** (1 nodes): `Doctor uploads an encrypted visit report (hybrid encryption).     Body: patient`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 31`** (1 nodes): `Patient or approved doctor fetches encrypted report list.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 32`** (1 nodes): `Fetch single encrypted report (patient or approved doctor).`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 33`** (1 nodes): `Upload encrypted medical image binary.     Multipart form: record_id, file_hash`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 34`** (1 nodes): `Return all doctor notes for a given patient profile code.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 35`** (1 nodes): `Doctor adds a note for a patient (called from doctor portal).`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 36`** (1 nodes): `Serve a saved note image file.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 37`** (1 nodes): `Delete a doctor note by its ID.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 38`** (1 nodes): `Return True iff the doctor has a non-expired wrapped key for this patient.`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 39`** (1 nodes): `Returns all notes for this patient.     Protected by API key — both doctor and`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 40`** (1 nodes): `Doctor deletes their own note.     Requires: X-API-Key + JSON body { "doctor_co`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `exists()` connect `Community 3` to `Community 0`, `Community 1`, `Community 2`, `Community 4`, `Community 6`, `Community 9`, `Community 10`, `Community 11`, `Community 13`?**
-  _High betweenness centrality (0.526) - this node is a cross-community bridge._
-- **Why does `load_json()` connect `Community 4` to `Community 9`, `Community 3`, `Community 7`?**
-  _High betweenness centrality (0.164) - this node is a cross-community bridge._
-- **Why does `derive_kek_from_password()` connect `Community 1` to `Community 0`, `Community 2`, `Community 3`, `Community 5`, `Community 6`?**
-  _High betweenness centrality (0.082) - this node is a cross-community bridge._
-- **Are the 42 inferred relationships involving `exists()` (e.g. with `load_patient_private()` and `load_local_user_json()`) actually correct?**
-  _`exists()` has 42 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 23 inferred relationships involving `derive_kek_from_password()` (e.g. with `load_patient_private()` and `unwrap_local_K_data_from_local_json_once()`) actually correct?**
-  _`derive_kek_from_password()` has 23 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 17 inferred relationships involving `unwrap_key_with_kek()` (e.g. with `load_patient_private()` and `unwrap_local_K_data_from_local_json_once()`) actually correct?**
-  _`unwrap_key_with_kek()` has 17 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `exists()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`?**
+  _High betweenness centrality (0.604) - this node is a cross-community bridge._
+- **Why does `_read()` connect `Community 2` to `Community 0`?**
+  _High betweenness centrality (0.218) - this node is a cross-community bridge._
+- **Why does `_init_dirs()` connect `Community 4` to `Community 0`?**
+  _High betweenness centrality (0.145) - this node is a cross-community bridge._
+- **Are the 47 inferred relationships involving `exists()` (e.g. with `load_patient_private()` and `load_local_user_json()`) actually correct?**
+  _`exists()` has 47 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 35 inferred relationships involving `SecureKeyStore` (e.g. with `Unlock a doctor's RSA private key from the local credential store.      Return` and `Doctor adds a clinical note to a patient profile. Server enforces access check.`) actually correct?**
+  _`SecureKeyStore` has 35 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 25 inferred relationships involving `derive_kek_from_password()` (e.g. with `load_patient_private()` and `unwrap_local_K_data_from_local_json_once()`) actually correct?**
+  _`derive_kek_from_password()` has 25 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `Return list of all active requests from server (or raise).`, `Load patient private key object. Accepts folder or file path.`, `Robustly load client/Users/<profile_code>/user_data.json.      Uses the script` to the rest of the system?**
-  _53 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _107 weakly-connected nodes found - possible documentation gaps or missing edges._

@@ -135,17 +135,18 @@ def logout():
 def login():
     try:
         d = request.get_json(force=True) or {}
-        email    = (d.get("email") or "").strip().lower()
-        password = d.get("password") or ""
+        # Accept either email or username in the same field
+        identifier = (d.get("email") or d.get("username") or "").strip().lower()
+        password   = d.get("password") or ""
 
-        if not email or not password:
-            return jsonify({"error": "Email and password are required"}), 400
+        if not identifier or not password:
+            return jsonify({"error": "Username/email and password are required"}), 400
 
         # Send raw password to backend — server handles both SHA-256 and werkzeug
         try:
             r = http.post(
                 f"{BACKEND}/auth/login",
-                json={"email": email, "password": password,
+                json={"email": identifier, "password": password,
                       "password_hash": hashlib.sha256(password.encode()).hexdigest()},
                 headers=_headers(),
                 timeout=10,
@@ -165,7 +166,7 @@ def login():
         session["logged_in"]    = True
         session["role"]         = role
         session["name"]         = data.get("name", "")
-        session["email"]        = email
+        session["email"]        = data.get("email", identifier)  # store the real email
         session["username"]     = data.get("username", "")
         session["user_id"]      = data.get("user_id", "")
         session["profile_code"] = pcode if role == "patient" else ""
@@ -771,6 +772,75 @@ def patient_history():
         return jsonify({"error": str(e), "history": []}), 200
 
 
+# ── Patient: list all registered doctors ─────────────────────────────────────
+@app.route("/patient/doctors", methods=["GET"])
+def patient_list_doctors():
+    """Return all registered doctors with name, specialization, hospital, username.
+    No authentication required — this is a public directory listing."""
+    doctors = []
+
+    # ── Build a map: doctor_code → {username, email, name} from users_db ──
+    users_db = {}
+    try:
+        users_db_path = os.path.join(ROOT, "server", "users_db.json")
+        users_db = json.load(open(users_db_path, encoding="utf-8"))
+    except Exception:
+        pass
+
+    code_to_user = {}
+    for _email, _u in users_db.items():
+        if isinstance(_u, dict) and _u.get("role") == "doctor":
+            dc = _u.get("doctor_code") or _u.get("profile_code", "")
+            if dc:
+                code_to_user[dc] = {
+                    "username": _u.get("username", ""),
+                    "email":    _email,
+                    "name":     _u.get("name", ""),
+                }
+
+    # ── Read specialization & hospital from doctor_data.json files ─────────
+    seen_codes = set()
+    for folder in os.listdir(DOCTORS_DIR):
+        meta_path = os.path.join(DOCTORS_DIR, folder, "doctor_data.json")
+        if not os.path.exists(meta_path):
+            continue
+        try:
+            m = json.load(open(meta_path, encoding="utf-8"))
+        except Exception:
+            continue
+
+        dc   = m.get("doctor_code", "")
+        if not dc or dc in seen_codes:
+            continue
+        seen_codes.add(dc)
+
+        user_info = code_to_user.get(dc, {})
+        doctors.append({
+            "doctor_code":    dc,
+            "name":           user_info.get("name") or m.get("name", ""),
+            "username":       user_info.get("username") or "",
+            "email":          user_info.get("email", ""),
+            "specialization": m.get("specialization", ""),
+            "hospital":       m.get("hospital", ""),
+        })
+
+    # ── Also include doctors in users_db that have no doctor_data.json ─────
+    for dc, info in code_to_user.items():
+        if dc not in seen_codes:
+            doctors.append({
+                "doctor_code":    dc,
+                "name":           info.get("name", ""),
+                "username":       info.get("username", ""),
+                "email":          info.get("email", ""),
+                "specialization": "",
+                "hospital":       "",
+            })
+
+    # Sort by name
+    doctors.sort(key=lambda d: d["name"].lower())
+    return jsonify({"doctors": doctors}), 200
+
+
 # ════════════════════════════════════════════════════════════════════════════
 #   DOCTOR API ROUTES  (called by dashboard.html via fetch)
 # ════════════════════════════════════════════════════════════════════════════
@@ -781,6 +851,27 @@ def _doctor_session_check():
     if not session.get("logged_in") or session.get("role") != "doctor":
         return jsonify({"error": "unauthenticated"}), 401
     return None
+
+def _resolve_patient_code(username_or_code: str) -> str:
+    """Resolve a patient username (e.g. 'sanskar_phougat') to the internal
+    profile_code (e.g. 'B22YF773XL') by looking up users_db.json.
+    If no username match is found the value is returned unchanged — that
+    allows doctors who already know the profile_code to use it directly."""
+    if not username_or_code:
+        return username_or_code
+    users_db_path = os.path.join(ROOT, "server", "users_db.json")
+    try:
+        users = json.load(open(users_db_path, encoding="utf-8"))
+        for entry in users.values():
+            if (entry.get("username", "").lower() == username_or_code.lower()
+                    and entry.get("role") == "patient"):
+                pc = entry.get("profile_code", "")
+                if pc:
+                    return pc
+    except Exception as e:
+        app.logger.warning("_resolve_patient_code: could not read users_db: %s", e)
+    # Fallback: treat as raw profile_code
+    return username_or_code
 
 def _fwd_headers():
     """Build headers that carry the Flask session cookie to doctor_portal."""
@@ -826,12 +917,16 @@ def doctor_request_access():
     if err: return err
     try:
         d = request.get_json(force=True) or {}
+        # Resolve username → profile_code before forwarding
+        pat_code = _resolve_patient_code(d.get("patient_code", ""))
+        if not pat_code:
+            return jsonify({"error": "Patient username is required"}), 400
         try:
             r = http.post(
                 f"{DOCTOR_PORTAL}/api/request_access",
                 json={
                     "doctor_code": session.get("doctor_code", ""),
-                    "patient_code": d.get("patient_code", ""),
+                    "patient_code": pat_code,
                     "password": d.get("password", ""),
                 },
                 cookies={"session": request.cookies.get("session", "")},
@@ -845,7 +940,7 @@ def doctor_request_access():
             if jwt: hdrs["Authorization"] = f"Bearer {jwt}"
             rb = http.post(f"{BACKEND}/request_access",
                 json={"doctor_code": session.get("doctor_code", ""),
-                      "patient_code": d.get("patient_code", "")},
+                      "patient_code": pat_code},
                 headers=hdrs, timeout=10)
             return jsonify(rb.json()), rb.status_code
     except Exception as e:
@@ -859,12 +954,16 @@ def doctor_fetch_record():
     if err: return err
     try:
         d = request.get_json(force=True) or {}
+        # Resolve username → profile_code before forwarding
+        pat_code = _resolve_patient_code(d.get("patient_code", ""))
+        if not pat_code:
+            return jsonify({"error": "Patient username is required"}), 400
         try:
             r = http.post(
                 f"{DOCTOR_PORTAL}/api/fetch_record",
                 json={
                     "doctor_code": session.get("doctor_code", ""),
-                    "patient_code": d.get("patient_code", ""),
+                    "patient_code": pat_code,
                     "password": d.get("password", ""),
                 },
                 cookies={"session": request.cookies.get("session", "")},
@@ -877,6 +976,109 @@ def doctor_fetch_record():
         return jsonify({"error": str(e)}), 502
 
 
+# ── Shared helper: read EMR files directly (no JWT needed) ─────────────────
+EMR_DATA_DIR = os.path.join(ROOT, "server", "emr_data")
+
+def _read_emr_file(filename):
+    """Read a JSON list from the EMR data directory. Returns [] on any error."""
+    try:
+        path = os.path.join(EMR_DATA_DIR, filename)
+        if not os.path.exists(path):
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+def _read_emr_profile(pat_code):
+    """Return the patient's self-saved EMR profile dict, or {} if not found."""
+    try:
+        path = os.path.join(EMR_DATA_DIR, "emr_profiles.json")
+        if not os.path.exists(path):
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            profiles = json.load(f)
+        return profiles.get(pat_code, {}) if isinstance(profiles, dict) else {}
+    except Exception:
+        return {}
+
+def _fetch_timeline_for(pat_code):
+    """Return notes, prescriptions and lab_reports for pat_code, each sorted newest-first."""
+    # ── Doctor notes via backend API (uses API-key auth, not JWT) ──────────
+    notes = []
+    try:
+        rn = http.get(f"{BACKEND}/doctor_notes/patient/{pat_code}",
+                      headers=_headers(), timeout=8)
+        if rn.ok:
+            nd = rn.json()
+            notes = nd.get("notes", nd) if isinstance(nd, dict) else nd
+            if not isinstance(notes, list):
+                notes = []
+            for n in notes:
+                if "note_id" not in n and "id" in n:
+                    n["note_id"] = n["id"]
+    except Exception:
+        pass
+    notes.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+
+    # ── Prescriptions — read JSON directly (no JWT needed) ─────────────────
+    all_rx = _read_emr_file("emr_prescriptions.json")
+    prescriptions = [r for r in all_rx if r.get("patient_id") == pat_code]
+    prescriptions.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+
+    # ── Lab reports — read JSON directly ───────────────────────────────────
+    all_labs = _read_emr_file("emr_lab_reports.json")
+    lab_reports = [r for r in all_labs if r.get("patient_id") == pat_code]
+    lab_reports.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+
+    return notes, prescriptions, lab_reports
+
+
+# ── Doctor: patient medical timeline ───────────────────────────────────────
+@app.route("/doctor/patient_timeline/<username>", methods=["GET"])
+def doctor_patient_timeline(username):
+    """All clinical notes + prescriptions + lab reports for a patient (doctor view)."""
+    err = _doctor_session_check()
+    if err: return err
+
+    pat_code = _resolve_patient_code(username)
+    if not pat_code:
+        return jsonify({"error": "Patient not found"}), 404
+
+    notes, prescriptions, lab_reports = _fetch_timeline_for(pat_code)
+    emr_profile = _read_emr_profile(pat_code)
+    return jsonify({
+        "patient_code": pat_code,
+        "emr_profile":  emr_profile,
+        "notes": notes,
+        "prescriptions": prescriptions,
+        "lab_reports": lab_reports,
+    }), 200
+
+
+# ── Patient: own medical timeline ───────────────────────────────────────────
+@app.route("/patient/timeline", methods=["GET"])
+def patient_timeline_rich():
+    """Return the logged-in patient's own notes + prescriptions + lab reports."""
+    if not session.get("logged_in") or session.get("role") != "patient":
+        return jsonify({"error": "unauthenticated"}), 401
+
+    pat_code = session.get("profile_code", "")
+    if not pat_code:
+        return jsonify({"error": "No profile code in session"}), 400
+
+    notes, prescriptions, lab_reports = _fetch_timeline_for(pat_code)
+    emr_profile = _read_emr_profile(pat_code)
+    return jsonify({
+        "patient_code": pat_code,
+        "emr_profile":  emr_profile,
+        "notes": notes,
+        "prescriptions": prescriptions,
+        "lab_reports": lab_reports,
+    }), 200
+
+
 # ── Add clinical note ──────────────────────────────────────────────────────
 @app.route("/doctor/add_note", methods=["POST"])
 def doctor_add_note():
@@ -885,6 +1087,8 @@ def doctor_add_note():
     try:
         d = request.get_json(force=True) or {}
         d["doctor_code"] = session.get("doctor_code", "")
+        # Resolve username → profile_code before forwarding
+        d["patient_code"] = _resolve_patient_code(d.get("patient_code", ""))
         try:
             r = http.post(
                 f"{DOCTOR_PORTAL}/api/add_note",
@@ -1014,6 +1218,29 @@ def doctor_note_image(filename):
     return note_image_proxy(filename)
 
 
+# ── Resolve patient username → profile_code (used by doctor EMR forms) ─────
+@app.route("/api/resolve_patient", methods=["POST"])
+def api_resolve_patient():
+    """Accept a patient username or profile_code and return the profile_code."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    d = request.get_json(force=True) or {}
+    raw = (d.get("username") or d.get("patient_code") or "").strip()
+    if not raw:
+        return jsonify({"error": "username required"}), 400
+    resolved = _resolve_patient_code(raw)
+    if resolved == raw:
+        # Try to verify it actually exists as a patient profile_code on backend
+        try:
+            r = http.get(f"{BACKEND}/get_patient_public/{resolved}",
+                         headers=_headers(), timeout=5)
+            if not r.ok:
+                return jsonify({"error": f"Patient '{raw}' not found"}), 404
+        except Exception as e:
+            return jsonify({"error": f"Backend error: {e}"}), 502
+    return jsonify({"profile_code": resolved})
+
+
 # ── QR data (just returns doctor code + name from session) ─────────────────
 @app.route("/doctor/qr_data")
 def doctor_qr_data():
@@ -1034,7 +1261,9 @@ def doctor_patient_notes(patient_code):
     err = _doctor_session_check()
     if err: return err
     try:
-        notes_file = os.path.join(USERS_DIR, patient_code, "notes.json")
+        # Resolve username → profile_code (folder name on disk)
+        resolved_code = _resolve_patient_code(patient_code)
+        notes_file = os.path.join(USERS_DIR, resolved_code, "notes.json")
         if not os.path.exists(notes_file):
             return jsonify({"notes": [], "source": "local"}), 200
         notes = json.load(open(notes_file, encoding="utf-8"))
@@ -1048,6 +1277,127 @@ def doctor_patient_notes(patient_code):
         return jsonify({"error": str(e), "notes": []}), 500
 
 
+# ── Doctor: list all patients this doctor has (or had) access to ─────────────
+@app.route("/doctor/my_patients", methods=["GET"])
+def doctor_my_patients():
+    """Return all patients the logged-in doctor has ever had access to,
+    with active/expired status and timeline counts per patient."""
+    err = _doctor_session_check()
+    if err: return err
+
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+    doc_code   = session.get("doctor_code", "")
+    SERVER_DIR = os.path.join(ROOT, "server")
+    PATIENTS_DIR = os.path.join(SERVER_DIR, "Patients")
+
+    # ── Load users_db so we can look up username → name ──────────────────
+    users_db = {}
+    try:
+        users_db = json.load(open(os.path.join(SERVER_DIR, "users_db.json"), encoding="utf-8"))
+    except Exception:
+        pass
+
+    # Build profile_code → {username, name} map
+    code_to_info = {}
+    for _email, _u in users_db.items():
+        if isinstance(_u, dict) and _u.get("profile_code"):
+            code_to_info[_u["profile_code"]] = {
+                "username": _u.get("username", ""),
+                "name":     _u.get("name", ""),
+                "email":    _email,
+            }
+
+    # ── Scan active_requests for all entries for this doctor ──────────────
+    requests_path = os.path.join(SERVER_DIR, "active_requests.json")
+    all_requests = _load_json_safe(requests_path) if os.path.exists(requests_path) else []
+    if not isinstance(all_requests, list):
+        all_requests = []
+
+    seen_codes = set()
+    patients = []
+
+    for req in all_requests:
+        if req.get("doctor_code") != doc_code:
+            continue
+        pat_code = req.get("profile_code", "")
+        if not pat_code or pat_code in seen_codes:
+            continue
+        seen_codes.add(pat_code)
+
+        info = code_to_info.get(pat_code, {})
+        username = info.get("username") or pat_code
+        name     = info.get("name", "")
+
+        # ── Resolve expiry from wrapped_keys dir ──────────────────────────
+        expires_at = None
+        approved_at = req.get("approved_at") or req.get("timestamp", "")
+        wk_dir = os.path.join(PATIENTS_DIR, pat_code, "wrapped_keys")
+        if os.path.isdir(wk_dir):
+            for fn in os.listdir(wk_dir):
+                if not fn.lower().endswith(".json"):
+                    continue
+                try:
+                    wk = json.load(open(os.path.join(wk_dir, fn), encoding="utf-8"))
+                    if wk.get("doctor_code", os.path.splitext(fn)[0]) != doc_code:
+                        continue
+                    expires_at = wk.get("temp_key_expires_at")
+                    if not expires_at:
+                        ua_str = wk.get("uploaded_at", "")
+                        if ua_str:
+                            ua = _dt.fromisoformat(ua_str)
+                            expires_at = (ua + _td(hours=24)).isoformat()
+                    break
+                except Exception:
+                    continue
+
+        # ── Determine active/expired ──────────────────────────────────────
+        now = _dt.now(_tz.utc)
+        is_active = False
+        if expires_at:
+            try:
+                exp = _dt.fromisoformat(expires_at)
+                if exp.tzinfo is None:
+                    exp = exp.replace(tzinfo=_tz.utc)
+                is_active = exp > now
+            except Exception:
+                pass
+
+        # ── Count EMR records ─────────────────────────────────────────────
+        all_rx   = _read_emr_file("emr_prescriptions.json")
+        all_labs = _read_emr_file("emr_lab_reports.json")
+        rx_count  = sum(1 for r in all_rx   if r.get("patient_id") == pat_code)
+        lab_count = sum(1 for r in all_labs if r.get("patient_id") == pat_code)
+
+        # Notes — quick count from backend
+        note_count = 0
+        try:
+            rn = http.get(f"{BACKEND}/doctor_notes/patient/{pat_code}",
+                          headers=_headers(), timeout=5)
+            if rn.ok:
+                nd = rn.json()
+                nl = nd.get("notes", nd) if isinstance(nd, dict) else nd
+                note_count = len(nl) if isinstance(nl, list) else 0
+        except Exception:
+            pass
+
+        patients.append({
+            "patient_code": pat_code,
+            "username":     username,
+            "name":         name,
+            "status":       "active" if is_active else "expired",
+            "expires_at":   expires_at,
+            "approved_at":  approved_at,
+            "rx_count":     rx_count,
+            "lab_count":    lab_count,
+            "note_count":   note_count,
+        })
+
+    # Sort: active first, then by approved_at descending
+    patients.sort(key=lambda p: (0 if p["status"] == "active" else 1, -(p.get("approved_at") or "").__len__()))
+    return jsonify({"patients": patients}), 200
+
+
 # ── Doctor access expiry: return how long this doctor's key is valid ────────
 @app.route("/doctor/access_expiry/<patient_code>")
 def doctor_access_expiry(patient_code):
@@ -1058,8 +1408,10 @@ def doctor_access_expiry(patient_code):
     try:
         from datetime import timezone as _tz, timedelta as _td
         doc_code   = session.get("doctor_code", "")
+        # Resolve username → profile_code
+        resolved_code = _resolve_patient_code(patient_code)
         SERVER_DIR = os.path.join(ROOT, "server")
-        wk_dir     = os.path.join(SERVER_DIR, "Patients", patient_code, "wrapped_keys")
+        wk_dir     = os.path.join(SERVER_DIR, "Patients", resolved_code, "wrapped_keys")
         if not os.path.isdir(wk_dir):
             return jsonify({"expires_at": None}), 200
         for fn in os.listdir(wk_dir):
@@ -1130,8 +1482,325 @@ def api_emr_proxy(subpath):
     return emr_proxy(subpath)
 
 
+# ── Appointment proxy helpers ─────────────────────────────────────────────────
+def _jwt_headers():
+    """Headers with the session JWT for forwarding to the backend."""
+    h = {**_headers()}
+    jwt_token = session.get("jwt_token", "")
+    if jwt_token:
+        h["Authorization"] = f"Bearer {jwt_token}"
+    return h
+
+
+# Patient: submit an appointment request
+@app.route("/api/patient/appointment-request", methods=["POST"])
+def proxy_patient_appt_request():
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    try:
+        r = http.post(f"{BACKEND}/api/patient/appointment-request",
+                      json=request.get_json(force=True) or {},
+                      headers=_jwt_headers(), timeout=10)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+# Patient: list their own appointment requests
+@app.route("/api/patient/appointment-requests", methods=["GET"])
+def proxy_patient_appt_list():
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    try:
+        r = http.get(f"{BACKEND}/api/patient/appointment-requests",
+                     headers=_jwt_headers(), timeout=10)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+# Doctor: list incoming appointment requests
+@app.route("/api/doctor/appointment-requests", methods=["GET"])
+def proxy_doctor_appt_list():
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    try:
+        r = http.get(f"{BACKEND}/api/doctor/appointment-requests",
+                     headers=_jwt_headers(), timeout=10)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+# Doctor: respond (accept / reject / complete) to an appointment request
+@app.route("/api/doctor/appointment-requests/<req_id>/respond", methods=["POST"])
+def proxy_doctor_appt_respond(req_id):
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    try:
+        r = http.post(f"{BACKEND}/api/doctor/appointment-requests/{req_id}/respond",
+                      json=request.get_json(force=True) or {},
+                      headers=_jwt_headers(), timeout=10)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+# Doctor: create a new appointment for a patient (resolves username → patient_id)
+@app.route("/api/doctor/appointment-create", methods=["POST"])
+def proxy_doctor_appt_create():
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    d = request.get_json(force=True) or {}
+    # Resolve patient username in patient_username field → profile_code
+    raw = d.get("patient_username", "").strip()
+    if raw:
+        d["patient_id"] = _resolve_patient_code(raw)
+    try:
+        r = http.post(f"{BACKEND}/emr/appointments",
+                      json=d,
+                      headers=_jwt_headers(), timeout=10)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+
+# ── Merged appointment endpoints (bypass JWT uid mismatch via session) ─────────
+
+APPT_DB = os.path.join(ROOT, "server", "appointments_db.json")
+EMR_APPT = os.path.join(ROOT, "server", "emr_data", "emr_appointments.json")
+EMR_RX   = os.path.join(ROOT, "server", "emr_data", "emr_prescriptions.json")
+EMR_LR   = os.path.join(ROOT, "server", "emr_data", "emr_lab_reports.json")
+NOTES_DB = os.path.join(ROOT, "server", "doctor_notes.json")
+
+
+def _load_json_safe(path):
+    try:
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return []
+
+
+def _save_json_safe(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+@app.route("/api/patient/appointments-merged", methods=["GET"])
+def patient_appts_merged():
+    """Returns all appointments for the logged-in patient from both stores."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    pid = session.get("profile_code", "")
+    username = session.get("username", "")
+
+    # Source 1: appointments_db (patient-requested)
+    db = _load_json_safe(APPT_DB)
+    pat_appts = [a for a in db
+                 if a.get("patient_id") == pid
+                 or a.get("patient_username") == username]
+
+    # Normalize format and tag source
+    for a in pat_appts:
+        a.setdefault("source", "request")
+        a.setdefault("date_display", f"{a.get('date', '')} {a.get('time', '')}")
+
+    # Source 2: EMR appointments (doctor-created)
+    emr = _load_json_safe(EMR_APPT)
+    emr_pat = [a for a in emr if a.get("patient_id") == pid]
+    for a in emr_pat:
+        a.setdefault("source", "emr")
+        a.setdefault("date_display", a.get("date_time", ""))
+        a.setdefault("notes", a.get("reason", ""))
+        a.setdefault("doctor_username", "Your Doctor")
+
+    all_appts = pat_appts + emr_pat
+    all_appts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return jsonify({"appointments": all_appts}), 200
+
+
+@app.route("/api/doctor/appointments-merged", methods=["GET"])
+def doctor_appts_merged():
+    """Returns all appointments for the logged-in doctor from both stores."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    doc_code = session.get("doctor_code", "")
+    username  = session.get("username", "")
+
+    # Source 1: appointments_db (patient-requested)
+    db = _load_json_safe(APPT_DB)
+    req_appts = [a for a in db
+                 if a.get("doctor_username") == username
+                 or a.get("doctor_id") == doc_code]
+    for a in req_appts:
+        a.setdefault("source", "request")
+        a.setdefault("date_display", f"{a.get('date', '')} {a.get('time', '')}")
+
+    # Source 2: EMR appointments (doctor-created)
+    emr = _load_json_safe(EMR_APPT)
+    emr_doc = [a for a in emr if a.get("doctor_id") == doc_code]
+    for a in emr_doc:
+        a.setdefault("source", "emr")
+        a.setdefault("date_display", a.get("date_time", ""))
+        a.setdefault("notes", a.get("reason", ""))
+        # Resolve patient username from patient_id
+        pat_username = a.get("patient_id", "")
+        if pat_username == _resolve_patient_code(pat_username):
+            # It's a profile_code — try to reverse-map
+            users = _load_json_safe(os.path.join(ROOT, "server", "users_db.json")) if os.path.exists(os.path.join(ROOT, "server", "users_db.json")) else {}
+            if isinstance(users, dict):
+                for u in users.values():
+                    if u.get("profile_code") == a.get("patient_id"):
+                        pat_username = u.get("username", a.get("patient_id", ""))
+                        break
+        a["patient_username"] = pat_username
+
+    all_appts = req_appts + emr_doc
+    all_appts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return jsonify({"appointments": all_appts}), 200
+
+
+@app.route("/api/patient/timeline", methods=["GET"])
+def patient_timeline():
+    """Returns full chronological timeline for the logged-in patient."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    pid      = session.get("profile_code", "")
+    username = session.get("username", "")
+
+    events = []
+
+    # Prescriptions
+    for rx in _load_json_safe(EMR_RX):
+        if rx.get("patient_id") == pid:
+            events.append({
+                "type": "prescription", "icon": "💊",
+                "title": rx.get("diagnosis", "Prescription"),
+                "detail": f"Medications: {', '.join(m.get('name','') for m in rx.get('medications', []))}",
+                "date": rx.get("created_at", ""),
+                "id": rx.get("id", "")
+            })
+
+    # Lab Reports
+    for lr in _load_json_safe(EMR_LR):
+        if lr.get("patient_id") == pid:
+            events.append({
+                "type": "lab_report", "icon": "🧪",
+                "title": lr.get("report_type", "Lab Report"),
+                "detail": lr.get("notes", ""),
+                "date": lr.get("created_at", ""),
+                "id": lr.get("id", "")
+            })
+
+    # Appointments (both stores)
+    for a in _load_json_safe(APPT_DB):
+        if a.get("patient_id") == pid or a.get("patient_username") == username:
+            events.append({
+                "type": "appointment", "icon": "📅",
+                "title": f"Appointment with Dr. {a.get('doctor_username', '—')}",
+                "detail": f"{a.get('date', '')} {a.get('time', '')} — {a.get('notes', '')} [{a.get('status','pending')}]",
+                "date": a.get("created_at", ""),
+                "id": a.get("id", "")
+            })
+    for a in _load_json_safe(EMR_APPT):
+        if a.get("patient_id") == pid:
+            events.append({
+                "type": "appointment", "icon": "📅",
+                "title": f"Scheduled Appointment",
+                "detail": f"{a.get('date_time', '')} — {a.get('reason', '')} [{a.get('status','scheduled')}]",
+                "date": a.get("created_at", ""),
+                "id": a.get("id", "")
+            })
+
+    # Doctor Notes
+    for n in _load_json_safe(NOTES_DB):
+        if n.get("patient_code") == pid or n.get("patient_username") == username:
+            events.append({
+                "type": "note", "icon": "📝",
+                "title": f"Note from Dr. {n.get('doctor_name', '—')}",
+                "detail": n.get("note_text", ""),
+                "date": n.get("created_at", ""),
+                "id": n.get("note_id", "")
+            })
+
+    # Sort newest first
+    events.sort(key=lambda x: x.get("date", ""), reverse=True)
+    return jsonify({"timeline": events}), 200
+
+
+@app.route("/api/patient/appointment-request-submit", methods=["POST"])
+def patient_appt_submit():
+    """Patient submits an appointment request — stored directly with correct profile_code."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    d = request.get_json(force=True) or {}
+    import uuid
+    from datetime import datetime, timezone
+    pid      = session.get("profile_code", "")
+    username = session.get("username", "")
+    name     = session.get("name", "")
+    entry = {
+        "id": str(uuid.uuid4()),
+        "patient_id": pid,
+        "patient_username": username,
+        "patient_name": name,
+        "doctor_username": d.get("doctor_username", "").strip(),
+        "date": d.get("date", "").strip(),
+        "time": d.get("time", "").strip(),
+        "notes": d.get("notes", "").strip(),
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    db = _load_json_safe(APPT_DB)
+    db.append(entry)
+    _save_json_safe(APPT_DB, db)
+    return jsonify({"message": "requested", "appointment": entry}), 201
+
+
+@app.route("/api/doctor/appointment-respond/<req_id>", methods=["POST"])
+def doctor_appt_respond(req_id):
+    """Doctor accepts/rejects/completes an appointment request in appointments_db."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    d = request.get_json(force=True) or {}
+    status = d.get("status")
+    if status not in ("accepted", "rejected", "completed"):
+        return jsonify({"error": "invalid_status"}), 400
+    from datetime import datetime, timezone
+    db = _load_json_safe(APPT_DB)
+    found = False
+    for a in db:
+        if a["id"] == req_id:
+            a["status"] = status
+            a["updated_at"] = datetime.now(timezone.utc).isoformat()
+            found = True
+            break
+    if not found:
+        # Try EMR appointments
+        emr = _load_json_safe(EMR_APPT)
+        for a in emr:
+            if a["id"] == req_id:
+                a["status"] = status
+                a["updated_at"] = datetime.now(timezone.utc).isoformat()
+                found = True
+                break
+        if found:
+            _save_json_safe(EMR_APPT, emr)
+            return jsonify({"message": "updated"}), 200
+        return jsonify({"error": "not_found"}), 404
+    _save_json_safe(APPT_DB, db)
+    return jsonify({"message": "updated"}), 200
+
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("  🌐  Landing Page → http://127.0.0.1:5003")
     app.run(host="127.0.0.1", port=5003, debug=True, threaded=True)
+
 
