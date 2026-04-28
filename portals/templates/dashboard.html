@@ -725,7 +725,7 @@
  Requests</button> <button class="nav-btn" onclick="showSection('notes', loadNotes)">Doctor
  Notes</button> <span class="nav-label">EMR</span> <button class="nav-btn" onclick="showSection('find-doctors', loadDoctors)">Find Doctors</button> <button class="nav-btn" onclick="showSection('emr-profile', loadEmrProfile)">EMR Profile</button> <button class="nav-btn" onclick="showSection('emr-appointments', loadPatientAppointments)">Appointments</button> <button class="nav-btn" onclick="showSection('emr-prescriptions', loadPatientPrescriptions)">Prescriptions</button> <button class="nav-btn" onclick="showSection('emr-lab-reports', loadPatientLabReports)">Lab Reports</button> <button class="nav-btn" onclick="showSection('patient-id')">My ID & QR</button> <button class="nav-btn" onclick="showSection('history', loadHistory)">Login
  History</button> {% else %}
- <button class="nav-btn active" onclick="showSection('home')">Home</button> <button class="nav-btn" onclick="showSection('doc-request')"> Request Access</button> <button class="nav-btn" onclick="showSection('doc-my-patients', loadMyPatients)">My Patients</button> <button class="nav-btn" onclick="showSection('doc-records')"> Patient Records</button> <button class="nav-btn" onclick="showSection('doc-notes')">Add Note</button> <span class="nav-label">EMR</span> <button class="nav-btn" onclick="showSection('doc-emr-appointments', docLoadAppointments)">Appointments</button> <button class="nav-btn" onclick="showSection('doc-emr-prescriptions')">Prescriptions</button> <button class="nav-btn" onclick="showSection('doc-emr-lab-reports')">Lab Reports</button> <button class="nav-btn" onclick="showSection('doc-qr')">My QR Code</button> {% endif %}
+ <button class="nav-btn active" onclick="showSection('home')">Home</button> <button class="nav-btn" onclick="showSection('doc-my-patients', loadMyPatients)">My Patients</button> <button class="nav-btn" onclick="showSection('doc-records')"> Patient Records</button> <button class="nav-btn" onclick="showSection('doc-notes')">Add Note</button> <span class="nav-label">EMR</span> <button class="nav-btn" onclick="showSection('doc-emr-appointments', docLoadAppointments)">Appointments</button> <button class="nav-btn" onclick="showSection('doc-emr-prescriptions')">Prescriptions</button> <button class="nav-btn" onclick="showSection('doc-emr-lab-reports')">Lab Reports</button> <button class="nav-btn" onclick="showSection('doc-qr')">My QR Code</button> {% endif %}
 
  <div class="profile-section"> <div class="profile-pill"> <div class="pname">{{ name }}</div> <div class="pemail">{{ email }}</div> </div> <button class="logout-btn" onclick="location.href='/logout'"> Sign Out</button> </div> </aside> <!-- ╔══════════════ MAIN ══════════════╗ --> <main class="main"> <!-- ── HOME ── --> <div class="section active" id="sec-home"> <div class="page-head"> <h2>Welcome back, {{ name.split()[0] }}! </h2> <p>{{ 'Your encrypted health records — you control everything.' if role=='patient' else 'Consent-gated
  access to patient records.' }}</p> </div> <div class="card" style="margin-bottom:20px;"> <div class="card-title">Session Info</div> <div class="info-row"> <div class="info-key">Name</div> <div class="info-val">{{ name }}</div> </div> <div class="info-row"> <div class="info-key">Role</div> <div class="info-val">{{ role|capitalize }}</div> </div> <div class="info-row"> <div class="info-key">Email</div> <div class="info-val">{{ email }}</div> </div> {% if username %}
@@ -745,7 +745,7 @@
  </div> {% if role == 'patient' %}
  <div class="overview-grid"> <div class="ov-tile" onclick="showSection('records')"> <div class="ot-icon"></div> <div class="ot-title">My Records</div> <div class="ot-desc">View your encrypted health record</div> </div> <div class="ov-tile" onclick="showSection('requests', loadRequests)"> <div class="ot-icon"></div> <div class="ot-title">Access Requests</div> <div class="ot-desc">Approve or deny doctor access</div> </div> <div class="ov-tile" onclick="showSection('notes', loadNotes)"> <div class="ot-icon"></div> <div class="ot-title">Doctor Notes</div> <div class="ot-desc">Clinical notes from your doctors</div> </div> <div class="ov-tile" onclick="showSection('emr-profile', loadEmrProfile)"> <div class="ot-icon"></div> <div class="ot-title">EMR Profile</div> <div class="ot-desc">Blood group, allergies &amp; medical history</div> </div> <div class="ov-tile" onclick="showSection('emr-appointments', loadPatientAppointments)"> <div class="ot-icon"></div> <div class="ot-title">Appointments</div> <div class="ot-desc">Your scheduled &amp; past appointments</div> </div> <div class="ov-tile" onclick="showSection('emr-prescriptions', loadPatientPrescriptions)"> <div class="ot-icon"></div> <div class="ot-title">Prescriptions</div> <div class="ot-desc">E-prescriptions from your doctors</div> </div> <div class="ov-tile" onclick="showSection('emr-lab-reports', loadPatientLabReports)"> <div class="ot-icon"></div> <div class="ot-title">Lab Reports</div> <div class="ot-desc">Lab &amp; diagnostic reports</div> </div> <div class="ov-tile" onclick="showSection('history', loadHistory)"> <div class="ot-icon"></div> <div class="ot-title">Login History</div> <div class="ot-desc">Recent sign-in activity</div> </div> </div> <div class="alert alert-info" style="margin-top:20px;"> Your private key is secured via Windows DPAPI — it
  never leaves your device.</div> {% else %}
- <div class="overview-grid"> <div class="ov-tile" onclick="showSection('doc-request')"> <div class="ot-icon"></div> <div class="ot-title">Request Access</div> <div class="ot-desc">Request patient record access</div> </div> <div class="ov-tile" onclick="showSection('doc-records')"> <div class="ot-icon"></div> <div class="ot-title">Patient Records</div> <div class="ot-desc">Fetch & decrypt approved records</div> </div> <div class="ov-tile" onclick="showSection('doc-notes')"> <div class="ot-icon"></div> <div class="ot-title">Add Note</div> <div class="ot-desc">Attach clinical notes to patients</div> </div> <div class="ov-tile" onclick="showSection('doc-qr')"> <div class="ot-icon"></div> <div class="ot-title">My QR Code</div> <div class="ot-desc">Show QR for instant patient access</div> </div> </div> <div class="alert alert-info" style="margin-top:20px;"> Consent-first system — patient must approve every
+ <div class="overview-grid"> <div class="ov-tile" onclick="showSection('doc-records')"> <div class="ot-icon"></div> <div class="ot-title">Patient Lookup</div> <div class="ot-desc">Look up any patient - auto-fetches if access approved, requests if not</div> </div> <div class="ov-tile" onclick="showSection('doc-notes')"> <div class="ot-icon"></div> <div class="ot-title">Add Note</div> <div class="ot-desc">Attach clinical notes to patients</div> </div> <div class="ov-tile" onclick="showSection('doc-qr')"> <div class="ot-icon"></div> <div class="ot-title">My QR Code</div> <div class="ot-desc">Show QR for instant patient access</div> </div> </div> <div class="alert alert-info" style="margin-top:20px;"> Consent-first system — patient must approve every
  access request. Access expires in 24 hours.</div> {% endif %}
  </div> {% if role == 'patient' %}
  <!-- ── MY RECORDS ── --> <div class="section" id="sec-records"> <div class="page-head"> <h2> My Records</h2> <p>Unlock your encrypted health record with your password.</p> </div> <div class="card"> <div class="card-title">Unlock Record</div> <div id="rec-alert"></div> <div class="form-group"><label>Password</label><input type="password" id="rec-pw"
@@ -768,13 +768,8 @@
 
  {% if role == 'doctor' %}
  <!-- ══════════ DOCTOR SECTIONS ══════════ --> <!-- ── MY PATIENTS ── --> <div class="section" id="sec-doc-my-patients"> <div class="page-head"> <h2> My Patients</h2> <p>All patients you have active or historical access to, sorted newest first.</p> </div> <div id="mypat-loading" class="card" style="text-align:center;padding:28px;"> <div class="spin spin-dark"></div> Loading…
- </div> <div id="mypat-list"></div> </div> <!-- ── REQUEST ACCESS ── --> <div class="section" id="sec-doc-request"> <div class="page-head"> <h2> Request Patient Access</h2> <p>The patient will be notified and can approve or deny.</p> </div> <div id="dreq-alert"></div> <div class="card"> <div class="card-title">Patient Details</div> <div class="form-group"><label>Patient Username *</label><input type="text" id="dreq-pcode"
- placeholder="e.g. ananya_sharma"></div> <div class="form-group"><label>Your Password (to unlock your key)</label><input type="password"
- id="dreq-pw" placeholder="Your local password"></div> <button class="btn btn-primary" onclick="docRequestAccess()" id="dreq-btn"> Send Access
- Request</button> </div> <div class="card" id="dreq-status" style="display:none;"> <div class="card-title">Request Status</div> <div id="dreq-status-body"></div> </div> </div> <!-- ── PATIENT RECORDS ── --> <div class="section" id="sec-doc-records"> <div class="page-head"> <h2> Patient Records</h2> <p>View approved patient records. Access expires after 24 hours.</p> </div> <div id="drec-alert"></div> <div class="card"> <div class="card-title">Fetch Record</div> <div class="form-group"><label>Patient Username *</label><input type="text" id="drec-pcode"
- placeholder="e.g. ananya_sharma"></div> <div class="form-group"><label>Your Password</label><input type="password" id="drec-pw"
- placeholder="Your local password"></div> <button class="btn btn-primary" onclick="docFetchRecord()" id="drec-btn"> Fetch & Decrypt
- Record</button> </div> <div id="drec-result" style="display:none;"></div> </div> <!-- ── ADD NOTE ── --> <div class="section" id="sec-doc-notes"> <div class="page-head"> <h2> Add Clinical Note</h2> <p>Attach notes to a patient profile. Only works while you have active approved access.</p> </div> <div id="dnote-alert"></div> <div class="alert alert-info"> Every note is stored with your name, doctor code, specialisation, hospital
+ </div> <div id="mypat-list"></div> </div> <!-- ── REQUEST ACCESS ── --> <div class="section" id="sec-doc-records"> <div class="page-head"> <h2>Patient Records</h2> <p>Enter a patient username — if you have approved access, records load automatically. Otherwise, an access request is sent.</p> </div> <div id="drec-alert"></div> <div class="card"> <div class="card-title">Smart Patient Lookup</div> <div class="form-group"><label>Patient Username *</label><input type="text" id="drec-pcode" placeholder="e.g. ananya_sharma" onkeydown="if(event.key==='Enter')docSmartLookup()"></div> <div class="form-group"><label>Your Password *</label><input type="password" id="drec-pw" placeholder="Your password" onkeydown="if(event.key==='Enter')docSmartLookup()"></div> <div style="display:flex;gap:10px;align-items:center;margin-top:4px;"> <button class="btn btn-primary" onclick="docSmartLookup()" id="drec-btn"> Look Up Patient</button> <span style="font-size:12px;color:var(--muted);">Auto-fetches if access approved &middot; Requests access if not</span> </div> </div> <div id="drec-result" style="display:none;"></div> </div>
+div> <!-- ── ADD NOTE ── --> <div class="section" id="sec-doc-notes"> <div class="page-head"> <h2> Add Clinical Note</h2> <p>Attach notes to a patient profile. Only works while you have active approved access.</p> </div> <div id="dnote-alert"></div> <div class="alert alert-info"> Every note is stored with your name, doctor code, specialisation, hospital
  and an exact timestamp.</div> <div class="card"> <div class="card-title">Patient & Visit</div> <div class="form-group"><label>Patient Username *</label><input type="text" id="dnote-pcode"
  placeholder="e.g. ananya_sharma"></div> <div class="form-group"><label>Your Password *</label><input type="password" id="dnote-pw"
  placeholder="Verify your identity"></div> <div class="form-group"> <label>Note Type</label> <select id="dnote-type"> <option value="General">General Observation</option> <option value="Diagnosis">Diagnosis</option> <option value="Prescription">Prescription / Medication</option> <option value="FollowUp">Follow-Up Required</option> <option value="LabResult">Lab / Test Result</option> <option value="Allergy">Allergy / Adverse Reaction</option> <option value="Surgical">Surgical Note</option> <option value="Emergency">Emergency Note</option> </select> </div> <div class="form-group"><label>Visit Date</label><input type="text" id="dnote-date"
@@ -808,7 +803,7 @@ or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div
  function _resetSection(name) {
  // Clear stale alerts and result panels when entering a section
  const alertMap = {
- 'doc-request': ['dreq-alert'],
+
  'doc-records': ['drec-alert'],
  'doc-notes': ['dnote-alert'],
  'doc-emr-appointments': ['dappt-alert'],
@@ -820,7 +815,6 @@ or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div
  'emr-profile': ['emrp-alert'],
  };
  const resultMap = {
- 'doc-request': ['dreq-status'],
  'doc-records': ['drec-result'],
  'doc-notes': ['dnote-notes-wrap'],
  };
@@ -837,7 +831,7 @@ or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div
  const _map = {
  'home': 'home', 'records': 'record', 'requests': 'access', 'notes': 'note', 'history': 'history',
  'find-doctors': 'find doctors',
- 'doc-request': 'request access', 'doc-my-patients': 'my patients', 'doc-records': 'patient records', 'doc-notes': 'add note', 'doc-qr': 'qr',
+ 'doc-my-patients': 'my patients', 'doc-records': 'patient records', 'doc-notes': 'add note', 'doc-qr': 'qr',
  'emr-profile': 'emr profile', 'emr-appointments': 'appointments', 'emr-prescriptions': 'prescriptions', 'emr-lab-reports': 'lab reports',
  'doc-emr-appointments': 'appointments', 'doc-emr-prescriptions': 'prescriptions', 'doc-emr-lab-reports': 'lab reports'
  };
@@ -1131,7 +1125,11 @@ or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div
  function docGoFetchRecord(username) {
  showSection('doc-records');
  const el = document.getElementById('drec-pcode');
- if (el) { el.value = username; el.focus(); }
+ if (el) { el.value = username; }
+ // Auto-trigger lookup if password is pre-filled too
+ const pw = document.getElementById('drec-pw');
+ if (pw && pw.value) docSmartLookup();
+ else if (el) el.focus();
  }
 
  function docGoAddNote(username) {
@@ -1147,31 +1145,42 @@ or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div
  if (pField) { pField.value = username; pField.focus(); }
  }
 
- async function docRequestAccess() {
- clearAlert('dreq-alert');
- const pcode = document.getElementById('dreq-pcode').value.trim();
- const pw = document.getElementById('dreq-pw').value;
- if (!pcode) { showAlert('dreq-alert', ' Patient code required.'); return; }
- if (!pw) { showAlert('dreq-alert', ' Password required.'); return; }
- const btn = document.getElementById('dreq-btn');
- btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Sending…';
+ // Unified smart lookup — auto-fetches if access approved, auto-requests if not
+ async function docSmartLookup() {
+ clearAlert('drec-alert');
+ const pcode = document.getElementById('drec-pcode').value.trim();
+ const pw = document.getElementById('drec-pw').value;
+ if (!pcode) { showAlert('drec-alert', ' Patient username required.'); return; }
+ if (!pw) { showAlert('drec-alert', ' Your password is required.'); return; }
+ const btn = document.getElementById('drec-btn');
+ btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Checking access…';
+ document.getElementById('drec-result').style.display = 'none';
  try {
- const { ok, data } = await api('/doctor/request_access', { method: 'POST', body: JSON.stringify({ patient_code: pcode, password: pw }) });
- if (!ok) throw new Error(data.error || 'Failed');
- showAlert('dreq-alert', ' Request sent! The patient will be notified to approve.', 'success');
- document.getElementById('dreq-status').style.display = 'block';
- const statusEl = document.getElementById('dreq-status-body');
- statusEl.innerHTML = `
- <div class="info-row"><div class="info-key">Request ID</div><div class="info-val"><span class="code-chip">${data.request_id || '—'}</span></div></div> <div class="info-row"><div class="info-key">Patient Username</div><div class="info-val"><strong>${pcode}</strong></div></div> <div class="info-row"><div class="info-key">Status</div><div class="info-val"><span class="badge badge-pending"> Pending patient approval</span></div></div> <div style="margin-top:14px;padding:12px 14px;background:#fef9c3;border:1.5px solid #fde047;border-radius:10px;font-size:13px;color:#713f12;"> Once the patient approves, go to <strong>Patient Records</strong> and enter <strong>${pcode}</strong> to fetch their record.
- <div style="margin-top:10px;"> <button class="btn btn-sm" id="dreq-goto-fetch-btn" data-pcode="${pcode}" style="background:#7c3aed;color:#fff;"> Go to Patient Records →</button> </div> </div>`;
- document.getElementById('dreq-goto-fetch-btn').addEventListener('click', function() {
- const p = this.dataset.pcode;
- showSection('doc-records');
- const el = document.getElementById('drec-pcode');
- if (el) { el.value = p; el.focus(); }
- });
- } catch (e) { showAlert('dreq-alert', ' ' + e.message); }
- finally { btn.disabled = false; btn.textContent = ' Send Access Request'; }
+ // Step 1: Try to fetch — succeeds if access already approved
+ const { ok, status, data } = await api('/doctor/fetch_record', { method: 'POST', body: JSON.stringify({ patient_code: pcode, password: pw }) });
+ if (ok) { await _renderFetchedRecord(pcode, data); return; }
+ // Step 2: No access (403) → auto-request
+ if (status === 403) {
+ btn.innerHTML = '<span class="spin"></span> No access — requesting…';
+ const { ok: rOk, data: rData } = await api('/doctor/request_access', { method: 'POST', body: JSON.stringify({ patient_code: pcode, password: pw }) });
+ const result = document.getElementById('drec-result');
+ result.style.display = 'block';
+ if (rOk) {
+ result.innerHTML = `<div class="card" style="border-left:4px solid #f59e0b;"><div class="card-title" style="color:#92400e;"> Access Requested</div><div class="info-row"><div class="info-key">Patient</div><div class="info-val"><strong>${pcode}</strong></div></div><div class="info-row"><div class="info-key">Request ID</div><div class="info-val"><span class="code-chip">${rData.request_id||'—'}</span></div></div><div class="info-row"><div class="info-key">Status</div><div class="info-val"><span class="badge badge-pending"> Pending patient approval</span></div></div><div style="margin-top:14px;padding:14px;background:#fef9c3;border:1.5px solid #fde047;border-radius:10px;font-size:13px;color:#713f12;"> The patient must approve your request in their portal. Once approved, come back here and click <strong>Look Up Patient</strong> again — records will load automatically.</div></div>`;
+ showAlert('drec-alert', ' Access request sent! Click "Look Up Patient" again after patient approves.', 'success');
+ } else {
+ const msg = rData.error || '';
+ if (msg.includes('already') || msg.includes('pending') || msg.includes('exists')) {
+ result.innerHTML = `<div class="card" style="border-left:4px solid #f59e0b;"><div class="card-title"> Pending Approval</div><p style="color:var(--muted);font-size:13px;">You have already requested access for <strong>${pcode}</strong>. Once the patient approves, click <strong>Look Up Patient</strong> to load their records.</p></div>`;
+ } else {
+ throw new Error(msg || 'Failed to request access');
+ }
+ }
+ return;
+ }
+ throw new Error(data.error || 'Lookup failed');
+ } catch (e) { showAlert('drec-alert', ' ' + e.message); }
+ finally { btn.disabled = false; btn.innerHTML = ' Look Up Patient'; }
  }
 
  // -- Fetch & Decrypt Record --
@@ -1206,30 +1215,7 @@ or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div
  _expiryTimer = setInterval(_tick, 1000);
  }
 
- async function docFetchRecord() {
- clearAlert('drec-alert');
- const pcode = document.getElementById('drec-pcode').value.trim();
- const pw = document.getElementById('drec-pw').value;
- if (!pcode || !pw) { showAlert('drec-alert', ' Patient code and password required.'); return; }
- const btn = document.getElementById('drec-btn');
- btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Fetching &amp; decrypting…';
- document.getElementById('drec-result').style.display = 'none';
- try {
- // Fetch record metadata (crypto verification, access check, expiry)
- const { ok, status, data } = await api('/doctor/fetch_record', { method: 'POST', body: JSON.stringify({ patient_code: pcode, password: pw }) });
- if (!ok) {
- // 403 = no access key — guide the doctor to request access first
- if (status === 403) {
- const alertEl = document.getElementById('drec-alert');
- alertEl.innerHTML = `
- <div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:12px;padding:16px 18px;"> <div style="display:flex;align-items:flex-start;gap:12px;"> <span style="font-size:22px;flex-shrink:0;"></span> <div style="flex:1;"> <div style="font-weight:700;font-size:14px;color:#92400e;margin-bottom:4px;">Access Not Yet Approved</div> <div style="font-size:13px;color:#78350f;line-height:1.5;">${data.error || 'No access key found.'}<br>You need to send the patient an access request first. Once they approve it, you can fetch their record here.</div> <button class="btn btn-primary" id="drec-go-request-btn" data-pcode="${pcode}" style="margin-top:12px;background:#d97706;"> Send Access Request to <strong>${pcode}</strong></button> </div> </div> </div>`;
- document.getElementById('drec-go-request-btn').addEventListener('click', function() {
- docGoRequestAccess(this.dataset.pcode);
- });
- return;
- }
- throw new Error(data.error || 'Failed');
- }
+ async function _renderFetchedRecord(pcode, data) {
  const rec = data.record || {};
 
  // Fetch complete timeline: notes + prescriptions + lab reports
@@ -1347,14 +1333,12 @@ or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div
 
 
 
- } catch (e) { showAlert('drec-alert', ' ' + e.message); }
- finally { btn.disabled = false; btn.innerHTML = ' Fetch &amp; Decrypt Record'; }
  }
 
- // Pre-fill patient username in Request Access and switch to that section
+ // Pre-fill and go to unified Patient Records section
  function docGoRequestAccess(username) {
- showSection('doc-request');
- const el = document.getElementById('dreq-pcode');
+ showSection('doc-records');
+ const el = document.getElementById('drec-pcode');
  if (el) { el.value = username; el.focus(); }
  }
 
@@ -1524,8 +1508,8 @@ or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div
  if (!_UID) return;
  clearAlert('emrp-alert');
  try {
- const { ok, data } = await emrApi('/api/emr/patient/' + _UID + '/profile');
- if (ok && data.patient_id) {
+ const { ok, data } = await api('/api/patient/emr-profile-direct');
+ if (ok && (data.patient_id || data.profile_code)) {
  const sel = v => document.getElementById(v);
  sel('emrp-bg').value = data.blood_group || '';
  sel('emrp-age').value = data.age || '';
@@ -1557,8 +1541,8 @@ or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div
  const btn = g('emrp-btn');
  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Saving…';
  try {
- const { ok, data } = await emrApi('/api/emr/patient/' + _UID + '/profile', {
- method: 'PUT', body: JSON.stringify(body)
+ const { ok, data } = await api('/api/patient/emr-profile-direct', {
+ method: 'POST', body: JSON.stringify(body), headers: {'Content-Type': 'application/json'}
  });
  if (!ok) throw new Error(data.error || JSON.stringify(data.details || 'Failed'));
  showAlert('emrp-alert', ' EMR Profile saved successfully!', 'success');
@@ -1691,7 +1675,7 @@ or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div
  document.getElementById('pappt-loading').style.display = 'block';
  document.getElementById('pappt-list').style.display = 'none';
  try {
- const { ok, data } = await api('/api/patient/appointment-requests');
+ const { ok, data } = await api('/api/patient/appointments-merged');
  document.getElementById('pappt-loading').style.display = 'none';
  const list = document.getElementById('pappt-list');
  list.style.display = 'block';
@@ -1715,7 +1699,7 @@ or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div
  document.getElementById('prx-loading').style.display = 'block';
  document.getElementById('prx-list').style.display = 'none';
  try {
- const { ok, data } = await emrApi('/api/emr/prescriptions/patient/' + _UID);
+ const { ok, data } = await api('/api/patient/prescriptions-direct');
  document.getElementById('prx-loading').style.display = 'none';
  const list = document.getElementById('prx-list');
  list.style.display = 'block';
@@ -1740,7 +1724,7 @@ or JSON: {"Hemoglobin": "14.2 g/dL"}" style="min-height:110px;"></textarea></div
  document.getElementById('plr-loading').style.display = 'block';
  document.getElementById('plr-list').style.display = 'none';
  try {
- const { ok, data } = await emrApi('/api/emr/lab-reports/patient/' + _UID);
+ const { ok, data } = await api('/api/patient/lab-reports-direct');
  document.getElementById('plr-loading').style.display = 'none';
  const list = document.getElementById('plr-list');
  list.style.display = 'block';

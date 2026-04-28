@@ -158,3 +158,28 @@
 {"ts": "2026-04-27T19:19:29.497989+00:00", "action": "login", "actor": "tp123@test.com", "target": "", "detail": "", "ip": "127.0.0.1"}
 {"ts": "2026-04-27T19:30:58.487999+00:00", "action": "login", "actor": "adityadubey1409@gmail.com", "target": "", "detail": "", "ip": "127.0.0.1"}
 {"ts": "2026-04-27T19:40:23.630120+00:00", "action": "login", "actor": "tp123@test.com", "target": "", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:08:49.477796+00:00", "action": "register_via_legacy", "actor": "mridulmisra29@gmail.com", "target": "", "detail": "patient", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:08:50.579067+00:00", "action": "password_upgraded", "actor": "mridulmisra29@gmail.com", "target": "", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:08:50.595050+00:00", "action": "login", "actor": "mridulmisra29@gmail.com", "target": "", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:10:39.446637+00:00", "action": "register_via_legacy", "actor": "friuewvberivb@gmail.com", "target": "", "detail": "doctor", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:10:40.783316+00:00", "action": "password_upgraded", "actor": "friuewvberivb@gmail.com", "target": "", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:10:40.788419+00:00", "action": "login", "actor": "friuewvberivb@gmail.com", "target": "", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:12:10.115912+00:00", "action": "appointment_requested", "actor": "mridulmisra29@gmail.com", "target": "mamta15", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:13:21.387184+00:00", "action": "lab_report_created", "actor": "friuewvberivb@gmail.com", "target": "9QMTA97ZPS", "detail": "id=3f36be96-5448-40a8-b2f5-b5b6febe0ce5", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:16:54.446368+00:00", "action": "prescription_created", "actor": "friuewvberivb@gmail.com", "target": "9QMTA97ZPS", "detail": "id=8ce15646-c06d-40c5-8145-b88579fb2aac", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:18:17.988309+00:00", "action": "emr_profile_created", "actor": "mridulmisra29@gmail.com", "target": "9QMTA97ZPS", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:20:28.815512+00:00", "action": "login", "actor": "phougatworks@gmail.com", "target": "", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:22:07.226220+00:00", "action": "appointment_requested", "actor": "mridulmisra29@gmail.com", "target": "arshiya_tyagi", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T21:26:26.568793+00:00", "action": "prescription_created", "actor": "phougatworks@gmail.com", "target": "9QMTA97ZPS", "detail": "id=c3c7462b-f4d1-44ea-8448-8e466705c4a2", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T22:07:11.469612+00:00", "action": "lab_report_created", "actor": "phougatworks@gmail.com", "target": "9QMTA97ZPS", "detail": "id=758e2e11-38c7-4550-bae8-0c2477d3ef0d", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T22:09:31.916929+00:00", "action": "doctor_note_added", "actor": "arshiya tyagi (528B06F9B3)", "target": "4X6HQTH31F", "detail": "type=General, note_id=52f8ff8e-42db-4582-8215-00a9e7fa5e9d", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T22:11:07.445085+00:00", "action": "doctor_note_added", "actor": "Arshiya Tyagi (528B06F9B3)", "target": "4X6HQTH31F", "detail": "type=General, note_id=d72847df-e428-4db7-8e42-43c1e8c57000", "ip": "127.0.0.1"}
+{"ts": "2026-04-27T22:18:39.719683+00:00", "action": "login", "actor": "phougatworks_patient@local", "target": "", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-28T05:16:41.853062+00:00", "action": "login", "actor": "phougatworks_patient@local", "target": "", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-28T05:16:59.520091+00:00", "action": "login", "actor": "phougatworks@gmail.com", "target": "", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-28T05:17:36.878746+00:00", "action": "prescription_created", "actor": "phougatworks@gmail.com", "target": "AOR31K5IOZ", "detail": "id=2f612ae0-6680-4b0e-813e-3026aa7ce154", "ip": "127.0.0.1"}
+{"ts": "2026-04-28T05:21:05.608226+00:00", "action": "prescription_created", "actor": "phougatworks@gmail.com", "target": "AOR31K5IOZ", "detail": "id=af058d46-fbdc-4184-ad19-3aa191392c8b", "ip": "127.0.0.1"}
+{"ts": "2026-04-28T05:54:12.540226+00:00", "action": "prescription_created", "actor": "phougatworks@gmail.com", "target": "AOR31K5IOZ", "detail": "id=b3ec3e89-5988-4749-a537-ba25b0165b08", "ip": "127.0.0.1"}
+{"ts": "2026-04-28T07:20:03.222943+00:00", "action": "login", "actor": "phougatworks_patient@local", "target": "", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-28T07:20:27.028178+00:00", "action": "appointment_requested", "actor": "phougatworks_patient@local", "target": "mamta15", "detail": "", "ip": "127.0.0.1"}
+{"ts": "2026-04-28T07:21:03.431791+00:00", "action": "login", "actor": "friuewvberivb@gmail.com", "target": "", "detail": "", "ip": "127.0.0.1"}

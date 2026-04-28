@@ -474,13 +474,18 @@ def api_add_note():
                 "doctor_specialization": meta.get("specialization", ""),
                 "doctor_hospital":       meta.get("hospital", ""),
                 "note_type":             body.get("note_type", "General"),
-                "note":                  body.get("note_text", ""),
+                "note_text":             body.get("note_text", ""),
                 "visit_date":            body.get("visit_date", ""),
                 "image_b64":             body.get("image_b64", ""),
                 "image_type":            body.get("image_type", ""),
             },
             headers=bh(), timeout=30)
-        return jsonify(r.json()), r.status_code
+        try:
+            resp_json = r.json()
+        except Exception:
+            resp_json = {"error": f"Server error (HTTP {r.status_code}) — could not save note. "
+                                  f"Ensure access is approved and server is running."}
+        return jsonify(resp_json), r.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
@@ -493,8 +498,12 @@ def api_doctor_notes_list(patient_code):
     try:
         r = http.get(f"{BACKEND}/doctor_notes/patient/{patient_code}",
                      headers=bh(), timeout=8)
-        data  = r.json() if r.ok else {}
-        notes = data.get("notes", []) if isinstance(data, dict) else []
+        # Server returns a JSON list directly (not a dict with "notes" key)
+        notes = r.json() if r.ok else []
+        if isinstance(notes, dict):
+            notes = notes.get("notes", [])
+        if not isinstance(notes, list):
+            notes = []
         # Filter by doctor_code client side (server returns all notes for patient)
         if doc_code:
             notes = [n for n in notes if n.get("doctor_code") == doc_code]

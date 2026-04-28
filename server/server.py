@@ -1530,20 +1530,8 @@ def serve_note_image(filename):
     return send_file(img_path, mimetype=mime)
 
 
-@app.route("/doctor_notes/<note_id>", methods=["DELETE"])
-def delete_doctor_note(note_id):
-    """Delete a doctor note by its ID."""
-    auth_err = _require_api_key()
-    if auth_err: return auth_err
-    notes = load_json(DOCTOR_NOTES_FILE)
-    if not isinstance(notes, list):
-        notes = []
-    new_notes = [n for n in notes if n.get("id") != note_id]
-    if len(new_notes) == len(notes):
-        return jsonify({"error": "note_not_found"}), 404
-    save_json(DOCTOR_NOTES_FILE, new_notes)
-    audit("doctor_note_deleted", target=note_id)
-    return jsonify({"status": "ok"}), 200
+# NOTE: /doctor_notes/<note_id> DELETE route is defined at the bottom of this file
+# (see doctor_notes_delete) to prevent Flask from shadowing /doctor_notes/add POST route.
 
 
 # ═══════════════════════════
@@ -1755,10 +1743,8 @@ def patient_barcode():
     img_io.seek(0)
     return send_file(img_io, mimetype='image/png')
 
-if __name__ == "__main__":
-    print(" Server running on http://127.0.0.1:5000")
-    _schedule_cleanup()  # fix #20: use daemon timer via scheduler, not direct call
-    app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False, threaded=True)
+# ── Server entry point moved to END of file so all routes are registered first ──
+
 # ═══════════════════════════════════════════════════════════════════════
 # ███  DOCTOR NOTES  —  added as non-breaking extension  ███
 # ═══════════════════════════════════════════════════════════════════════
@@ -1836,17 +1822,23 @@ def doctor_notes_add():
     doctor_spec   = (body.get("doctor_specialization") or "").strip()
     doctor_hosp   = (body.get("doctor_hospital") or "").strip()
     note_type     = (body.get("note_type")     or "General").strip()
-    note_text     = (body.get("note_text")     or "").strip()
+    note_text     = (body.get("note_text") or body.get("note") or "").strip()
     visit_date    = (body.get("visit_date")    or "").strip()
 
     if not patient_code or not doctor_code or not note_text:
         return jsonify({"error": "missing_fields",
                         "required": ["patient_code", "doctor_code", "note_text"]}), 400
 
-    # Ensure patient profile exists on this server
-    pat_file = os.path.join(PATIENTS_DIR, f"{patient_code}.json")
-    if not os.path.exists(pat_file):
-        return jsonify({"error": "patient_not_found"}), 404
+    # Ensure patient profile exists on this server — check both storage layouts:
+    # 1) Flat file:   Patients/<code>.json          (register_user path)
+    # 2) Folder:      Patients/<code>/encrypted_data.json  (full crypto registration)
+    # 3) Wrapped key: Patients/<code>/wrapped_keys/  (implies doctor was granted access → patient exists)
+    pat_flat   = os.path.join(PATIENTS_DIR, f"{patient_code}.json")
+    pat_folder = os.path.join(PATIENTS_DIR, patient_code, "encrypted_data.json")
+    pat_wkdir  = os.path.join(PATIENTS_DIR, patient_code, "wrapped_keys")
+    if not (os.path.exists(pat_flat) or os.path.exists(pat_folder) or os.path.isdir(pat_wkdir)):
+        return jsonify({"error": "patient_not_found",
+                        "detail": f"No patient record found for code '{patient_code}'."}), 404
 
     # Access gate — doctor must have active approval
     if not _doctor_has_active_access(patient_code, doctor_code):
@@ -1942,3 +1934,10 @@ def doctor_notes_delete(note_id):
           detail=f"note_id={note_id}")
 
     return jsonify({"message": "deleted", "note_id": note_id}), 200
+
+
+# ── Entry point — MUST be last so every route above is registered ────────────
+if __name__ == "__main__":
+    print(" Server running on http://127.0.0.1:5000")
+    _schedule_cleanup()
+    app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False, threaded=True)
