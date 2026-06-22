@@ -51,6 +51,55 @@
   </div>
 
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+  <!-- Global JWT auto-refresh helper -->
+  <script>
+  /**
+   * fetchWithAuth(url, opts) — drop-in replacement for fetch().
+   * Automatically detects invalid_or_expired_token from the backend,
+   * refreshes the session, and retries the request once.
+   */
+  window.fetchWithAuth = function(url, opts) {
+    opts = opts || {};
+    return fetch(url, opts).then(function(r) {
+      var clone = r.clone();
+      return r.json().then(function(d) {
+        var errStr = (d.error || d.message || '').toLowerCase();
+        if (!r.ok && r.status === 401 &&
+            (errStr.includes('expired') || errStr.includes('invalid') || errStr.includes('token'))) {
+          // Attempt silent session refresh then retry
+          return fetch('/api/refresh_session', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+          }).then(function(rr) { return rr.json(); })
+          .then(function(rd) {
+            if (rd.token || rd.status === 'refreshed') {
+              return fetch(url, opts); // retry original
+            }
+            // Refresh failed — show toast and redirect to login after 3s
+            if (window._showSessionExpiredToast) {
+              window._showSessionExpiredToast();
+            } else {
+              var b = document.createElement('div');
+              b.style.cssText = 'position:fixed;top:16px;right:16px;background:#ef4444;color:#fff;padding:12px 20px;border-radius:8px;z-index:9999;font-size:14px;';
+              b.textContent = 'Session expired — please log in again.';
+              document.body.appendChild(b);
+              setTimeout(function() { window.location.href = '/logout'; }, 3000);
+            }
+            return clone; // return original response
+          });
+        }
+        return new Response(JSON.stringify(d), {
+          status: r.status,
+          headers: {'Content-Type': 'application/json'}
+        });
+      }).catch(function() {
+        return clone;
+      });
+    });
+  };
+  </script>
+
   {% block scripts %}{% endblock %}
 </body>
 </html>

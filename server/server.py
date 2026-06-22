@@ -2026,6 +2026,31 @@ def auth_me():
     })
 
 
+@app.route("/api/refresh_token", methods=["POST", "OPTIONS"])
+def api_refresh_token():
+    """Re-issue a JWT for an existing authenticated session.
+    Called by the landing portal when the session JWT has expired.
+    Requires API key auth (not JWT) since the JWT is already expired.
+    Body: {username, role}  — the portal already holds the session identity.
+    """
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    body     = request.get_json(force=True) or {}
+    username = (body.get("username") or "").strip().lower()
+    role     = (body.get("role") or "").strip()
+    if not username:
+        return jsonify({"error": "username required"}), 400
+    user = _db_get_user_by_username(username)
+    if not user:
+        return jsonify({"error": "user_not_found"}), 404
+    # Only reissue if role matches (basic sanity check)
+    if role and user.get("role") and user["role"] != role:
+        return jsonify({"error": "role_mismatch"}), 403
+    token = _issue_jwt(user)
+    audit("token_refreshed", actor=username, detail="silent refresh via portal")
+    return jsonify({"token": token, "access_token": token, "status": "refreshed"}), 200
+
+
 @app.route("/auth/login_history", methods=["GET"])
 @_require_jwt()
 def auth_login_history():

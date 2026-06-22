@@ -88,6 +88,48 @@ def _require_session():
     return None
 
 
+def _refresh_jwt():
+    """Re-issue a fresh JWT for the currently logged-in user by re-calling the backend login.
+    Returns the new token string on success, or None on failure.
+    This is called automatically when the backend returns invalid_or_expired_token.
+    """
+    email    = session.get("email", "")
+    username = session.get("username", "")
+    password = session.get("_pw_cache", "")   # only set if user opted to cache
+    role     = session.get("role", "")
+
+    # Strategy 1: re-issue JWT from backend using stored credentials
+    if email and password:
+        try:
+            r = http.post(f"{BACKEND}/login",
+                          json={"email": email, "password": password},
+                          headers=_headers(), timeout=10)
+            if r.ok:
+                tok = r.json().get("token") or r.json().get("access_token", "")
+                if tok:
+                    session["jwt_token"] = tok
+                    return tok
+        except Exception:
+            pass
+
+    # Strategy 2: ask the backend to reissue based on username (no-pw path, some deployments)
+    if username:
+        try:
+            r = http.post(f"{BACKEND}/api/refresh_token",
+                          json={"username": username, "role": role},
+                          headers=_headers(), timeout=10)
+            if r.ok:
+                tok = r.json().get("token") or r.json().get("access_token", "")
+                if tok:
+                    session["jwt_token"] = tok
+                    return tok
+        except Exception:
+            pass
+
+    return None
+
+
+
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #   ROUTES
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -257,6 +299,8 @@ def login():
         session["profile_code"] = pcode if role == "patient" else ""
         session["doctor_code"]  = dcode if role == "doctor" else ""
         session["jwt_token"]    = data.get("access_token", "")
+        # Cache password in encrypted session for silent JWT refresh on expiry
+        session["_pw_cache"]    = password
         if role == "doctor" and dcode:
             try:
                 for d_folder in os.listdir(DOCTORS_DIR):
@@ -1273,6 +1317,23 @@ def doctor_request_access():
             json={"patient_id": patient_uid},
             headers=hdrs, timeout=10,
         )
+
+        # Auto-refresh on expired token then retry once
+        if rb.status_code == 401:
+            try:
+                err_str = rb.json().get("error", "")
+            except Exception:
+                err_str = ""
+            if "expired" in err_str or "invalid" in err_str:
+                new_tok = _refresh_jwt()
+                if new_tok:
+                    hdrs["Authorization"] = f"Bearer {new_tok}"
+                    rb = http.post(
+                        f"{BACKEND}/access/request",
+                        json={"patient_id": patient_uid},
+                        headers=hdrs, timeout=10,
+                    )
+
         # Safe JSON parse â€” backend may return empty body on some paths
         try:
             data = rb.json()
@@ -2439,6 +2500,38 @@ def page_doctor_lab_reports():
     if session.get("role") != "doctor": return redirect("/dashboard")
     ctx = _page_context()
     return render_template("doctor_lab_reports.html", **ctx)
+
+
+
+# ─── Session JWT refresh ────────────────────────────────────────────────────
+@app.route("/api/refresh_session", methods=["POST"])
+def api_refresh_session():
+    """Re-issue a fresh JWT for the current session user.
+    Frontend calls this when it receives invalid_or_expired_token from backend.
+    """
+    if not session.get("logged_in"):
+        return jsonify({"error": "not_logged_in"}), 401
+    tok = _refresh_jwt()
+    if tok:
+        return jsonify({"token": tok, "status": "refreshed"}), 200
+    return jsonify({"error": "refresh_failed",
+                    "message": "Please log out and log back in."}), 401
+
+
+@app.route("/api/cache_password", methods=["POST"])
+def api_cache_password():
+    """Temporarily cache the user's password in server-side session for JWT refresh.
+    Called right after successful login if the user is logged in.
+    The password is stored ONLY in the encrypted server session (Flask session cookie),
+    never written to disk.
+    """
+    if not session.get("logged_in"):
+        return jsonify({"error": "not_logged_in"}), 401
+    d = request.get_json(force=True) or {}
+    pw = d.get("password", "")
+    if pw:
+        session["_pw_cache"] = pw
+    return jsonify({"status": "ok"}), 200
 
 if __name__ == "__main__":
     print("  ðŸŒ  Landing Page â†’ http://127.0.0.1:5003")
