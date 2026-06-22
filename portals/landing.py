@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-landing.py — MedVault Unified Landing Page (port 5003)
+landing.py â€” MedVault Unified Landing Page (port 5003)
 
 Serves:
-  GET  /              → Landing page (Login / Sign Up)
-  POST /login         → Authenticate via backend, set Flask session
-  POST /register/patient → Register patient, set session
-  POST /register/doctor  → Register doctor, set session
-  GET  /dashboard     → Protected role-based dashboard
-  GET  /logout        → Clear session, redirect to /
+  GET  /              â†’ Landing page (Login / Sign Up)
+  POST /login         â†’ Authenticate via backend, set Flask session
+  POST /register/patient â†’ Register patient, set session
+  POST /register/doctor  â†’ Register doctor, set session
+  GET  /dashboard     â†’ Protected role-based dashboard
+  GET  /logout        â†’ Clear session, redirect to /
 """
 import os, sys, json, secrets, string, hashlib
 try:
@@ -33,7 +33,7 @@ from common.crypto_utils import (
 )
 from common.secure_key_store import SecureKeyStore
 
-# ── App setup ─────────────────────────────────────────────────────────────────
+# â”€â”€ App setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 STATIC_DIR   = os.path.join(os.path.dirname(__file__), "static")
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
@@ -55,13 +55,13 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=3600 * 8,   # 8-hour session
 )
 
-# ── Template context: inject `now` for dashboard greeting ─────────────────────
+# â”€â”€ Template context: inject `now` for dashboard greeting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 from datetime import datetime as _datetime
 @app.context_processor
 def _inject_now():
     return {'now': _datetime.now()}
 
-# ── Constants ─────────────────────────────────────────────────────────────────
+# â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 BACKEND     = os.environ.get("SERVER_BASE", "http://127.0.0.1:5000")
 USERS_DIR   = os.path.join(ROOT, "client", "Users")
 DOCTORS_DIR = os.path.join(ROOT, "doctor", "Doctors")
@@ -70,7 +70,7 @@ DB_URL      = os.environ.get("DATABASE_URL",
 os.makedirs(USERS_DIR,   exist_ok=True)
 os.makedirs(DOCTORS_DIR, exist_ok=True)
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _api_key():
     kf = os.path.join(ROOT, "server", "api_key.txt")
     return open(kf).read().strip() if os.path.exists(kf) else ""
@@ -88,9 +88,9 @@ def _require_session():
     return None
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #   ROUTES
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/")
 def landing():
@@ -139,7 +139,7 @@ def dashboard():
     )
 
 
-# ── ADDITIONAL PAGE ROUTES ───────────────────────────────────────────────────
+# â”€â”€ ADDITIONAL PAGE ROUTES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _page_context():
     """Common context dict for all authenticated page renders."""
     role        = session.get("role", "patient")
@@ -199,7 +199,7 @@ def logout():
     return redirect(url_for("landing"))
 
 
-# ── LOGIN ─────────────────────────────────────────────────────────────────────
+# â”€â”€ LOGIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/login", methods=["POST"])
 def login():
     try:
@@ -213,7 +213,7 @@ def login():
 
         sha_hash = hashlib.sha256(password.encode()).hexdigest()
 
-        # Send raw password to backend — server handles both SHA-256 and werkzeug
+        # Send raw password to backend â€” server handles both SHA-256 and werkzeug
         try:
             r = http.post(
                 f"{BACKEND}/auth/login",
@@ -226,7 +226,7 @@ def login():
         except Exception as e:
             return jsonify({"error": f"Cannot reach backend: {e}"}), 502
 
-        # ── Legacy hash detected: surface as upgrade_required ─────────
+        # â”€â”€ Legacy hash detected: surface as upgrade_required â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if r.status_code == 403 and data.get("error") == "password_reset_required":
             return jsonify({
                 "upgrade_required": True,
@@ -278,7 +278,7 @@ def login():
         return jsonify({"error": str(e)}), 500
 
 
-# ── Password upgrade proxy (legacy SHA-256 → werkzeug pbkdf2) ─────────────────
+# â”€â”€ Password upgrade proxy (legacy SHA-256 â†’ werkzeug pbkdf2) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/login/upgrade", methods=["POST"])
 def login_upgrade():
     """Transparently upgrades a legacy-hash account to werkzeug pbkdf2 and logs in."""
@@ -309,11 +309,11 @@ def login_upgrade():
             human = {
                 "invalid_credentials": "The original password didn't match. Try again.",
                 "account_locked": "Account locked. Contact support.",
-                "not_legacy": "Account already upgraded — just sign in normally.",
+                "not_legacy": "Account already upgraded â€” just sign in normally.",
             }.get(err, err)
             return jsonify({"error": human}), r.status_code
 
-        # Upgrade succeeded — now log the user in by re-using the new token from the response
+        # Upgrade succeeded â€” now log the user in by re-using the new token from the response
         # Immediately call login with the new password to populate session
         sha2 = hashlib.sha256(new_pw.encode()).hexdigest()
         r2 = http.post(
@@ -347,7 +347,7 @@ def login_upgrade():
 
 
 
-# ── REGISTER PATIENT ──────────────────────────────────────────────────────────
+# â”€â”€ REGISTER PATIENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/register/patient", methods=["POST"])
 def register_patient():
     try:
@@ -369,7 +369,7 @@ def register_patient():
         if len(password) < 8:
             return jsonify({"error": "Password must be at least 8 characters"}), 400
 
-        # ── Generate RSA keypair + encrypt record ─────────────────────────────
+        # â”€â”€ Generate RSA keypair + encrypt record â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         priv, pub  = generate_rsa_keypair()
         K_data     = generate_aes_key()
         record     = {"name": name, "age": age, "email": email, "notes": notes}
@@ -381,13 +381,13 @@ def register_patient():
         priv_pem   = rsa_serialize_private(priv)        # bytes
         pub_pem    = rsa_serialize_public(pub)           # bytes
 
-        # Unique profile code — MUST be alphanumeric only (Windows CredWrite rejects '+', '/', etc.)
+        # Unique profile code â€” MUST be alphanumeric only (Windows CredWrite rejects '+', '/', etc.)
         _CHARS = string.ascii_uppercase + string.digits
         profile_code = ''.join(secrets.choice(_CHARS) for _ in range(10))
         pdir = os.path.join(USERS_DIR, profile_code)
         os.makedirs(pdir, exist_ok=True)
 
-        # Local user data — all values are JSON-serializable (strings/dicts)
+        # Local user data â€” all values are JSON-serializable (strings/dicts)
         local = {
             "profile_code":       profile_code,
             "patient_details":    record,
@@ -410,7 +410,7 @@ def register_patient():
         with open(os.path.join(pdir, "patient_public.pem"), "wb") as f:
             f.write(pub_pem)
 
-        # ── Register on backend (best-effort — don't crash if backend is slow) ─
+        # â”€â”€ Register on backend (best-effort â€” don't crash if backend is slow) â”€
         try:
             http.post(
                 f"{BACKEND}/register_user",
@@ -421,7 +421,7 @@ def register_patient():
         except Exception as e:
             app.logger.warning("backend /register_user failed: %s", e)
 
-        # ── Create users_db entry (enables /auth/login after logout) ────────────
+        # â”€â”€ Create users_db entry (enables /auth/login after logout) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         try:
             resp = http.post(
                 f"{BACKEND}/internal/register_user_db",
@@ -436,7 +436,7 @@ def register_patient():
         except Exception as e:
             app.logger.warning("backend /internal/register_user_db failed: %s", e)
 
-        # ── Set session ────────────────────────────────────────────────────────
+        # â”€â”€ Set session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         session.clear()
         session["logged_in"]    = True
         session["role"]         = "patient"
@@ -447,7 +447,7 @@ def register_patient():
         session["doctor_code"]  = ""
         session.permanent       = True
 
-        # ── Fetch JWT immediately so EMR endpoints work right away ────────────
+        # â”€â”€ Fetch JWT immediately so EMR endpoints work right away â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         try:
             _lr = http.post(
                 f"{BACKEND}/auth/login",
@@ -473,7 +473,7 @@ def register_patient():
         return jsonify({"error": f"Registration failed: {e}"}), 500
 
 
-# ── REGISTER DOCTOR ───────────────────────────────────────────────────────────
+# â”€â”€ REGISTER DOCTOR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/register/doctor", methods=["POST"])
 def register_doctor():
     try:
@@ -497,7 +497,7 @@ def register_doctor():
         if len(password) < 8:
             return jsonify({"error": "Password must be at least 8 characters"}), 400
 
-        # ── Generate RSA keypair ──────────────────────────────────────────────
+        # â”€â”€ Generate RSA keypair â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         priv, pub   = generate_rsa_keypair()
         doctor_id   = str(_uuid.uuid4())
         # doctor_code from UUID is already hex (alphanumeric), safe for CredWrite
@@ -533,7 +533,7 @@ def register_doctor():
         with open(os.path.join(folder, "doctor_data.json"), "w") as f:
             json.dump(meta, f, indent=2)
 
-        # ── Register on backend (best-effort) ─────────────────────────────────
+        # â”€â”€ Register on backend (best-effort) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         try:
             http.post(
                 f"{BACKEND}/register_doctor",
@@ -544,7 +544,7 @@ def register_doctor():
         except Exception as e:
             app.logger.warning("backend /register_doctor failed: %s", e)
 
-        # ── Create users_db entry (enables /auth/login after logout) ────────────
+        # â”€â”€ Create users_db entry (enables /auth/login after logout) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         try:
             resp = http.post(
                 f"{BACKEND}/internal/register_user_db",
@@ -560,7 +560,7 @@ def register_doctor():
         except Exception as e:
             app.logger.warning("backend register_user_db failed: %s", e)
 
-        # ── Set session ────────────────────────────────────────────────────────
+        # â”€â”€ Set session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         session.clear()
         session["logged_in"]      = True
         session["role"]           = "doctor"
@@ -573,7 +573,7 @@ def register_doctor():
         session["hospital"]       = hosp
         session.permanent         = True
 
-        # ── Fetch JWT immediately so EMR endpoints work right away ────────────
+        # â”€â”€ Fetch JWT immediately so EMR endpoints work right away â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         try:
             _lr = http.post(
                 f"{BACKEND}/auth/login",
@@ -599,16 +599,16 @@ def register_doctor():
         return jsonify({"error": f"Registration failed: {e}"}), 500
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #   PATIENT API ROUTES  (called by dashboard.html via fetch)
-# ════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def _patient_session_check():
     if not session.get("logged_in") or session.get("role") != "patient":
         return jsonify({"error": "unauthenticated"}), 401
     return None
 
-# ── Load decrypted patient record ─────────────────────────────────────────────
+# â”€â”€ Load decrypted patient record â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/patient/record", methods=["POST"])
 def patient_record():
     err = _patient_session_check()
@@ -634,7 +634,7 @@ def patient_record():
             unwrap_key_with_kek(kek, kp["wrapped_k"])   # validates password
         except Exception as ex:
             app.logger.warning("Record unlock failed for %s: %s", profile_code, type(ex).__name__)
-            return jsonify({"error": "Wrong password — please enter the same "
+            return jsonify({"error": "Wrong password â€” please enter the same "
                            "password you used during registration."}), 401
         return jsonify({"record": local.get("patient_details", {}),
                         "profile_code": profile_code})
@@ -642,7 +642,7 @@ def patient_record():
         app.logger.exception("patient_record error")
         return jsonify({"error": str(e)}), 500
 
-# ── Access requests list ──────────────────────────────────────────────────────
+# â”€â”€ Access requests list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/patient/requests")
 def patient_requests():
     err = _patient_session_check()
@@ -653,7 +653,7 @@ def patient_requests():
         normalized   = []
         seen_ids     = set()
 
-        # ── Source 1: PostgreSQL via JWT /access/patient_requests ────────────
+        # â”€â”€ Source 1: PostgreSQL via JWT /access/patient_requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if jwt:
             try:
                 hdrs = {**_headers(), "Authorization": f"Bearer {jwt}"}
@@ -676,9 +676,9 @@ def patient_requests():
             except Exception as e:
                 app.logger.debug("patient_requests JWT source: %s", e)
 
-        # (Legacy flat-file /active_requests removed — PostgreSQL is the source of truth)
+        # (Legacy flat-file /active_requests removed â€” PostgreSQL is the source of truth)
 
-        # ── Source 3: Direct PostgreSQL query (most reliable) ────────────────
+        # â”€â”€ Source 3: Direct PostgreSQL query (most reliable) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if _HAS_PSYCOPG2:
             try:
                 conn = psycopg2.connect(DB_URL)
@@ -727,7 +727,7 @@ def patient_requests():
 
 
 
-# ── Approve access request ────────────────────────────────────────────────────
+# â”€â”€ Approve access request â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/patient/approve", methods=["POST"])
 def patient_approve():
     err = _patient_session_check()
@@ -745,7 +745,7 @@ def patient_approve():
         if not request_id:
             return jsonify({"error": "Request ID is required"}), 400
 
-        # ── Verify the patient's password before approving ────────────────────
+        # â”€â”€ Verify the patient's password before approving â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         upath = _user_json_path(profile_code)
         if os.path.exists(upath):
             try:
@@ -758,11 +758,11 @@ def patient_approve():
             except (KeyError, ValueError, Exception) as e:
                 if "password" in str(e).lower() or "decrypt" in str(e).lower() or "tag" in str(e).lower():
                     return jsonify({"error": "Wrong password"}), 401
-                # No local profile — allow without crypto verification (new-system user)
-        # else: new-system user with no local profile — skip password crypto check
+                # No local profile â€” allow without crypto verification (new-system user)
+        # else: new-system user with no local profile â€” skip password crypto check
         # (their password was already verified on login via JWT)
 
-        # ── Path 1: New system — JWT /access/respond ──────────────────────────
+        # â”€â”€ Path 1: New system â€” JWT /access/respond â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if jwt_tok:
             try:
                 hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
@@ -783,7 +783,7 @@ def patient_approve():
             except Exception as e:
                 app.logger.debug("patient_approve JWT path: %s", e)
 
-        # ── Path 2: Legacy crypto (only if local profile + doctor public key exist) ──
+        # â”€â”€ Path 2: Legacy crypto (only if local profile + doctor public key exist) â”€â”€
         try:
             from common.crypto_utils import (
                 derive_kek_from_password, unwrap_key_with_kek,
@@ -820,7 +820,7 @@ def patient_approve():
         except Exception as e:
             app.logger.debug("patient_approve legacy path: %s", e)
 
-        # ── Path 3: Direct psycopg2 UPDATE (ownership verified via profile_code) ─
+        # â”€â”€ Path 3: Direct psycopg2 UPDATE (ownership verified via profile_code) â”€
         if _HAS_PSYCOPG2:
             try:
                 conn = psycopg2.connect(DB_URL)
@@ -847,7 +847,7 @@ def patient_approve():
         return jsonify({"error": str(e)}), 500
 
 
-# ── Deny access request ───────────────────────────────────────────────────────
+# â”€â”€ Deny access request â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/patient/deny", methods=["POST"])
 def patient_deny():
     err = _patient_session_check()
@@ -860,7 +860,7 @@ def patient_deny():
             return jsonify({"error": "Request ID required"}), 400
         profile_code = session.get("profile_code", "")
 
-        # ── Use JWT /access/respond (PostgreSQL) ──────────────────────────────
+        # â”€â”€ Use JWT /access/respond (PostgreSQL) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if jwt_tok:
             hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
             try:
@@ -872,7 +872,7 @@ def patient_deny():
                         return jsonify(rb.json()), 200
                     except Exception:
                         return jsonify({"status": "denied"}), 200
-                # 404 → fall through to psycopg2 fallback
+                # 404 â†’ fall through to psycopg2 fallback
                 if rb.status_code != 404:
                     try:
                         return jsonify(rb.json()), rb.status_code
@@ -881,7 +881,7 @@ def patient_deny():
             except Exception as e:
                 app.logger.debug("patient_deny JWT path: %s", e)
 
-        # ── Fallback: direct psycopg2 update (with ownership check) ──────────
+        # â”€â”€ Fallback: direct psycopg2 update (with ownership check) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if _HAS_PSYCOPG2:
             try:
                 conn = psycopg2.connect(DB_URL)
@@ -907,7 +907,7 @@ def patient_deny():
         return jsonify({"error": str(e)}), 502
 
 
-# ── Doctor notes (pull → save locally → delete from server) ──────────────────
+# â”€â”€ Doctor notes (pull â†’ save locally â†’ delete from server) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/patient/notes")
 def patient_notes():
     err = _patient_session_check()
@@ -946,7 +946,7 @@ def patient_notes():
         for note in server_notes:
             note_id = note.get("id", "")
             if note_id in local_ids:
-                # Already saved locally — still delete the server copy
+                # Already saved locally â€” still delete the server copy
                 try:
                     http.delete(f"{BACKEND}/doctor_notes/{note_id}",
                                 headers=_headers(), timeout=6)
@@ -997,7 +997,7 @@ def patient_notes():
         return jsonify({"error": str(e)}), 502
 
 
-# ── Serve patient-local note images from their own device ─────────────────────
+# â”€â”€ Serve patient-local note images from their own device â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/patient/note_image/<filename>")
 def patient_local_note_image(filename):
     # Allow both patients (own notes) and doctors (reading patient notes with access)
@@ -1045,7 +1045,7 @@ def patient_local_note_image(filename):
     return send_file(img_path, mimetype=mime)
 
 
-# ── Login history ─────────────────────────────────────────────────────────────
+# â”€â”€ Login history â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/patient/history")
 def patient_history():
     err = _patient_session_check()
@@ -1077,7 +1077,7 @@ def patient_history():
         return jsonify({"error": str(e), "history": []}), 200
 
 
-# ── Full audit log proxy ───────────────────────────────────────────────────────
+# â”€â”€ Full audit log proxy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/portal/audit-log")
 def portal_audit_log():
     """Proxy to the server's audit/log endpoint, filtering to the current user."""
@@ -1100,7 +1100,7 @@ def portal_audit_log():
 
 
 
-# ── Patient: list all registered doctors ─────────────────────────────────────
+# â”€â”€ Patient: list all registered doctors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/patient/doctors", methods=["GET"])
 def patient_list_doctors():
     """Return all registered doctors from PostgreSQL users table."""
@@ -1130,9 +1130,9 @@ def patient_list_doctors():
     return jsonify({"doctors": doctors}), 200
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #   DOCTOR API ROUTES  (called by dashboard.html via fetch)
-# ════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 DOCTOR_PORTAL = "http://127.0.0.1:5002"
 
@@ -1150,7 +1150,7 @@ def _resolve_patient_code(username_or_code: str) -> str:
         return username_or_code
     raw = username_or_code.strip()
 
-    # ── 1. Direct PostgreSQL query (primary) ─────────────────────
+    # â”€â”€ 1. Direct PostgreSQL query (primary) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if _HAS_PSYCOPG2:
         try:
             conn = psycopg2.connect(DB_URL)
@@ -1168,7 +1168,7 @@ def _resolve_patient_code(username_or_code: str) -> str:
         except Exception as e:
             app.logger.debug("_resolve_patient_code psycopg2: %s", e)
 
-    # ── 2. Backend HTTP resolve (fallback) ───────────────────────
+    # â”€â”€ 2. Backend HTTP resolve (fallback) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     try:
         r = http.get(f"{BACKEND}/api/resolve_username/{raw}",
                      headers=_headers(), timeout=5)
@@ -1188,7 +1188,7 @@ def _fwd_headers():
     return h
 
 
-# ── Load doctor profile (verify password + get profile details) ────────────
+# â”€â”€ Load doctor profile (verify password + get profile details) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/load_profile", methods=["POST"])
 def doctor_load_profile():
     err = _doctor_session_check()
@@ -1219,17 +1219,17 @@ def doctor_load_profile():
         return jsonify({"error": str(e)}), 502
 
 
-# ── Request patient access ─────────────────────────────────────────────────
+# â”€â”€ Request patient access â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/request_access", methods=["POST"])
 def doctor_request_access():
-    """Send an access request to a patient — no password required.
+    """Send an access request to a patient â€” no password required.
     Uses the JWT-authenticated /access/request endpoint on the backend.
     """
     err = _doctor_session_check()
     if err: return err
     try:
         d = request.get_json(force=True) or {}
-        # Accept either key — JS sends 'profile_code', legacy callers send 'patient_code'
+        # Accept either key â€” JS sends 'profile_code', legacy callers send 'patient_code'
         raw_code = d.get("profile_code") or d.get("patient_code") or ""
         pat_code = _resolve_patient_code(raw_code.strip())
         if not pat_code:
@@ -1237,9 +1237,9 @@ def doctor_request_access():
 
         jwt = session.get("jwt_token", "")
         if not jwt:
-            return jsonify({"error": "Doctor session expired — please log in again"}), 401
+            return jsonify({"error": "Doctor session expired â€” please log in again"}), 401
 
-        # Resolve profile_code → internal patient UUID for /access/request
+        # Resolve profile_code â†’ internal patient UUID for /access/request
         patient_uid = None
         if _HAS_PSYCOPG2:
             try:
@@ -1273,7 +1273,7 @@ def doctor_request_access():
             json={"patient_id": patient_uid},
             headers=hdrs, timeout=10,
         )
-        # Safe JSON parse — backend may return empty body on some paths
+        # Safe JSON parse â€” backend may return empty body on some paths
         try:
             data = rb.json()
         except Exception:
@@ -1287,14 +1287,14 @@ def doctor_request_access():
 
 
 
-# ── Fetch & decrypt patient record ─────────────────────────────────────────
+# â”€â”€ Fetch & decrypt patient record â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/fetch_record", methods=["POST"])
 def doctor_fetch_record():
     err = _doctor_session_check()
     if err: return err
     try:
         d = request.get_json(force=True) or {}
-        # Accept either key name — JS sends 'profile_code', older callers send 'patient_code'
+        # Accept either key name â€” JS sends 'profile_code', older callers send 'patient_code'
         raw_code = d.get("profile_code") or d.get("patient_code") or ""
         pat_code = _resolve_patient_code(raw_code.strip())
         if not pat_code:
@@ -1317,7 +1317,7 @@ def doctor_fetch_record():
         return jsonify({"error": str(e)}), 502
 
 
-# ── Shared helper: read EMR files directly (no JWT needed) ─────────────────
+# â”€â”€ Shared helper: read EMR files directly (no JWT needed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 EMR_DATA_DIR = os.path.join(ROOT, "server", "emr_data")
 
 def _read_emr_file(filename):
@@ -1346,7 +1346,7 @@ def _read_emr_profile(pat_code):
 
 def _fetch_timeline_for(pat_code):
     """Return notes, prescriptions and lab_reports for pat_code, each sorted newest-first."""
-    # ── Doctor notes via backend API (uses API-key auth, not JWT) ──────────
+    # â”€â”€ Doctor notes via backend API (uses API-key auth, not JWT) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     notes = []
     try:
         rn = http.get(f"{BACKEND}/doctor_notes/patient/{pat_code}",
@@ -1363,12 +1363,12 @@ def _fetch_timeline_for(pat_code):
         pass
     notes.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
-    # ── Prescriptions — read JSON directly (no JWT needed) ─────────────────
+    # â”€â”€ Prescriptions â€” read JSON directly (no JWT needed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     all_rx = _read_emr_file("emr_prescriptions.json")
     prescriptions = [r for r in all_rx if r.get("patient_id") == pat_code]
     prescriptions.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
-    # ── Lab reports — read JSON directly ───────────────────────────────────
+    # â”€â”€ Lab reports â€” read JSON directly â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     all_labs = _read_emr_file("emr_lab_reports.json")
     lab_reports = [r for r in all_labs if r.get("patient_id") == pat_code]
     lab_reports.sort(key=lambda x: x.get("created_at", ""), reverse=True)
@@ -1376,7 +1376,7 @@ def _fetch_timeline_for(pat_code):
     return notes, prescriptions, lab_reports
 
 
-# ── Doctor: patient medical timeline ───────────────────────────────────────
+# â”€â”€ Doctor: patient medical timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/patient_timeline/<username>", methods=["GET"])
 def doctor_patient_timeline(username):
     """All clinical notes + prescriptions + lab reports for a patient (doctor view)."""
@@ -1398,7 +1398,7 @@ def doctor_patient_timeline(username):
     }), 200
 
 
-# ── Patient: own medical timeline ───────────────────────────────────────────
+# â”€â”€ Patient: own medical timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/patient/timeline", methods=["GET"])
 def patient_timeline_rich():
     """Return the logged-in patient's own notes + prescriptions + lab reports."""
@@ -1420,7 +1420,7 @@ def patient_timeline_rich():
     }), 200
 
 
-# ── Add clinical note ──────────────────────────────────────────────────────
+# â”€â”€ Add clinical note â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/add_note", methods=["POST"])
 def doctor_add_note():
     err = _doctor_session_check()
@@ -1428,7 +1428,7 @@ def doctor_add_note():
     try:
         d = request.get_json(force=True) or {}
 
-        # Resolve patient username → profile_code
+        # Resolve patient username â†’ profile_code
         pat_code = _resolve_patient_code(d.get("patient_code", "").strip())
         if not pat_code:
             return jsonify({"error": "Patient username is required"}), 400
@@ -1438,7 +1438,7 @@ def doctor_add_note():
             return jsonify({"error": "Doctor code missing from session. Please log out and log in again."}), 401
 
         # Build note payload using session-cached doctor metadata
-        # (avoids the fragile proxy → doctor_portal → password-verify chain)
+        # (avoids the fragile proxy â†’ doctor_portal â†’ password-verify chain)
         note_payload = {
             "patient_code":          pat_code,
             "doctor_code":           doc_code,
@@ -1450,12 +1450,20 @@ def doctor_add_note():
             "visit_date":            d.get("visit_date", ""),
         }
 
-        # POST directly to backend — no password re-verification needed
+        # POST directly to backend â€” no password re-verification needed
         # (user is already authenticated via Flask session)
+        jwt_tok = session.get('jwt_token', '')
+        hdrs = {**_headers()}
+        if jwt_tok:
+            hdrs['Authorization'] = f'Bearer {jwt_tok}'
+        jwt_tok = session.get('jwt_token', '')
+        hdrs = {**_headers()}
+        if jwt_tok:
+            hdrs['Authorization'] = f'Bearer {jwt_tok}'
         rb = http.post(
             f"{BACKEND}/doctor_notes/add",
             json=note_payload,
-            headers=_headers(),
+            headers=hdrs,
             timeout=30,
         )
         try:
@@ -1471,7 +1479,7 @@ def doctor_add_note():
         return jsonify({"error": str(e)}), 502
 
 
-# ── List doctor notes for a patient ────────────────────────────────────────
+# â”€â”€ List doctor notes for a patient â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/notes/<patient_code>")
 def doctor_notes_list(patient_code):
     err = _doctor_session_check()
@@ -1488,7 +1496,7 @@ def doctor_notes_list(patient_code):
         return jsonify({"error": str(e)}), 502
 
 
-# ── Delete a note ──────────────────────────────────────────────────────────
+# â”€â”€ Delete a note â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/delete_note/<note_id>", methods=["DELETE"])
 def doctor_delete_note(note_id):
     err = _doctor_session_check()
@@ -1507,7 +1515,7 @@ def doctor_delete_note(note_id):
         return jsonify({"error": str(e)}), 502
 
 
-# ── Universal note image proxy (any logged-in user) ───────────────────────
+# â”€â”€ Universal note image proxy (any logged-in user) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/note_images/<filename>")
 def note_image_proxy(filename):
     if not session.get("logged_in"):
@@ -1524,13 +1532,13 @@ def note_image_proxy(filename):
     except Exception as e:
         return str(e), 502
 
-# ── Doctor-portal note image proxy (kept for backwards compatibility) ───────
+# â”€â”€ Doctor-portal note image proxy (kept for backwards compatibility) â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/note_images/<filename>")
 def doctor_note_image(filename):
     return note_image_proxy(filename)
 
 
-# ── Resolve patient username → profile_code (used by doctor EMR forms) ─────
+# â”€â”€ Resolve patient username â†’ profile_code (used by doctor EMR forms) â”€â”€â”€â”€â”€
 @app.route("/api/resolve_patient", methods=["POST"])
 def api_resolve_patient():
     """Accept a patient username or profile_code and return the profile_code."""
@@ -1545,7 +1553,7 @@ def api_resolve_patient():
         import re as _re
         looks_like_code = bool(_re.match(r'^[A-Za-z0-9]{8,12}$', resolved)) and not resolved.islower()
         if looks_like_code:
-            # Treat as a profile code — verify it exists on backend
+            # Treat as a profile code â€” verify it exists on backend
             try:
                 r = http.get(f"{BACKEND}/get_patient_public/{resolved.upper()}",
                              headers=_headers(), timeout=5)
@@ -1563,7 +1571,7 @@ def api_resolve_patient():
     return jsonify({"profile_code": resolved})
 
 
-# ── QR data (just returns doctor code + name from session) ─────────────────
+# â”€â”€ QR data (just returns doctor code + name from session) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/qr_data")
 def doctor_qr_data():
     err = _doctor_session_check()
@@ -1574,16 +1582,16 @@ def doctor_qr_data():
     })
 
 
-# ── Doctor reads patient notes from patient's LOCAL device ─────────────────
+# â”€â”€ Doctor reads patient notes from patient's LOCAL device â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Notes are deleted from the server once patient views them (decentralised
-# model).  The doctor accesses the patient's local notes.json directly —
+# model).  The doctor accesses the patient's local notes.json directly â€”
 # this works because both are running on the same machine in this demo.
 @app.route("/doctor/patient_notes/<patient_code>")
 def doctor_patient_notes(patient_code):
     err = _doctor_session_check()
     if err: return err
     try:
-        # Resolve username → profile_code (folder name on disk)
+        # Resolve username â†’ profile_code (folder name on disk)
         resolved_code = _resolve_patient_code(patient_code)
         notes_file = os.path.join(USERS_DIR, resolved_code, "notes.json")
         if not os.path.exists(notes_file):
@@ -1599,7 +1607,7 @@ def doctor_patient_notes(patient_code):
         return jsonify({"error": str(e), "notes": []}), 500
 
 
-# ── Doctor: list all patients this doctor has (or had) access to ─────────────
+# â”€â”€ Doctor: list all patients this doctor has (or had) access to â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/my_patients", methods=["GET"])
 def doctor_my_patients():
     """Return all patients the doctor has access to, sourced from PostgreSQL."""
@@ -1692,7 +1700,7 @@ def doctor_my_patients():
 
 
 
-# ── Doctor access expiry: return how long this doctor's key is valid ────────
+# â”€â”€ Doctor access expiry: return how long this doctor's key is valid â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/access_expiry/<patient_code>")
 def doctor_access_expiry(patient_code):
     """Return temp_key_expires_at for the logged-in doctor's wrapped key.
@@ -1702,7 +1710,7 @@ def doctor_access_expiry(patient_code):
     try:
         from datetime import timezone as _tz, timedelta as _td
         doc_code   = session.get("doctor_code", "")
-        # Resolve username → profile_code
+        # Resolve username â†’ profile_code
         resolved_code = _resolve_patient_code(patient_code)
         SERVER_DIR = os.path.join(ROOT, "server")
         wk_dir     = os.path.join(SERVER_DIR, "Patients", resolved_code, "wrapped_keys")
@@ -1733,9 +1741,9 @@ def doctor_access_expiry(patient_code):
         return jsonify({"expires_at": None, "error": str(e)}), 200
 
 
-# ════════════════════════════════════════════════════════════════════════════
-#   EMR MODULE PROXY ROUTES  (landing → backend /emr/*)
-# ════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+#   EMR MODULE PROXY ROUTES  (landing â†’ backend /emr/*)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.route("/emr/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 def emr_proxy(subpath):
@@ -1772,11 +1780,11 @@ def emr_proxy(subpath):
 # Alias so dashboard JS can call /api/emr/* and land here too
 @app.route("/api/emr/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 def api_emr_proxy(subpath):
-    """Alias of emr_proxy — dashboard JS sends requests to /api/emr/*."""
+    """Alias of emr_proxy â€” dashboard JS sends requests to /api/emr/*."""
     return emr_proxy(subpath)
 
 
-# ── Appointment proxy helpers ─────────────────────────────────────────────────
+# â”€â”€ Appointment proxy helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _jwt_headers():
     """Headers with the session JWT for forwarding to the backend."""
     h = {**_headers()}
@@ -1840,13 +1848,13 @@ def proxy_doctor_appt_respond(req_id):
         return jsonify({"error": str(e)}), 502
 
 
-# Doctor: create a new appointment for a patient (resolves username → patient_id)
+# Doctor: create a new appointment for a patient (resolves username â†’ patient_id)
 @app.route("/api/doctor/appointment-create", methods=["POST"])
 def proxy_doctor_appt_create():
     if not session.get("logged_in"):
         return jsonify({"error": "unauthenticated"}), 401
     d = request.get_json(force=True) or {}
-    # Resolve patient username in patient_username field → profile_code
+    # Resolve patient username in patient_username field â†’ profile_code
     raw = d.get("patient_username", "").strip()
     if raw:
         d["patient_id"] = _resolve_patient_code(raw)
@@ -1860,7 +1868,7 @@ def proxy_doctor_appt_create():
 
 
 
-# ── Merged appointment endpoints (bypass JWT uid mismatch via session) ─────────
+# â”€â”€ Merged appointment endpoints (bypass JWT uid mismatch via session) â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 APPT_DB = os.path.join(ROOT, "server", "appointments_db.json")
 EMR_APPT = os.path.join(ROOT, "server", "emr_data", "emr_appointments.json")
@@ -1946,7 +1954,7 @@ def doctor_appts_merged():
         # Resolve patient username from patient_id
         pat_username = a.get("patient_id", "")
         if pat_username == _resolve_patient_code(pat_username):
-            # It's a profile_code — try to reverse-map
+            # It's a profile_code â€” try to reverse-map
             users = _load_json_safe(os.path.join(ROOT, "server", "users_db.json")) if os.path.exists(os.path.join(ROOT, "server", "users_db.json")) else {}
             if isinstance(users, dict):
                 for u in users.values():
@@ -1974,7 +1982,7 @@ def patient_timeline():
     for rx in _load_json_safe(EMR_RX):
         if rx.get("patient_id") == pid:
             events.append({
-                "type": "prescription", "icon": "💊",
+                "type": "prescription", "icon": "ðŸ’Š",
                 "title": rx.get("diagnosis", "Prescription"),
                 "detail": f"Medications: {', '.join(m.get('name','') for m in rx.get('medications', []))}",
                 "date": rx.get("created_at", ""),
@@ -1985,7 +1993,7 @@ def patient_timeline():
     for lr in _load_json_safe(EMR_LR):
         if lr.get("patient_id") == pid:
             events.append({
-                "type": "lab_report", "icon": "🧪",
+                "type": "lab_report", "icon": "ðŸ§ª",
                 "title": lr.get("report_type", "Lab Report"),
                 "detail": lr.get("notes", ""),
                 "date": lr.get("created_at", ""),
@@ -1996,18 +2004,18 @@ def patient_timeline():
     for a in _load_json_safe(APPT_DB):
         if a.get("patient_id") == pid or a.get("patient_username") == username:
             events.append({
-                "type": "appointment", "icon": "📅",
-                "title": f"Appointment with Dr. {a.get('doctor_username', '—')}",
-                "detail": f"{a.get('date', '')} {a.get('time', '')} — {a.get('notes', '')} [{a.get('status','pending')}]",
+                "type": "appointment", "icon": "ðŸ“…",
+                "title": f"Appointment with Dr. {a.get('doctor_username', 'â€”')}",
+                "detail": f"{a.get('date', '')} {a.get('time', '')} â€” {a.get('notes', '')} [{a.get('status','pending')}]",
                 "date": a.get("created_at", ""),
                 "id": a.get("id", "")
             })
     for a in _load_json_safe(EMR_APPT):
         if a.get("patient_id") == pid:
             events.append({
-                "type": "appointment", "icon": "📅",
+                "type": "appointment", "icon": "ðŸ“…",
                 "title": f"Scheduled Appointment",
-                "detail": f"{a.get('date_time', '')} — {a.get('reason', '')} [{a.get('status','scheduled')}]",
+                "detail": f"{a.get('date_time', '')} â€” {a.get('reason', '')} [{a.get('status','scheduled')}]",
                 "date": a.get("created_at", ""),
                 "id": a.get("id", "")
             })
@@ -2016,8 +2024,8 @@ def patient_timeline():
     for n in _load_json_safe(NOTES_DB):
         if n.get("patient_code") == pid or n.get("patient_username") == username:
             events.append({
-                "type": "note", "icon": "📝",
-                "title": f"Note from Dr. {n.get('doctor_name', '—')}",
+                "type": "note", "icon": "ðŸ“",
+                "title": f"Note from Dr. {n.get('doctor_name', 'â€”')}",
                 "detail": n.get("note_text", ""),
                 "date": n.get("created_at", ""),
                 "id": n.get("note_id", "")
@@ -2083,72 +2091,32 @@ def patient_emr_profile_direct():
 
 @app.route("/api/patient/appointment-request-submit", methods=["POST"])
 def patient_appt_submit():
-    """Patient submits an appointment request — stored directly with correct profile_code."""
+    """Patient submits an appointment request - stored directly with correct profile_code."""
     if not session.get("logged_in"):
         return jsonify({"error": "unauthenticated"}), 401
     d = request.get_json(force=True) or {}
-    import uuid
-    from datetime import datetime, timezone
+    import uuid as _uuid_appt
+    from datetime import datetime as _dt_appt, timezone as _tz_appt
     pid      = session.get("profile_code", "")
     username = session.get("username", "")
     name     = session.get("name", "")
     entry = {
-        "id": str(uuid.uuid4()),
-        "patient_id": pid,
+        "id":               str(_uuid_appt.uuid4()),
+        "patient_id":       pid,
         "patient_username": username,
-        "patient_name": name,
-        "doctor_username": d.get("doctor_username", "").strip(),
-        "date": d.get("date", "").strip(),
-        "time": d.get("time", "").strip(),
-        "notes": d.get("notes", "").strip(),
-        "status": "pending",
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "patient_name":     name,
+        "doctor_username":  d.get("doctor_username", ""),
+        "date":             d.get("date", ""),
+        "time":             d.get("time", ""),
+        "notes":            d.get("notes", ""),
+        "status":           "pending",
+        "created_at":       _dt_appt.now(_tz_appt.utc).isoformat(),
     }
-    db = _load_json_safe(APPT_DB)
-    db.append(entry)
-    _save_json_safe(APPT_DB, db)
-    return jsonify({"message": "requested", "appointment": entry}), 201
+    entries = _load_json_safe(APPT_DB) if isinstance(_load_json_safe(APPT_DB), list) else []
+    entries.append(entry)
+    _save_json_safe(APPT_DB, entries)
+    return jsonify({"message": "ok", "appointment": entry}), 201
 
-
-@app.route("/api/doctor/appointment-respond/<req_id>", methods=["POST"])
-def doctor_appt_respond(req_id):
-    """Doctor accepts/rejects/completes an appointment request in appointments_db."""
-    if not session.get("logged_in"):
-        return jsonify({"error": "unauthenticated"}), 401
-    d = request.get_json(force=True) or {}
-    status = d.get("status")
-    if status not in ("accepted", "rejected", "completed"):
-        return jsonify({"error": "invalid_status"}), 400
-    from datetime import datetime, timezone
-    db = _load_json_safe(APPT_DB)
-    found = False
-    for a in db:
-        if a["id"] == req_id:
-            a["status"] = status
-            a["updated_at"] = datetime.now(timezone.utc).isoformat()
-            found = True
-            break
-    if not found:
-        # Try EMR appointments
-        emr = _load_json_safe(EMR_APPT)
-        for a in emr:
-            if a["id"] == req_id:
-                a["status"] = status
-                a["updated_at"] = datetime.now(timezone.utc).isoformat()
-                found = True
-                break
-        if found:
-            _save_json_safe(EMR_APPT, emr)
-            return jsonify({"message": "updated"}), 200
-        return jsonify({"error": "not_found"}), 404
-    _save_json_safe(APPT_DB, db)
-    return jsonify({"message": "updated"}), 200
-
-
-
-# ── Run ───────────────────────────────────────────────────────────────────────
-
-# ── Missing page routes ───────────────────────────────────────────────────────
 @app.route("/prescriptions")
 def page_prescriptions():
     if not session.get("logged_in"): return redirect("/")
@@ -2182,7 +2150,7 @@ def page_patient_detail():
     return render_template("patient_detail.html", **ctx)
 
 
-# ── Patient QR code proxy ─────────────────────────────────────────────────────
+# â”€â”€ Patient QR code proxy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/api/patient/qr")
 def proxy_patient_qr():
     if not session.get("logged_in"):
@@ -2199,7 +2167,7 @@ def proxy_patient_qr():
     })
 
 
-# ── Patient search (doctor only) ─────────────────────────────────────────────
+# â”€â”€ Patient search (doctor only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/api/users/search")
 def proxy_users_search():
     if not session.get("logged_in"):
@@ -2218,7 +2186,7 @@ def proxy_users_search():
         return jsonify({"error": str(e), "users": []}), 200
 
 
-# ── Patient: revoke an approved access grant ──────────────────────────────────
+# â”€â”€ Patient: revoke an approved access grant â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/patient/revoke", methods=["POST"])
 def patient_revoke():
     err = _patient_session_check()
@@ -2238,7 +2206,7 @@ def patient_revoke():
         return jsonify({"error": str(e)}), 502
 
 
-# ── Doctor: my patients list (approved + pending) ─────────────────────────────
+# â”€â”€ Doctor: my patients list (approved + pending) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/my_requests", methods=["GET"])
 def doctor_my_requests():
     err = _doctor_session_check()
@@ -2248,7 +2216,7 @@ def doctor_my_requests():
         jwt_tok  = session.get("jwt_token", "")
         reqs = []
 
-        # ── Primary: psycopg2 JOIN access_db + users ──────────────────────────
+        # â”€â”€ Primary: psycopg2 JOIN access_db + users â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if _HAS_PSYCOPG2:
             try:
                 conn = psycopg2.connect(DB_URL)
@@ -2289,7 +2257,7 @@ def doctor_my_requests():
             except Exception as e:
                 app.logger.debug("doctor_my_requests psycopg2: %s", e)
 
-        # ── Fallback: JWT /access/doctor_patients ──────────────────────────────
+        # â”€â”€ Fallback: JWT /access/doctor_patients â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if not reqs and jwt_tok:
             try:
                 r = http.get(f"{BACKEND}/access/doctor_patients",
@@ -2322,8 +2290,158 @@ def doctor_my_requests():
         return jsonify({"error": str(e), "requests": []}), 200
 
 
+
+# ═══════════════════════════════════════════════════════════════
+#   DOCTOR EMR WRITE ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
+
+@app.route("/doctor/add_prescription", methods=["POST"])
+def doctor_add_prescription():
+    """Doctor creates a prescription for a patient."""
+    err = _doctor_session_check()
+    if err: return err
+    try:
+        d = request.get_json(force=True) or {}
+        raw_code    = (d.get("patient_code") or d.get("profile_code") or "").strip()
+        pat_code    = _resolve_patient_code(raw_code)
+        diagnosis   = d.get("diagnosis", "").strip()
+        medications = d.get("medications", [])
+        notes       = d.get("notes", "")
+        doc_code    = session.get("doctor_code", "")
+        doc_name    = session.get("name", "")
+        jwt_tok     = session.get("jwt_token", "")
+
+        if not pat_code:
+            return jsonify({"error": "Patient identifier is required"}), 400
+        if not diagnosis:
+            return jsonify({"error": "Diagnosis is required"}), 400
+
+        from datetime import datetime, timezone
+        import uuid as _uuid2
+        rx = {
+            "id": str(_uuid2.uuid4()),
+            "patient_id": pat_code,
+            "doctor_id": doc_code,
+            "doctor_email": session.get("email", ""),
+            "doctor_name": doc_name,
+            "diagnosis": diagnosis,
+            "medications": medications if isinstance(medications, list) else [],
+            "notes": notes,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Try JWT proxy to backend EMR
+        if jwt_tok:
+            try:
+                hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
+                rb = http.post(
+                    f"{BACKEND}/emr/prescriptions",
+                    json={**rx, "patient_id": pat_code},
+                    headers=hdrs, timeout=10,
+                )
+                if rb.ok:
+                    return jsonify(rb.json()), rb.status_code
+            except Exception as e:
+                app.logger.debug("doctor_add_prescription JWT: %s", e)
+
+        # Fallback: save directly to EMR file
+        import os
+        emr_data_dir = os.path.join(ROOT, "server", "emr_data")
+        os.makedirs(emr_data_dir, exist_ok=True)
+        emr_rx_path = os.path.join(emr_data_dir, "emr_prescriptions.json")
+        rxs = _load_json_safe(emr_rx_path) if isinstance(_load_json_safe(emr_rx_path), list) else []
+        rxs.append(rx)
+        _save_json_safe(emr_rx_path, rxs)
+        return jsonify(rx), 201
+
+    except Exception as e:
+        app.logger.exception("doctor_add_prescription error")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/doctor/add_lab_report", methods=["POST"])
+def doctor_add_lab_report():
+    """Doctor creates a lab report for a patient."""
+    err = _doctor_session_check()
+    if err: return err
+    try:
+        d = request.get_json(force=True) or {}
+        raw_code    = (d.get("patient_code") or d.get("profile_code") or "").strip()
+        pat_code    = _resolve_patient_code(raw_code)
+        report_type = d.get("report_type", "General").strip()
+        tests       = d.get("tests", [])
+        results     = d.get("results", {})
+        notes       = d.get("notes", "")
+        doc_code    = session.get("doctor_code", "")
+        doc_name    = session.get("name", "")
+        jwt_tok     = session.get("jwt_token", "")
+
+        if not pat_code:
+            return jsonify({"error": "Patient identifier is required"}), 400
+        if not report_type:
+            return jsonify({"error": "Report type is required"}), 400
+
+        from datetime import datetime, timezone
+        import uuid as _uuid3
+        lr = {
+            "id": str(_uuid3.uuid4()),
+            "patient_id": pat_code,
+            "doctor_id": doc_code,
+            "doctor_email": session.get("email", ""),
+            "doctor_name": doc_name,
+            "report_type": report_type,
+            "tests": tests if isinstance(tests, list) else [],
+            "results": results if isinstance(results, dict) else {},
+            "notes": notes,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Try JWT proxy to backend EMR
+        if jwt_tok:
+            try:
+                hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
+                rb = http.post(
+                    f"{BACKEND}/emr/lab-reports",
+                    json={**lr, "patient_id": pat_code},
+                    headers=hdrs, timeout=10,
+                )
+                if rb.ok:
+                    return jsonify(rb.json()), rb.status_code
+            except Exception as e:
+                app.logger.debug("doctor_add_lab_report JWT: %s", e)
+
+        # Fallback: save directly to EMR file
+        import os
+        emr_data_dir = os.path.join(ROOT, "server", "emr_data")
+        os.makedirs(emr_data_dir, exist_ok=True)
+        emr_lr_path = os.path.join(emr_data_dir, "emr_lab_reports.json")
+        lrs_existing = _load_json_safe(emr_lr_path) if isinstance(_load_json_safe(emr_lr_path), list) else []
+        lrs_existing.append(lr)
+        _save_json_safe(emr_lr_path, lrs_existing)
+        return jsonify(lr), 201
+
+    except Exception as e:
+        app.logger.exception("doctor_add_lab_report error")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/doctor/prescriptions")
+def page_doctor_prescriptions():
+    if not session.get("logged_in"): return redirect("/")
+    if session.get("role") != "doctor": return redirect("/dashboard")
+    ctx = _page_context()
+    return render_template("doctor_prescriptions.html", **ctx)
+
+
+@app.route("/doctor/lab-reports")
+def page_doctor_lab_reports():
+    if not session.get("logged_in"): return redirect("/")
+    if session.get("role") != "doctor": return redirect("/dashboard")
+    ctx = _page_context()
+    return render_template("doctor_lab_reports.html", **ctx)
+
 if __name__ == "__main__":
-    print("  🌐  Landing Page → http://127.0.0.1:5003")
+    print("  ðŸŒ  Landing Page â†’ http://127.0.0.1:5003")
     app.run(host="127.0.0.1", port=5003, debug=True, use_reloader=False, threaded=True)
 
 

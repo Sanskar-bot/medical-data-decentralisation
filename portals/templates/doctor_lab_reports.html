@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+{% block title %}Lab Reports{% endblock %}
+{% block topbar_title %}Lab Reports{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <span class="page-eyebrow">Doctor Portal</span>
+    <h1 class="type-h1">Lab Reports</h1>
+    <p class="type-label" style="color:var(--tx3); margin-top:var(--sp-1);">Create and manage patient lab reports.</p>
+  </div>
+</div>
+
+<div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
+
+<!-- Add Lab Report Form -->
+<div class="card section">
+  <div class="section-header">
+    <h2 class="type-h3">New Lab Report</h2>
+  </div>
+  <div class="stack-5">
+    <div class="grid-2">
+      <div>
+        <label class="type-label" for="lr-patient-code">Patient Username or Profile Code</label>
+        <input class="input-field" type="text" id="lr-patient-code" placeholder="e.g. john_doe or ABC1234567"
+               autocomplete="off" style="margin-top:var(--sp-2);">
+        <div id="lr-patient-hint" style="font-size:var(--t-xs); color:var(--tx3); margin-top:var(--sp-1);"></div>
+      </div>
+      <div>
+        <label class="type-label" for="lr-report-type">Report Type</label>
+        <select class="input-field" id="lr-report-type" style="margin-top:var(--sp-2);">
+          <option value="Complete Blood Count">Complete Blood Count (CBC)</option>
+          <option value="Lipid Panel">Lipid Panel</option>
+          <option value="Liver Function Test">Liver Function Test (LFT)</option>
+          <option value="Kidney Function Test">Kidney Function Test (KFT)</option>
+          <option value="Blood Glucose">Blood Glucose</option>
+          <option value="Thyroid Function">Thyroid Function (TFT)</option>
+          <option value="Urine Analysis">Urine Analysis</option>
+          <option value="X-Ray">X-Ray</option>
+          <option value="MRI">MRI</option>
+          <option value="CT Scan">CT Scan</option>
+          <option value="Ultrasound">Ultrasound</option>
+          <option value="ECG">ECG</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label class="type-label">Test Results</label>
+      <div id="tests-list" class="stack-3" style="margin-top:var(--sp-2);">
+        <div class="test-row" style="display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:var(--sp-2);">
+          <input class="input-field test-name" type="text" placeholder="Test name (e.g. Hemoglobin)" autocomplete="off">
+          <input class="input-field test-value" type="text" placeholder="Result (e.g. 13.5)">
+          <input class="input-field test-unit" type="text" placeholder="Unit (e.g. g/dL)">
+          <input class="input-field test-ref" type="text" placeholder="Reference (e.g. 12-16)">
+        </div>
+      </div>
+      <button class="btn-ghost" id="add-test-btn" type="button" style="margin-top:var(--sp-3);">
+        <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        Add test
+      </button>
+    </div>
+
+    <div>
+      <label class="type-label" for="lr-notes">Summary / Notes</label>
+      <textarea class="input-field" id="lr-notes" rows="3" placeholder="Clinical interpretation, recommendations…"
+                style="margin-top:var(--sp-2);"></textarea>
+    </div>
+
+    <div id="lr-alert" style="display:none;"></div>
+    <button class="btn-primary" id="lr-submit-btn" type="button">
+      <span id="lr-btn-text">Create Lab Report</span>
+      <span id="lr-spinner" class="spinner" style="display:none;"></span>
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var JWT = {{ session.get('jwt_token','') | tojson }};
+
+  function showAlert(el, msg, type) {
+    if (!el) return;
+    el.className = 'alert alert-' + (type || 'error');
+    el.textContent = msg;
+    el.style.display = 'flex';
+    setTimeout(function() { el.style.display = 'none'; }, 6000);
+  }
+
+  // Add test row
+  document.getElementById('add-test-btn').addEventListener('click', function() {
+    var row = document.createElement('div');
+    row.className = 'test-row';
+    row.style.cssText = 'display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:var(--sp-2);';
+    row.innerHTML =
+      '<input class="input-field test-name" type="text" placeholder="Test name" autocomplete="off">' +
+      '<input class="input-field test-value" type="text" placeholder="Result">' +
+      '<input class="input-field test-unit" type="text" placeholder="Unit">' +
+      '<input class="input-field test-ref" type="text" placeholder="Reference">';
+    document.getElementById('tests-list').appendChild(row);
+  });
+
+  // Resolve patient helper
+  function resolvePatient(raw) {
+    if (/^[A-Z0-9]{8,12}$/.test(raw.toUpperCase()) && raw.length >= 8) {
+      return Promise.resolve(raw.toUpperCase());
+    }
+    return fetch('/api/resolve_patient', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':'Bearer '+JWT},
+      body: JSON.stringify({username: raw})
+    })
+    .then(function(r) { return r.json().then(function(d) { return {ok:r.ok, data:d}; }); })
+    .then(function(res) {
+      if (!res.ok || !res.data.profile_code) {
+        throw new Error(res.data.error || 'Patient not found: ' + raw);
+      }
+      return res.data.profile_code;
+    });
+  }
+
+  // Submit lab report
+  document.getElementById('lr-submit-btn').addEventListener('click', function() {
+    var raw         = (document.getElementById('lr-patient-code').value || '').trim();
+    var reportType  = document.getElementById('lr-report-type').value;
+    var notes       = (document.getElementById('lr-notes').value || '').trim();
+    var alertEl     = document.getElementById('lr-alert');
+
+    if (!raw) { showAlert(alertEl, 'Patient identifier is required.', 'error'); return; }
+
+    // Collect tests
+    var tests = [];
+    document.querySelectorAll('.test-row').forEach(function(row) {
+      var name  = (row.querySelector('.test-name').value || '').trim();
+      var value = (row.querySelector('.test-value').value || '').trim();
+      var unit  = (row.querySelector('.test-unit').value || '').trim();
+      var ref   = (row.querySelector('.test-ref').value || '').trim();
+      if (name) tests.push({ name: name, value: value, unit: unit, reference_range: ref });
+    });
+
+    this.disabled = true;
+    document.getElementById('lr-btn-text').textContent = 'Resolving patient…';
+    document.getElementById('lr-spinner').style.display = 'inline-block';
+    var self = this;
+    var hintEl = document.getElementById('lr-patient-hint');
+
+    resolvePatient(raw)
+    .then(function(code) {
+      if (hintEl) hintEl.textContent = 'Patient: ' + code;
+      return fetch('/doctor/add_lab_report', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','Authorization':'Bearer '+JWT},
+        body: JSON.stringify({ patient_code: code, report_type: reportType, tests: tests, notes: notes })
+      }).then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); });
+    })
+    .then(function(res) {
+      self.disabled = false;
+      document.getElementById('lr-btn-text').textContent = 'Create Lab Report';
+      document.getElementById('lr-spinner').style.display = 'none';
+      if (res.ok) {
+        showAlert(document.getElementById('page-alert'), 'Lab report created successfully.', 'success');
+        document.getElementById('lr-patient-code').value = '';
+        document.getElementById('lr-notes').value = '';
+        document.querySelectorAll('.test-name,.test-value,.test-unit,.test-ref').forEach(function(el) { el.value = ''; });
+        if (hintEl) hintEl.textContent = '';
+      } else {
+        showAlert(alertEl, res.data.error || 'Failed to create lab report.', 'error');
+      }
+    })
+    .catch(function(err) {
+      self.disabled = false;
+      document.getElementById('lr-btn-text').textContent = 'Create Lab Report';
+      document.getElementById('lr-spinner').style.display = 'none';
+      showAlert(alertEl, err.message || 'Network error.', 'error');
+    });
+  });
+})();
+</script>
+{% endblock %}

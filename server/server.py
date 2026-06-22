@@ -184,6 +184,17 @@ def _db_get_user_by_username(username: str) -> dict | None:
         return dict(row) if row else None
 
 
+def _db_get_user_by_profile_code(profile_code: str) -> dict | None:
+    """Look up a user by profile_code or doctor_code."""
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT * FROM users WHERE profile_code = %s OR doctor_code = %s LIMIT 1",
+            (profile_code, profile_code)
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
 def _db_get_all_users() -> dict:
     """Return {email: user_dict} — used by EMR admin endpoints."""
     with db_cursor(commit=False) as cur:
@@ -1144,11 +1155,16 @@ def _caller_may_access_patient(profile_code: str) -> bool:
     if not payload:
         return False
     role = payload.get("role", "")
-    uid  = payload.get("uid", "")
+    uid  = payload.get("uid", "")  # UUID
+    # profile_code/doctor_code stored as extra claims for quick lookup
+    pcode = payload.get("profile_code", "") or payload.get("doctor_code", "") or uid
     if role == "patient":
-        return uid == profile_code
+        # Match by profile_code claim or (legacy) uid == profile_code
+        return pcode == profile_code or uid == profile_code
     if role == "doctor":
-        return _doctor_has_active_access(profile_code, uid)
+        # doctor_code stored as claim; uid is the doctor's UUID
+        doc_code = payload.get("doctor_code", "") or uid
+        return _doctor_has_active_access(profile_code, doc_code)
     return False
 
 
@@ -1850,10 +1866,14 @@ def auth_login():
     user = _db_get_user_by_email(email)
     _append_login_history({"email": email, "ts": last_login_ts, "ip": request.remote_addr})
 
-    jwt_uid = (user.get("profile_code") or user.get("doctor_code") or user["id"])
+    jwt_uid = user["id"]  # Always use stable UUID as uid
     access_token  = _jwt_encode({"sub": email, "uid": jwt_uid, "role": user["role"],
+                                  "profile_code": user.get("profile_code", ""),
+                                  "doctor_code": user.get("doctor_code", ""),
                                   "exp": time.time() + 3600})
     refresh_token = _jwt_encode({"sub": email, "uid": jwt_uid, "role": user["role"],
+                                  "profile_code": user.get("profile_code", ""),
+                                  "doctor_code": user.get("doctor_code", ""),
                                   "purpose": "refresh", "exp": time.time() + 604800})
 
     audit("login", actor=email)
@@ -1914,10 +1934,14 @@ def auth_upgrade_password():
 
     user = _db_get_user_by_email(email)
     audit("password_upgraded", actor=email)
-    jwt_uid = (user.get("profile_code") or user.get("doctor_code") or user["id"])
+    jwt_uid = user["id"]  # Always use stable UUID as uid
     access_token  = _jwt_encode({"sub": email, "uid": jwt_uid, "role": user["role"],
+                                  "profile_code": user.get("profile_code", ""),
+                                  "doctor_code": user.get("doctor_code", ""),
                                   "exp": time.time() + 3600})
     refresh_token = _jwt_encode({"sub": email, "uid": jwt_uid, "role": user["role"],
+                                  "profile_code": user.get("profile_code", ""),
+                                  "doctor_code": user.get("doctor_code", ""),
                                   "purpose": "refresh", "exp": time.time() + 604800})
     resp = jsonify({"message": "password_upgraded",
                     "access_token": access_token, "refresh_token": refresh_token})
@@ -2212,20 +2236,34 @@ def get_profile_photo(uid):
 @_require_jwt(roles=["doctor"])
 def jwt_request_access():
     body       = request.get_json(force=True) or {}
-    patient_id = body.get("patient_id", "")
+    patient_id = body.get("patient_id", "")  # Could be UUID or profile_code
     doctor_jwt = request.jwt_payload
     if not patient_id:
         return jsonify({"error": "missing patient_id"}), 400
 
-    existing = _db_access_get_pending(doctor_jwt["uid"], patient_id)
+    # Resolve patient_id to UUID (in case profile_code was passed)
+    patient_uuid = patient_id
+    if not (len(patient_id) > 20 and '-' in patient_id):  # Not a UUID-like string
+        # Try to look up patient UUID by profile_code
+        try:
+            p_row = _db_get_user_by_profile_code(patient_id)
+            if p_row:
+                patient_uuid = p_row["id"]
+        except Exception:
+            pass
+
+    # doctor_id is the doctor's UUID (uid in JWT is now UUID)
+    doctor_uuid = doctor_jwt["uid"]
+
+    existing = _db_access_get_pending(doctor_uuid, patient_uuid)
     if existing:
         return jsonify({"message": "already_pending", "id": existing["id"]}), 200
 
     entry = {
         "id": str(uuid.uuid4()),
-        "doctor_id": doctor_jwt["uid"],
+        "doctor_id": doctor_uuid,
         "doctor_email": doctor_jwt["sub"],
-        "patient_id": patient_id,
+        "patient_id": patient_uuid,
     }
     result = _db_access_insert(entry)
     audit("access_request", actor=doctor_jwt["sub"], target=patient_id)
@@ -2236,7 +2274,11 @@ def jwt_request_access():
 @_require_jwt(roles=["patient"])
 def patient_access_requests():
     p = request.jwt_payload
-    return jsonify(_db_access_for_patient(p["uid"]))
+    # uid is now UUID; fall back to profile_code if UUID gives no results
+    results = _db_access_for_patient(p["uid"])
+    if not results and p.get("profile_code"):
+        results = _db_access_for_patient(p["profile_code"])
+    return jsonify(results)
 
 
 @app.route("/access/respond", methods=["POST"])
@@ -2250,7 +2292,10 @@ def respond_access():
         return jsonify({"error": "invalid_action"}), 400
     status       = "approved" if action == "approve" else action
     responded_at = datetime.now(timezone.utc).isoformat()
+    # uid is UUID; try UUID first, then profile_code
     rec = _db_access_respond(req_id, patient["uid"], status, responded_at)
+    if not rec and patient.get("profile_code"):
+        rec = _db_access_respond(req_id, patient["profile_code"], status, responded_at)
     if not rec:
         return jsonify({"error": "not_found"}), 404
     audit(f"access_{action}", actor=patient["sub"], target=rec.get("doctor_email", ""))
@@ -2261,7 +2306,11 @@ def respond_access():
 @_require_jwt(roles=["doctor"])
 def doctor_patients():
     p = request.jwt_payload
-    return jsonify(_db_access_for_doctor(p["uid"], status="approved"))
+    # uid is now UUID
+    results = _db_access_for_doctor(p["uid"], status="approved")
+    if not results and p.get("doctor_code"):
+        results = _db_access_for_doctor(p["doctor_code"], status="approved")
+    return jsonify(results)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -2567,8 +2616,8 @@ def doctor_notes_add():
     if request.method == "OPTIONS":
         return jsonify({}), 200
 
-    # [C4] Derive doctor identity from JWT, not from body
-    doctor_code = request.jwt_payload["uid"]
+    # [C4] Derive doctor identity from JWT - use doctor_code claim, uid is UUID
+    doctor_code = request.jwt_payload.get("doctor_code") or request.jwt_payload["uid"]
 
     body         = request.get_json(force=True) or {}
     patient_code = (body.get("patient_code")  or "").strip()
@@ -2677,8 +2726,8 @@ def doctor_notes_delete(note_id):
     if request.method == "OPTIONS":
         return jsonify({}), 200
 
-    # [C4] Derive doctor identity from JWT
-    doctor_code = request.jwt_payload["uid"]
+    # [C4] Derive doctor identity from JWT - use doctor_code claim, uid is UUID
+    doctor_code = request.jwt_payload.get("doctor_code") or request.jwt_payload["uid"]
 
     note = _db_get_note(note_id)
     if not note:

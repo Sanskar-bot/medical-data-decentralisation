@@ -236,9 +236,12 @@ def create_prescription():
     body  = request.get_json(force=True) or {}
     jwt_p = request.jwt_payload
 
+    # Use doctor_code claim (not uid which is now UUID)
     if not body.get("doctor_id"):
-        body["doctor_id"] = jwt_p.get("uid", "")
+        body["doctor_id"] = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
     body["doctor_email"] = jwt_p.get("sub", "")
+    if not body.get("doctor_name"):
+        body["doctor_name"] = ""  # Will be filled by caller if available
 
     errors = models.validate_prescription(body)
     if errors:
@@ -255,7 +258,9 @@ def create_prescription():
 @_require_jwt_deco()
 def list_patient_prescriptions(patient_id):
     p = request.jwt_payload
-    if p.get("role") == "patient" and p.get("uid") != patient_id:
+    # Compare with profile_code claim if available (uid is now UUID)
+    patient_code = p.get("profile_code") or p.get("uid", "")
+    if p.get("role") == "patient" and patient_code != patient_id:
         return jsonify({"error": "forbidden"}), 403
     rxs = store.prescriptions_for_patient(patient_id)
     rxs.sort(key=lambda r: r.get("created_at", ""), reverse=True)
@@ -270,7 +275,8 @@ def get_prescription(prescription_id):
     if not rx:
         return jsonify({"error": "prescription_not_found"}), 404
     # Patient can only fetch own prescriptions
-    if p.get("role") == "patient" and p.get("uid") != rx["patient_id"]:
+    patient_code = p.get("profile_code") or p.get("uid", "")
+    if p.get("role") == "patient" and patient_code != rx["patient_id"]:
         return jsonify({"error": "forbidden"}), 403
     return jsonify(rx), 200
 
@@ -286,9 +292,12 @@ def create_lab_report():
     body  = request.get_json(force=True) or {}
     jwt_p = request.jwt_payload
 
+    # Use doctor_code claim (not uid which is now UUID)
     if not body.get("doctor_id"):
-        body["doctor_id"] = jwt_p.get("uid", "")
+        body["doctor_id"] = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
     body["doctor_email"] = jwt_p.get("sub", "")
+    if not body.get("doctor_name"):
+        body["doctor_name"] = ""
 
     errors = models.validate_lab_report(body)
     if errors:
@@ -305,7 +314,8 @@ def create_lab_report():
 @_require_jwt_deco()
 def list_patient_lab_reports(patient_id):
     p = request.jwt_payload
-    if p.get("role") == "patient" and p.get("uid") != patient_id:
+    patient_code = p.get("profile_code") or p.get("uid", "")
+    if p.get("role") == "patient" and patient_code != patient_id:
         return jsonify({"error": "forbidden"}), 403
     reports = store.lab_reports_for_patient(patient_id)
     reports.sort(key=lambda r: r.get("created_at", ""), reverse=True)
@@ -319,7 +329,8 @@ def get_lab_report(report_id):
     report = store.get_lab_report(report_id)
     if not report:
         return jsonify({"error": "lab_report_not_found"}), 404
-    if p.get("role") == "patient" and p.get("uid") != report["patient_id"]:
+    patient_code = p.get("profile_code") or p.get("uid", "")
+    if p.get("role") == "patient" and patient_code != report["patient_id"]:
         return jsonify({"error": "forbidden"}), 403
     return jsonify(report), 200
 
