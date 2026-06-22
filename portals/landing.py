@@ -2848,7 +2848,54 @@ def doctor_view_patient():
 
     ctx = _page_context()
     ctx["patient_code"] = profile_code
+
+    # Load patient info directly from users table (no encryption needed for basic info)
+    patient_info = {
+        "name": "",
+        "email": "",
+        "username": "",
+        "age": "",
+        "blood_group": "",
+        "phone": "",
+        "address": "",
+        "allergies": "",
+        "conditions": "",
+    }
+    if _HAS_PSYCOPG2 and profile_code:
+        try:
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                "SELECT name, email, username, patient_details FROM users WHERE profile_code=%s LIMIT 1",
+                (profile_code,)
+            )
+            row = cur.fetchone()
+            if row:
+                patient_info["name"]     = row.get("name") or ""
+                patient_info["email"]    = row.get("email") or ""
+                patient_info["username"] = row.get("username") or ""
+                details = row.get("patient_details") or {}
+                if isinstance(details, str):
+                    try: details = json.loads(details)
+                    except: details = {}
+                patient_info["age"]        = details.get("age", "")
+                patient_info["blood_group"]= details.get("blood_group", details.get("bloodGroup", ""))
+                patient_info["phone"]      = details.get("phone", details.get("contact", ""))
+                patient_info["address"]    = details.get("address", "")
+                patient_info["allergies"]  = details.get("allergies", "")
+                patient_info["conditions"] = details.get("conditions", details.get("medical_conditions", ""))
+                # Also grab name/email from patient_details if top-level is empty
+                if not patient_info["name"]:
+                    patient_info["name"] = details.get("name", "")
+                if not patient_info["email"]:
+                    patient_info["email"] = details.get("email", "")
+            cur.close(); conn.close()
+        except Exception as e:
+            app.logger.debug("view_patient info load: %s", e)
+
+    ctx["patient_info"] = patient_info
     return render_template("patient_detail.html", **ctx)
+
 
 
 if __name__ == "__main__":

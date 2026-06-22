@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Patient Detail — {{ patient_code }}{% endblock %}
+{% block title %}{{ patient_info.name or patient_code }} — Patient Record{% endblock %}
 {% block topbar_title %}Patient Record{% endblock %}
 
 {% block content %}
@@ -10,23 +10,100 @@
       <span style="margin:0 var(--sp-2);">›</span>
       <span class="type-mono" style="font-size:inherit;">{{ patient_code or '—' }}</span>
     </span>
-    <h1 class="type-h1" id="patient-title">Patient Record</h1>
-    <p id="patient-subtitle" style="font-size:var(--t-sm); color:var(--tx3); margin-top:var(--sp-1);">Profile code: <span class="type-mono">{{ patient_code }}</span></p>
-  </div>
-  <div class="topbar-actions">
-    <button class="btn-primary" id="fetch-record-btn" type="button">
-      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
-      Fetch Health Record
-    </button>
+    <h1 class="type-h1">{{ patient_info.name or 'Patient Record' }}</h1>
+    <p style="font-size:var(--t-sm); color:var(--tx3); margin-top:var(--sp-1);">
+      Profile code: <span class="type-mono">{{ patient_code }}</span>
+      {% if patient_info.email %} &nbsp;·&nbsp; {{ patient_info.email }}{% endif %}
+    </p>
   </div>
 </div>
 
 <div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
 
-<!-- Fetch record panel -->
+<!-- Patient Info Card -->
+<div class="card" style="margin-bottom:var(--sp-6); background:linear-gradient(135deg, rgba(139,92,246,.08) 0%, rgba(16,185,129,.05) 100%); border-color:rgba(139,92,246,.25);">
+  <div style="display:flex; align-items:center; gap:var(--sp-5); flex-wrap:wrap;">
+
+    <!-- Avatar -->
+    <div style="width:64px; height:64px; border-radius:50%; background:linear-gradient(135deg,var(--t5),#8b5cf6); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:24px; font-weight:700; color:#fff;">
+      {{ (patient_info.name or patient_code or 'P')[0] | upper }}
+    </div>
+
+    <!-- Details grid -->
+    <div style="flex:1; min-width:0;">
+      <div style="font-size:var(--t-xl); font-weight:700; color:var(--tx1); margin-bottom:var(--sp-2);">
+        {{ patient_info.name or 'Unknown Patient' }}
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:var(--sp-5);">
+
+        <div>
+          <div style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Username</div>
+          <div style="font-size:var(--t-sm); color:var(--tx2); font-family:monospace;">{{ patient_info.username or patient_code or '—' }}</div>
+        </div>
+
+        <div>
+          <div style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Profile Code</div>
+          <div style="font-size:var(--t-sm); color:var(--tx2); font-family:monospace;">{{ patient_code or '—' }}</div>
+        </div>
+
+        {% if patient_info.age %}
+        <div>
+          <div style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Age</div>
+          <div style="font-size:var(--t-sm); color:var(--tx2);">{{ patient_info.age }}</div>
+        </div>
+        {% endif %}
+
+        {% if patient_info.blood_group %}
+        <div>
+          <div style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Blood Group</div>
+          <div style="font-size:var(--t-sm); color:var(--r5); font-weight:600;">{{ patient_info.blood_group }}</div>
+        </div>
+        {% endif %}
+
+        <div>
+          <div style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Email</div>
+          <div style="font-size:var(--t-sm); color:var(--tx2);">{{ patient_info.email or '—' }}</div>
+        </div>
+
+        {% if patient_info.phone %}
+        <div>
+          <div style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Phone</div>
+          <div style="font-size:var(--t-sm); color:var(--tx2);">{{ patient_info.phone }}</div>
+        </div>
+        {% endif %}
+
+      </div>
+
+      {% if patient_info.allergies %}
+      <div style="margin-top:var(--sp-3); display:flex; align-items:center; gap:var(--sp-2);">
+        <span style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em;">Allergies:</span>
+        <span style="font-size:var(--t-xs); background:rgba(239,68,68,.12); color:var(--r5); padding:2px 8px; border-radius:4px; font-weight:600;">⚠ {{ patient_info.allergies }}</span>
+      </div>
+      {% endif %}
+
+      {% if patient_info.conditions %}
+      <div style="margin-top:var(--sp-2); display:flex; align-items:center; gap:var(--sp-2);">
+        <span style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em;">Conditions:</span>
+        <span style="font-size:var(--t-xs); color:var(--tx3);">{{ patient_info.conditions }}</span>
+      </div>
+      {% endif %}
+
+    </div>
+
+    <!-- Fetch encrypted record button -->
+    <div style="flex-shrink:0;">
+      <button class="btn-secondary btn-sm" id="fetch-record-btn" type="button">
+        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+        Full encrypted record
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Fetch record panel (collapsed by default) -->
 <div class="card" id="fetch-panel" style="max-width:480px; margin-bottom:var(--sp-6); display:none;">
-  <h3 class="type-h3" style="margin-bottom:var(--sp-4);">Decrypt Patient Record</h3>
-  <p style="font-size:var(--t-sm); color:var(--tx3); margin-bottom:var(--sp-4);">Enter your doctor password to decrypt the patient's encrypted health record.</p>
+  <h3 class="type-h3" style="margin-bottom:var(--sp-4);">Decrypt Full Health Record</h3>
+  <p style="font-size:var(--t-sm); color:var(--tx3); margin-bottom:var(--sp-4);">Enter your doctor password to decrypt the patient's fully encrypted health record.</p>
   <div id="fetch-alert" style="display:none;"></div>
   <div class="input-group">
     <label class="input-label" for="doctor-pw">Your password</label>
@@ -35,14 +112,14 @@
   <button class="btn-primary" id="fetch-submit-btn" type="button">Decrypt record</button>
 </div>
 
-<!-- Decrypted Record Display -->
+<!-- Decrypted Record result -->
 <div id="record-display" style="display:none; margin-bottom:var(--sp-6);"></div>
 
 <!-- Tab Navigation -->
 <div style="display:flex; gap:0; border-bottom:1px solid var(--b1); margin-bottom:var(--sp-6);">
-  <button class="tab-btn active" data-tab="notes" type="button">Doctor Notes</button>
-  <button class="tab-btn" data-tab="prescriptions" type="button">Prescriptions</button>
-  <button class="tab-btn" data-tab="lab-reports" type="button">Lab Reports</button>
+  <button class="tab-btn active" data-tab="notes" type="button">🩺 Doctor Notes</button>
+  <button class="tab-btn" data-tab="prescriptions" type="button">💊 Prescriptions</button>
+  <button class="tab-btn" data-tab="lab-reports" type="button">🔬 Lab Reports</button>
 </div>
 
 <style>
@@ -85,11 +162,10 @@
         <h2 class="type-h3">Prescriptions</h2>
         <button class="btn-secondary btn-sm" id="refresh-rx-btn" type="button">Refresh</button>
       </div>
-      <div id="rx-loading">
+      <div id="rx-loading" style="display:none;">
         <div class="skeleton" style="height:120px; margin-bottom:var(--sp-3);"></div>
-        <div class="skeleton" style="height:120px;"></div>
       </div>
-      <div id="rx-list" style="display:none;"></div>
+      <div id="rx-list"></div>
     </div>
 
     <!-- Lab Reports Tab -->
@@ -98,15 +174,14 @@
         <h2 class="type-h3">Lab Reports</h2>
         <button class="btn-secondary btn-sm" id="refresh-lr-btn" type="button">Refresh</button>
       </div>
-      <div id="lr-loading">
+      <div id="lr-loading" style="display:none;">
         <div class="skeleton" style="height:120px; margin-bottom:var(--sp-3);"></div>
-        <div class="skeleton" style="height:120px;"></div>
       </div>
-      <div id="lr-list" style="display:none;"></div>
+      <div id="lr-list"></div>
     </div>
   </div>
 
-  <!-- RIGHT: Add Note sidebar -->
+  <!-- RIGHT: Add Note -->
   <div class="stack-4">
     <div class="card">
       <h3 class="type-h3" style="margin-bottom:var(--sp-5);">Add Note</h3>
@@ -136,7 +211,6 @@
       </button>
     </div>
 
-    <!-- Quick Actions sidebar -->
     <div class="card">
       <div class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-4);">Quick Actions</div>
       <div class="stack-2">
@@ -151,6 +225,7 @@
       </div>
     </div>
   </div>
+
 </div>
 {% endblock %}
 
@@ -159,8 +234,6 @@
 (function() {
   var PATIENT_CODE = {{ patient_code | tojson }};
   var JWT = {{ session.get('jwt_token','') | tojson }};
-
-  // Set today's date in visit date field
   var today = new Date().toISOString().slice(0, 10);
   document.getElementById('note-visit-date').value = today;
 
@@ -194,7 +267,7 @@
     });
   });
 
-  // ── Fetch encrypted record panel ──────────────────────────────────
+  // ── Fetch encrypted record ────────────────────────────────────────
   document.getElementById('fetch-record-btn').addEventListener('click', function() {
     var p = document.getElementById('fetch-panel');
     p.style.display = p.style.display === 'none' ? 'block' : 'none';
@@ -202,8 +275,7 @@
 
   document.getElementById('fetch-submit-btn').addEventListener('click', function() {
     var pw = document.getElementById('doctor-pw').value;
-    var alertEl = document.getElementById('fetch-alert');
-    if (!pw) { showAlert(alertEl, 'Password required.', 'error'); return; }
+    if (!pw) { showAlert(document.getElementById('fetch-alert'), 'Password required.', 'error'); return; }
     this.disabled = true; this.textContent = 'Fetching…';
     var self = this;
     fetch('/doctor/fetch_record', {
@@ -214,33 +286,20 @@
     .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
     .then(function(res) {
       self.disabled = false; self.textContent = 'Decrypt record';
-      if (!res.ok || res.data.error) { showAlert(alertEl, res.data.error || 'Failed.', 'error'); return; }
+      if (!res.ok || res.data.error) { showAlert(document.getElementById('fetch-alert'), res.data.error || 'Failed.', 'error'); return; }
       var rec = res.data.record || {};
-      // Update page title with patient name
-      if (rec.name) {
-        document.getElementById('patient-title').textContent = rec.name;
-        document.getElementById('patient-subtitle').innerHTML =
-          'Profile code: <span class="type-mono">' + esc(PATIENT_CODE) + '</span>' +
-          (rec.age ? ' · Age: ' + esc(rec.age) : '') +
-          (rec.email ? ' · ' + esc(rec.email) : '');
-      }
       document.getElementById('fetch-panel').style.display = 'none';
       var disp = document.getElementById('record-display');
       disp.style.display = '';
-      disp.innerHTML =
-        '<div class="card" style="border-color:var(--t5);">' +
-          '<div class="section-header" style="margin-bottom:var(--sp-5);">' +
-            '<h2 class="type-h3">Health Record</h2>' +
-            '<span class="badge badge-approved">Decrypted</span>' +
-          '</div>' +
-          '<div class="grid-2">' +
-            '<div class="field-row" style="padding-top:0;"><div class="field-label">Full Name</div><div class="field-value">' + esc(rec.name||'—') + '</div></div>' +
-            '<div class="field-row" style="padding-top:0;"><div class="field-label">Age</div><div class="field-value">' + esc(rec.age||'—') + '</div></div>' +
-            '<div class="field-row"><div class="field-label">Email</div><div class="field-value">' + esc(rec.email||'—') + '</div></div>' +
-            '<div class="field-row"><div class="field-label">Profile Code</div><div class="field-value type-mono">' + esc(PATIENT_CODE) + '</div></div>' +
-          '</div>' +
-          (rec.notes ? '<div class="field-row"><div class="field-label">Notes</div><div class="field-value">' + esc(rec.notes) + '</div></div>' : '') +
-        '</div>';
+      disp.innerHTML = '<div class="card" style="border-color:var(--t5);">' +
+        '<div class="section-header" style="margin-bottom:var(--sp-4);"><h2 class="type-h3">Encrypted Health Record</h2><span class="badge badge-approved">Decrypted</span></div>' +
+        '<div class="grid-2">' +
+          '<div class="field-row" style="padding-top:0;"><div class="field-label">Full Name</div><div class="field-value">' + esc(rec.name||'—') + '</div></div>' +
+          '<div class="field-row" style="padding-top:0;"><div class="field-label">Age</div><div class="field-value">' + esc(rec.age||'—') + '</div></div>' +
+          '<div class="field-row"><div class="field-label">Email</div><div class="field-value">' + esc(rec.email||'—') + '</div></div>' +
+        '</div>' +
+        (rec.notes ? '<div class="field-row"><div class="field-label">Notes</div><div class="field-value">' + esc(rec.notes) + '</div></div>' : '') +
+      '</div>';
     })
     .catch(function() {
       self.disabled = false; self.textContent = 'Decrypt record';
@@ -262,16 +321,13 @@
       nl.style.display = '';
       var notes = d.notes || [];
       if (!notes.length) {
-        nl.innerHTML = '<div class="empty-state"><div class="empty-state-title">No notes for this patient yet</div><div class="empty-state-desc">Use the form on the right to add the first clinical note.</div></div>';
+        nl.innerHTML = '<div class="empty-state"><div class="empty-state-title">No notes yet</div><div class="empty-state-desc">Use the form on the right to add the first clinical note.</div></div>';
         return;
       }
       nl.innerHTML = '<div class="stack-4">' + notes.map(function(n) {
         return '<div class="note-card">' +
-          '<div class="note-card-header">' +
-            '<span class="badge ' + noteTypeColor(n.note_type) + '">' + esc(n.note_type || 'General') + '</span>' +
-            '<span class="type-caption">Visit: ' + esc(n.visit_date || '—') + '</span>' +
-          '</div>' +
-          '<div class="note-body">' + esc(n.note_text || n.content || '—') + '</div>' +
+          '<div class="note-card-header"><span class="badge ' + noteTypeColor(n.note_type) + '">' + esc(n.note_type||'General') + '</span><span class="type-caption">Visit: ' + esc(n.visit_date||'—') + '</span></div>' +
+          '<div class="note-body">' + esc(n.note_text||n.content||'—') + '</div>' +
           '<div class="note-footer">Added ' + fmt(n.created_at) + '</div>' +
         '</div>';
       }).join('') + '</div>';
@@ -280,18 +336,19 @@
   }
 
   // ── Load Prescriptions ────────────────────────────────────────────
+  var rxLoaded = false;
   function loadPrescriptions() {
+    if (rxLoaded) return;
     document.getElementById('rx-loading').style.display = '';
-    document.getElementById('rx-list').style.display = 'none';
     fetch('/doctor/patient_prescriptions/' + encodeURIComponent(PATIENT_CODE))
     .then(function(r) { return r.json(); })
     .then(function(d) {
+      rxLoaded = true;
       document.getElementById('rx-loading').style.display = 'none';
       var rl = document.getElementById('rx-list');
-      rl.style.display = '';
       var rxs = Array.isArray(d) ? d : (d.prescriptions || []);
       if (!rxs.length) {
-        rl.innerHTML = '<div class="empty-state"><div class="empty-state-title">No prescriptions yet</div><div class="empty-state-desc">Add a prescription via the Add Prescription page.</div></div>';
+        rl.innerHTML = '<div class="empty-state"><div class="empty-state-title">No prescriptions yet</div></div>';
         return;
       }
       rl.innerHTML = '<div class="stack-4">' + rxs.map(function(rx) {
@@ -300,16 +357,13 @@
           ? '<div style="margin-top:var(--sp-3); overflow:hidden; border-radius:var(--r-sm); border:1px solid var(--b1);">' +
             '<table class="data-table" style="width:100%;"><thead><tr><th>Medication</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr></thead><tbody>' +
             meds.map(function(m) {
-              return '<tr><td style="font-weight:600;">💊 ' + esc(m.name||m) + '</td><td>' + esc(m.dosage||m.dose||'—') + '</td><td style="color:var(--t5);">' + esc(m.frequency||'—') + '</td><td>' + esc(m.duration||'—') + '</td></tr>';
-            }).join('') +
-            '</tbody></table></div>'
-          : '';
+              return '<tr><td><strong>💊 ' + esc(m.name||m) + '</strong></td><td>' + esc(m.dosage||m.dose||'—') + '</td><td style="color:var(--t5);">' + esc(m.frequency||'—') + '</td><td>' + esc(m.duration||'—') + '</td></tr>';
+            }).join('') + '</tbody></table></div>' : '';
         return '<div class="card">' +
           '<div class="section-header" style="margin-bottom:var(--sp-3);">' +
-            '<div><span class="badge badge-gold">Rx</span> <strong>' + esc(rx.diagnosis||'—') + '</strong></div>' +
+            '<div><span class="badge badge-gold" style="margin-right:var(--sp-2);">Rx</span><strong>' + esc(rx.diagnosis||'—') + '</strong></div>' +
             '<span style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(rx.created_at) + '</span>' +
-          '</div>' +
-          medsHtml +
+          '</div>' + medsHtml +
           (rx.notes ? '<div style="margin-top:var(--sp-3); font-size:var(--t-sm); color:var(--tx3); border-top:1px solid var(--b1); padding-top:var(--sp-3);">📝 ' + esc(rx.notes) + '</div>' : '') +
         '</div>';
       }).join('') + '</div>';
@@ -318,15 +372,16 @@
   }
 
   // ── Load Lab Reports ──────────────────────────────────────────────
+  var lrLoaded = false;
   function loadLabReports() {
+    if (lrLoaded) return;
     document.getElementById('lr-loading').style.display = '';
-    document.getElementById('lr-list').style.display = 'none';
     fetch('/doctor/patient_lab_reports/' + encodeURIComponent(PATIENT_CODE))
     .then(function(r) { return r.json(); })
     .then(function(d) {
+      lrLoaded = true;
       document.getElementById('lr-loading').style.display = 'none';
       var ll = document.getElementById('lr-list');
-      ll.style.display = '';
       var lrs = Array.isArray(d) ? d : (d.lab_reports || d.reports || []);
       if (!lrs.length) {
         ll.innerHTML = '<div class="empty-state"><div class="empty-state-title">No lab reports yet</div></div>';
@@ -335,7 +390,7 @@
       ll.innerHTML = '<div class="stack-4">' + lrs.map(function(lr) {
         return '<div class="card">' +
           '<div class="section-header" style="margin-bottom:var(--sp-3);">' +
-            '<div><span class="badge badge-encrypted">Lab</span> <strong>' + esc(lr.report_type||lr.test_name||'Lab Report') + '</strong></div>' +
+            '<div><span class="badge badge-encrypted" style="margin-right:var(--sp-2);">Lab</span><strong>' + esc(lr.report_type||lr.test_name||'Lab Report') + '</strong></div>' +
             '<span style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(lr.created_at) + '</span>' +
           '</div>' +
           (lr.notes ? '<div style="font-size:var(--t-sm); color:var(--tx2); margin-top:var(--sp-2);">📋 ' + esc(lr.notes) + '</div>' : '') +
@@ -348,8 +403,7 @@
   // ── Add Note ──────────────────────────────────────────────────────
   document.getElementById('add-note-btn').addEventListener('click', function() {
     var noteText = (document.getElementById('note-text').value || '').trim();
-    var alertEl  = document.getElementById('note-alert');
-    if (!noteText) { showAlert(alertEl, 'Note text is required.', 'error'); return; }
+    if (!noteText) { showAlert(document.getElementById('note-alert'), 'Note text is required.', 'error'); return; }
     this.disabled = true;
     document.getElementById('note-btn-text').textContent = 'Adding…';
     document.getElementById('note-spinner').style.display = 'inline-block';
@@ -358,11 +412,10 @@
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        profile_code: PATIENT_CODE,
-        patient_code: PATIENT_CODE,
-        note_type:    document.getElementById('note-type').value,
-        visit_date:   document.getElementById('note-visit-date').value,
-        note_text:    noteText,
+        profile_code: PATIENT_CODE, patient_code: PATIENT_CODE,
+        note_type: document.getElementById('note-type').value,
+        visit_date: document.getElementById('note-visit-date').value,
+        note_text: noteText,
       })
     })
     .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
@@ -376,7 +429,7 @@
         document.getElementById('note-visit-date').value = today;
         loadNotes();
       } else {
-        showAlert(alertEl, res.data.error || 'Failed.', 'error');
+        showAlert(document.getElementById('note-alert'), res.data.error || 'Failed.', 'error');
       }
     })
     .catch(function() {
@@ -388,15 +441,10 @@
   });
 
   document.getElementById('refresh-notes-btn').addEventListener('click', loadNotes);
-  document.getElementById('refresh-rx-btn').addEventListener('click', loadPrescriptions);
-  document.getElementById('refresh-lr-btn').addEventListener('click', loadLabReports);
+  document.getElementById('refresh-rx-btn').addEventListener('click', function() { rxLoaded = false; loadPrescriptions(); });
+  document.getElementById('refresh-lr-btn').addEventListener('click', function() { lrLoaded = false; loadLabReports(); });
 
-  if (PATIENT_CODE) {
-    loadNotes();
-  } else {
-    var a = document.getElementById('page-alert');
-    a.className = 'alert alert-error'; a.textContent = 'No patient code provided.'; a.style.display = 'flex';
-  }
+  if (PATIENT_CODE) { loadNotes(); }
 })();
 </script>
 {% endblock %}
