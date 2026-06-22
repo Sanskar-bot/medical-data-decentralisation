@@ -2172,11 +2172,12 @@ def patient_prescriptions_direct():
     jwt_tok  = session.get("jwt_token", "")
     rxs      = []
 
-    # Primary: PostgreSQL via JWT
+    # Primary: PostgreSQL via JWT using correct patient-scoped endpoint
     if jwt_tok:
         try:
             hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
-            r = http.get(f"{BACKEND}/emr/prescriptions", headers=hdrs, timeout=8)
+            # Use profile_code as patient_id (backend stores it that way)
+            r = http.get(f"{BACKEND}/emr/prescriptions/patient/{pid}", headers=hdrs, timeout=8)
             if r.ok:
                 data = r.json()
                 rxs = data if isinstance(data, list) else data.get("prescriptions", [])
@@ -2224,11 +2225,11 @@ def patient_lab_reports_direct():
     jwt_tok = session.get("jwt_token", "")
     lrs     = []
 
-    # Primary: PostgreSQL via JWT
+    # Primary: PostgreSQL via JWT using correct patient-scoped endpoint
     if jwt_tok:
         try:
             hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
-            r = http.get(f"{BACKEND}/emr/lab-reports", headers=hdrs, timeout=8)
+            r = http.get(f"{BACKEND}/emr/lab-reports/patient/{pid}", headers=hdrs, timeout=8)
             if r.ok:
                 data = r.json()
                 lrs = data if isinstance(data, list) else data.get("lab_reports", data.get("reports", []))
