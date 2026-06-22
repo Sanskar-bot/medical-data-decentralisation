@@ -54,6 +54,18 @@
                 style="margin-top:var(--sp-2);"></textarea>
     </div>
 
+    <!-- Allergy Conflict Panel — shown only on 409 response -->
+    <div id="rx-conflict-panel" style="display:none;">
+      <div id="rx-conflict-list" class="stack-2"></div>
+      <div style="margin-top:var(--sp-4); display:flex; align-items:flex-start; gap:var(--sp-3);">
+        <input type="checkbox" id="rx-override-chk"
+               style="margin-top:3px; width:16px; height:16px; cursor:pointer; accent-color:var(--r5); flex-shrink:0;">
+        <label for="rx-override-chk" style="font-size:var(--t-sm); color:var(--tx2); cursor:pointer; line-height:1.5;">
+          I have reviewed this conflict and confirm the prescription should proceed.
+        </label>
+      </div>
+    </div>
+
     <div id="rx-alert" style="display:none;"></div>
     <button class="btn-primary" id="rx-submit-btn" type="button">
       <span id="rx-btn-text">Create Prescription</span>
@@ -68,6 +80,10 @@
 (function() {
   var JWT = {{ session.get('jwt_token','') | tojson }};
 
+  // Whether we're currently in "conflict acknowledged" state
+  var _pendingConflicts = [];
+  var _resolvedPatientCode = null;
+
   function showAlert(el, msg, type) {
     if (!el) return;
     el.className = 'alert alert-' + (type || 'error');
@@ -76,7 +92,51 @@
     setTimeout(function() { el.style.display = 'none'; }, 6000);
   }
 
-  // Add medication row
+  // ── Conflict panel helpers ─────────────────────────────────────────────────
+
+  function showConflictPanel(conflicts) {
+    _pendingConflicts = conflicts;
+    var panel = document.getElementById('rx-conflict-panel');
+    var list  = document.getElementById('rx-conflict-list');
+    var chk   = document.getElementById('rx-override-chk');
+    chk.checked = false;
+    document.getElementById('rx-btn-text').textContent = 'Confirm & Create Prescription';
+
+    list.innerHTML = conflicts.map(function(c) {
+      var cls = c.severity === 'high' ? 'alert-danger' : 'alert-warning';
+      var sev = c.severity === 'high' ? 'HIGH' : 'MODERATE';
+      return '<div class="alert ' + cls + '" style="margin-bottom:0;">' +
+        '<strong>' + esc(c.medication) + '</strong>' +
+        ' &harr; ' +
+        '<strong>' + esc(c.allergy) + '</strong>' +
+        ' &nbsp;<span style="font-size:var(--t-xs); opacity:.8;">[' + sev + ']</span>' +
+      '</div>';
+    }).join('');
+
+    panel.style.display = 'block';
+  }
+
+  function clearConflictPanel() {
+    _pendingConflicts = [];
+    document.getElementById('rx-conflict-panel').style.display = 'none';
+    document.getElementById('rx-conflict-list').innerHTML = '';
+    document.getElementById('rx-override-chk').checked = false;
+    document.getElementById('rx-btn-text').textContent = 'Create Prescription';
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Clear conflict panel whenever a medication name is changed
+  document.getElementById('meds-list').addEventListener('input', function(e) {
+    if (e.target && e.target.classList.contains('med-name') && _pendingConflicts.length) {
+      clearConflictPanel();
+    }
+  });
+
+  // ── Add medication row ─────────────────────────────────────────────────────
+
   document.getElementById('add-med-btn').addEventListener('click', function() {
     var row = document.createElement('div');
     row.className = 'med-row grid-3';
@@ -88,7 +148,8 @@
     document.getElementById('meds-list').appendChild(row);
   });
 
-  // Resolve patient helper
+  // ── Resolve patient helper ─────────────────────────────────────────────────
+
   function resolvePatient(raw) {
     if (/^[A-Z0-9]{8,12}$/.test(raw.toUpperCase()) && raw.length >= 8) {
       return Promise.resolve(raw.toUpperCase());
@@ -107,15 +168,14 @@
     });
   }
 
-  // Submit prescription
-  document.getElementById('rx-submit-btn').addEventListener('click', function() {
-    var raw       = (document.getElementById('rx-patient-code').value || '').trim();
+  // ── Submit prescription ────────────────────────────────────────────────────
+
+  function doSubmit(patientCode, override) {
     var diagnosis = (document.getElementById('rx-diagnosis').value || '').trim();
     var notes     = (document.getElementById('rx-notes').value || '').trim();
     var alertEl   = document.getElementById('rx-alert');
-
-    if (!raw) { showAlert(alertEl, 'Patient identifier is required.', 'error'); return; }
-    if (!diagnosis) { showAlert(alertEl, 'Diagnosis is required.', 'error'); return; }
+    var btn       = document.getElementById('rx-submit-btn');
+    var hintEl    = document.getElementById('rx-patient-hint');
 
     // Collect medications
     var meds = [];
@@ -123,30 +183,35 @@
       var name = (row.querySelector('.med-name').value || '').trim();
       var dose = (row.querySelector('.med-dose').value || '').trim();
       var freq = (row.querySelector('.med-freq').value || '').trim();
-      if (name) meds.push({ name: name, dose: dose, frequency: freq });
+      if (name) meds.push({ name: name, dosage: dose, frequency: freq });
     });
-    if (!meds.length) { showAlert(alertEl, 'Add at least one medication.', 'error'); return; }
 
-    this.disabled = true;
-    document.getElementById('rx-btn-text').textContent = 'Resolving patient…';
+    btn.disabled = true;
     document.getElementById('rx-spinner').style.display = 'inline-block';
-    var self = this;
-    var hintEl = document.getElementById('rx-patient-hint');
 
-    resolvePatient(raw)
-    .then(function(code) {
-      if (hintEl) hintEl.textContent = 'Patient: ' + code;
-      return fetch('/doctor/add_prescription', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json','Authorization':'Bearer '+JWT},
-        body: JSON.stringify({ patient_code: code, diagnosis: diagnosis, medications: meds, notes: notes })
-      }).then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); });
+    var payload = {
+      patient_code: patientCode,
+      diagnosis:    diagnosis,
+      medications:  meds,
+      notes:        notes,
+    };
+    if (override) {
+      payload.override_allergy_check = true;
+    }
+
+    fetch('/doctor/add_prescription', {
+      method:  'POST',
+      headers: {'Content-Type':'application/json','Authorization':'Bearer '+JWT},
+      body:    JSON.stringify(payload),
     })
+    .then(function(r) { return r.json().then(function(d) { return {status: r.status, data: d}; }); })
     .then(function(res) {
-      self.disabled = false;
-      document.getElementById('rx-btn-text').textContent = 'Create Prescription';
+      btn.disabled = false;
       document.getElementById('rx-spinner').style.display = 'none';
-      if (res.ok) {
+
+      if (res.status === 201) {
+        // Success
+        clearConflictPanel();
         showAlert(document.getElementById('page-alert'), 'Prescription created successfully.', 'success');
         document.getElementById('rx-patient-code').value = '';
         document.getElementById('rx-diagnosis').value = '';
@@ -155,12 +220,75 @@
         document.querySelectorAll('.med-dose').forEach(function(el) { el.value = ''; });
         document.querySelectorAll('.med-freq').forEach(function(el) { el.value = ''; });
         if (hintEl) hintEl.textContent = '';
+        _resolvedPatientCode = null;
+        document.getElementById('rx-btn-text').textContent = 'Create Prescription';
+
+      } else if (res.status === 409 && res.data.error === 'allergy_conflict') {
+        // Allergy conflict — show inline panel, do NOT auto-dismiss
+        showConflictPanel(res.data.conflicts || []);
+
       } else {
-        showAlert(alertEl, res.data.error || 'Failed to create prescription.', 'error');
+        // Other error — show dismissible alert
+        var msg = res.data.detail || res.data.error || 'Failed to create prescription.';
+        showAlert(alertEl, msg, 'error');
+        document.getElementById('rx-btn-text').textContent = 'Create Prescription';
       }
     })
     .catch(function(err) {
-      self.disabled = false;
+      btn.disabled = false;
+      document.getElementById('rx-spinner').style.display = 'none';
+      document.getElementById('rx-btn-text').textContent = 'Create Prescription';
+      showAlert(document.getElementById('rx-alert'), err.message || 'Network error.', 'error');
+    });
+  }
+
+  // ── Click handler ──────────────────────────────────────────────────────────
+
+  document.getElementById('rx-submit-btn').addEventListener('click', function() {
+    var raw     = (document.getElementById('rx-patient-code').value || '').trim();
+    var alertEl = document.getElementById('rx-alert');
+
+    if (!raw) { showAlert(alertEl, 'Patient identifier is required.', 'error'); return; }
+    if (!(document.getElementById('rx-diagnosis').value || '').trim()) {
+      showAlert(alertEl, 'Diagnosis is required.', 'error'); return;
+    }
+
+    var meds = [];
+    document.querySelectorAll('.med-row').forEach(function(row) {
+      if ((row.querySelector('.med-name').value || '').trim()) meds.push(true);
+    });
+    if (!meds.length) { showAlert(alertEl, 'Add at least one medication.', 'error'); return; }
+
+    // If we already have conflicts and the doctor is re-submitting via the
+    // "Confirm & Create Prescription" button, check override checkbox state.
+    if (_pendingConflicts.length) {
+      var chk = document.getElementById('rx-override-chk');
+      if (!chk.checked) {
+        showAlert(alertEl, 'Please check the confirmation box to proceed with the override.', 'error');
+        return;
+      }
+      // Re-use the already-resolved patient code to avoid an extra lookup
+      doSubmit(_resolvedPatientCode || raw.toUpperCase(), true);
+      return;
+    }
+
+    // First submission — resolve patient then submit normally
+    document.getElementById('rx-btn-text').textContent = 'Resolving patient…';
+    document.getElementById('rx-spinner').style.display = 'inline-block';
+    document.getElementById('rx-submit-btn').disabled = true;
+
+    var hintEl = document.getElementById('rx-patient-hint');
+    resolvePatient(raw)
+    .then(function(code) {
+      _resolvedPatientCode = code;
+      if (hintEl) hintEl.textContent = 'Patient: ' + code;
+      document.getElementById('rx-btn-text').textContent = 'Create Prescription';
+      document.getElementById('rx-spinner').style.display = 'none';
+      document.getElementById('rx-submit-btn').disabled = false;
+      doSubmit(code, false);
+    })
+    .catch(function(err) {
+      document.getElementById('rx-submit-btn').disabled = false;
       document.getElementById('rx-btn-text').textContent = 'Create Prescription';
       document.getElementById('rx-spinner').style.display = 'none';
       showAlert(alertEl, err.message || 'Network error.', 'error');

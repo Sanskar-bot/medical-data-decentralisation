@@ -137,3 +137,37 @@ All 25 security issues have been remediated. Changes are listed in implementatio
 ```
 25 passed in 0.83s  (python -m pytest tests/test_emr_api.py -v, FLASK_ENV=development)
 ```
+
+---
+
+## Feature Additions
+
+### [F1] Allergy/Interaction Safety Check — server/emr/models.py, server/emr/routes.py, portals/landing.py, portals/templates/doctor_prescriptions.html, portals/templates/emr.html
+
+**Summary:** Added a clinical allergy conflict check to the prescription creation flow.
+
+**Changes:**
+
+- **server/emr/models.py**
+  - Added _norm_allergy_list(value): normalises allergy data to a clean, deduplicated list[str], accepting both lists and comma-separated strings. Used to fix a data-type bug where emr.html was POSTing a raw string where the DB expected a JSON array.
+  - Added ALLERGY_CROSS_REACTIVITY: a conservative clinical cross-reactivity table covering penicillin family, cephalosporins, sulfa drugs, NSAIDs, codeine-derived opioids, latex, iodine/contrast, egg, and shellfish→protamine. **Not a substitute for a licensed drug-interaction database.**
+  - Added check_allergy_conflicts(allergies, medications) -> list[dict]: pure function (no DB/network access) returning one conflict dict per detected conflict with fields medication, llergy, matched_term, and severity ("high" for direct match, "moderate" for cross-reactivity table match).
+  - 
+ew_prescription() now also accepts "dose" as an alias for "dosage" to match the frontend payload.
+
+- **server/emr/routes.py**
+  - create_prescription(): after structural validation, fetches the patient's EMR profile, runs check_allergy_conflicts(), and returns **HTTP 409** {"error": "allergy_conflict", "conflicts": [...]} if conflicts are found and override_allergy_check is not 	rue. If override is 	rue, the prescription is saved normally and an prescription_allergy_override audit entry is written. A missing EMR profile (patient has none) is treated as no allergies and is not an error.
+  - upsert_patient_profile(): the allergies merge path now calls _norm_allergy_list() so a comma-string POSTed by the browser is always persisted as a proper list.
+
+- **portals/landing.py**
+  - /doctor/add_prescription: the JWT proxy path now forwards **all** backend responses (including 409) to the browser. The file-based fallback path has been replaced with a **503** error directing the doctor to retry, so the safety check can never be silently bypassed in degraded mode.
+
+- **portals/templates/doctor_prescriptions.html**
+  - On 409 llergy_conflict response, renders an inline conflict panel using .alert-danger (high) and .alert-warning (moderate) — no auto-dismiss. A confirmation checkbox appears below; button text changes to "Confirm & Create Prescription". Re-submission with checkbox checked sends override_allergy_check: true. Editing any medication name clears the stale panel.
+
+- **portals/templates/emr.html**
+  - Fixed allergy display: profile.allergies (now a list) is joined with ', ' before being written to the #emr-allergies input and rendered in the medical history view.
+
+- **	ests/test_emr_api.py**
+  - Added TestNormAllergyList (9 unit tests) and TestCheckAllergyConflicts (13 unit tests) for the new pure functions.
+  - Added TestAllergyConflictPrescriptions (8 integration tests) covering: 409 on conflict, nothing written on 409, 201+override, prescription stored on override, audit log entry on override, no-allergy patient, no-profile patient, comma-string normalisation round-trip.

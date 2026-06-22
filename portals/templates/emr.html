@@ -127,7 +127,10 @@
 
   function renderHistory(p) {
     var parts = [];
-    if (p.allergies) parts.push({label:'Allergies', val: p.allergies});
+    var allergyDisplay = Array.isArray(p.allergies)
+      ? p.allergies.join(', ')
+      : (p.allergies || '');
+    if (allergyDisplay) parts.push({label:'Allergies', val: allergyDisplay});
     if (p.conditions) parts.push({label:'Conditions', val: p.conditions});
     if (p.notes) parts.push({label:'Notes', val: p.notes});
     if (!parts.length) return '<div style="color:var(--tx3); font-size:var(--t-sm);">No medical history recorded yet.</div>';
@@ -167,7 +170,11 @@
       document.getElementById('emr-height').value     = profile.height || '';
       document.getElementById('emr-weight').value     = profile.weight || '';
       document.getElementById('emr-bp').value         = profile.blood_pressure || '';
-      document.getElementById('emr-allergies').value  = profile.allergies || '';
+      // Allergies are stored as a list; display as a comma-separated string
+      var allergyStr = Array.isArray(profile.allergies)
+        ? profile.allergies.join(', ')
+        : (profile.allergies || '');
+      document.getElementById('emr-allergies').value  = allergyStr;
       document.getElementById('emr-conditions').value = profile.conditions || '';
       document.getElementById('emr-notes').value      = profile.notes || '';
     }

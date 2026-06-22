@@ -2662,20 +2662,25 @@ def doctor_add_prescription():
                     json={**rx, "patient_id": pat_code},
                     headers=hdrs, timeout=10,
                 )
-                if rb.ok:
-                    return jsonify(rb.json()), rb.status_code
+                # Forward ALL responses from the backend — including 409
+                # allergy_conflict — so the browser can render the conflict UI.
+                return jsonify(rb.json()), rb.status_code
             except Exception as e:
                 app.logger.debug("doctor_add_prescription JWT: %s", e)
 
-        # Fallback: save directly to EMR file
-        import os
-        emr_data_dir = os.path.join(ROOT, "server", "emr_data")
-        os.makedirs(emr_data_dir, exist_ok=True)
-        emr_rx_path = os.path.join(emr_data_dir, "emr_prescriptions.json")
-        rxs = _load_json_safe(emr_rx_path) if isinstance(_load_json_safe(emr_rx_path), list) else []
-        rxs.append(rx)
-        _save_json_safe(emr_rx_path, rxs)
-        return jsonify(rx), 201
+        # Fallback path — backend is unreachable.
+        # We MUST NOT save the prescription here without running the allergy
+        # safety check, and the profile data needed for that check is only
+        # available via the backend.  Refuse explicitly so the doctor knows
+        # to retry once the backend is reachable.
+        return jsonify({
+            "error": "backend_unavailable",
+            "detail": (
+                "The prescription server is temporarily unreachable. "
+                "Please wait a moment and try again. "
+                "Prescriptions cannot be saved without a safety check."
+            ),
+        }), 503
 
     except Exception as e:
         app.logger.exception("doctor_add_prescription error")

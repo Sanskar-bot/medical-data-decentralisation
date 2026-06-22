@@ -83,6 +83,7 @@ def _clean_emr_data():
     """
     Clear EMR DB tables before each test to ensure test isolation.
     Previously deleted emr_data/*.json files; now truncates PostgreSQL tables.
+    Also resets the rate_limits table so tests don't see 429 from prior runs.
     """
     import sys, os
     sys.path.insert(0, os.path.join(ROOT, "server"))
@@ -95,7 +96,8 @@ def _clean_emr_data():
             cur.execute("""
                 TRUNCATE TABLE
                     emr_profiles, emr_appointments,
-                    emr_prescriptions, emr_lab_reports
+                    emr_prescriptions, emr_lab_reports,
+                    rate_limits
                 RESTART IDENTITY CASCADE
             """)
     except Exception as e:
@@ -383,3 +385,361 @@ class TestAdmin:
                        headers=_auth_headers(jwt_encode, role="admin"))
         assert r.status_code == 200
         assert isinstance(r.get_json(), list)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#   UNIT TESTS — _norm_allergy_list
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestNormAllergyList:
+    """Pure unit tests — no DB or HTTP needed."""
+
+    def setup_method(self):
+        from emr.models import _norm_allergy_list
+        self.norm = _norm_allergy_list
+
+    def test_list_input_passthrough(self):
+        assert self.norm(["Penicillin", "Latex"]) == ["Penicillin", "Latex"]
+
+    def test_comma_string_splits_correctly(self):
+        result = self.norm("Penicillin, Sulfa drugs")
+        assert result == ["Penicillin", "Sulfa drugs"]
+
+    def test_extra_whitespace_stripped(self):
+        result = self.norm("  Ibuprofen ,  Aspirin  ")
+        assert result == ["Ibuprofen", "Aspirin"]
+
+    def test_empty_string_returns_empty(self):
+        assert self.norm("") == []
+
+    def test_none_returns_empty(self):
+        assert self.norm(None) == []
+
+    def test_empty_list_returns_empty(self):
+        assert self.norm([]) == []
+
+    def test_case_insensitive_dedupe_preserves_first_casing(self):
+        result = self.norm("Penicillin, penicillin, PENICILLIN")
+        assert result == ["Penicillin"]
+
+    def test_mixed_list_and_extra_commas(self):
+        # Leading/trailing commas produce empty strings that should be dropped
+        result = self.norm(",Dust,,Pollen,")
+        assert result == ["Dust", "Pollen"]
+
+    def test_list_with_duplicates_deduped(self):
+        result = self.norm(["Latex", "latex", "LATEX"])
+        assert result == ["Latex"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#   UNIT TESTS — check_allergy_conflicts
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestCheckAllergyConflicts:
+    """Pure unit tests — no DB or HTTP needed."""
+
+    def setup_method(self):
+        from emr.models import check_allergy_conflicts
+        self.check = check_allergy_conflicts
+
+    # ── Empty inputs ──────────────────────────────────────────────────────────
+
+    def test_empty_allergies_returns_no_conflicts(self):
+        meds = [{"name": "Amoxicillin"}]
+        assert self.check([], meds) == []
+
+    def test_empty_medications_returns_no_conflicts(self):
+        assert self.check(["Penicillin"], []) == []
+
+    def test_both_empty_returns_empty(self):
+        assert self.check([], []) == []
+
+    # ── Direct / high severity ────────────────────────────────────────────────
+
+    def test_exact_match_high_severity(self):
+        """Prescribing 'Penicillin' when patient is allergic to Penicillin."""
+        conflicts = self.check(["Penicillin"], [{"name": "Penicillin V"}])
+        assert len(conflicts) == 1
+        assert conflicts[0]["severity"] == "high"
+        assert conflicts[0]["medication"] == "Penicillin V"
+        assert conflicts[0]["allergy"] == "Penicillin"
+
+    def test_case_insensitive_direct_match(self):
+        """Case should not matter for matching."""
+        conflicts = self.check(["IBUPROFEN"], [{"name": "ibuprofen"}])
+        assert len(conflicts) == 1
+        assert conflicts[0]["severity"] == "high"
+
+    # ── Cross-reactivity / moderate severity ──────────────────────────────────
+
+    def test_cross_reactive_amoxicillin_vs_penicillin_allergy(self):
+        """Amoxicillin is cross-reactive with penicillin allergy — canonical test."""
+        conflicts = self.check(["Penicillin"], [{"name": "Amoxicillin"}])
+        assert len(conflicts) == 1
+        assert conflicts[0]["severity"] == "moderate"
+        assert conflicts[0]["medication"] == "Amoxicillin"
+        assert conflicts[0]["allergy"] == "Penicillin"
+
+    def test_cross_reactive_bactrim_vs_sulfa_allergy(self):
+        conflicts = self.check(["sulfa"], [{"name": "Bactrim"}])
+        assert any(c["severity"] in ("high", "moderate") for c in conflicts)
+
+    def test_cross_reactive_ibuprofen_vs_aspirin_allergy(self):
+        conflicts = self.check(["aspirin"], [{"name": "Ibuprofen"}])
+        assert len(conflicts) == 1
+        assert conflicts[0]["medication"] == "Ibuprofen"
+
+    # ── No conflict ───────────────────────────────────────────────────────────
+
+    def test_no_conflict_safe_medication(self):
+        """Cetirizine has no known cross-reactivity with Penicillin."""
+        conflicts = self.check(["Penicillin"], [{"name": "Cetirizine"}])
+        assert conflicts == []
+
+    def test_no_conflict_unrelated_allergy(self):
+        conflicts = self.check(["Dust mites"], [{"name": "Paracetamol"}])
+        assert conflicts == []
+
+    # ── Multiple medications ──────────────────────────────────────────────────
+
+    def test_multiple_meds_one_conflict(self):
+        meds = [{"name": "Paracetamol"}, {"name": "Amoxicillin"}]
+        conflicts = self.check(["Penicillin"], meds)
+        assert len(conflicts) == 1
+        assert conflicts[0]["medication"] == "Amoxicillin"
+
+    def test_multiple_meds_multiple_conflicts(self):
+        meds = [{"name": "Amoxicillin"}, {"name": "Ampicillin"}]
+        conflicts = self.check(["Penicillin"], meds)
+        med_names = {c["medication"] for c in conflicts}
+        assert "Amoxicillin" in med_names
+        assert "Ampicillin" in med_names
+
+    # ── Deduplication ─────────────────────────────────────────────────────────
+
+    def test_duplicate_conflict_suppressed(self):
+        """Same (medication, allergy) pair should appear only once."""
+        conflicts = self.check(
+            ["Penicillin", "Penicillin"],  # duplicate allergy entries
+            [{"name": "Amoxicillin"}],
+        )
+        assert len(conflicts) == 1
+
+    # ── Safety: must not raise ────────────────────────────────────────────────
+
+    def test_med_without_name_key_does_not_crash(self):
+        """Medications without a 'name' key must be silently skipped."""
+        conflicts = self.check(["Penicillin"], [{"dosage": "500mg"}])
+        assert conflicts == []
+
+    def test_allergy_none_in_list_does_not_crash(self):
+        """None values in allergies list must be silently skipped."""
+        conflicts = self.check([None, "Penicillin"], [{"name": "Amoxicillin"}])
+        # Should still detect the Penicillin conflict
+        assert any(c["allergy"] == "Penicillin" for c in conflicts)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#   INTEGRATION TESTS — Allergy conflict prescription flow
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestAllergyConflictPrescriptions:
+
+    def _create_patient_profile_with_penicillin_allergy(self, client, jwt_encode, uid):
+        """Helper: create an EMR profile with a penicillin allergy."""
+        r = client.put(
+            f"/emr/patient/{uid}/profile",
+            headers=_auth_headers(jwt_encode, role="patient", uid=uid),
+            json={
+                "name": "Allergy Test Patient",
+                "age": 30,
+                "allergies": ["Penicillin"],
+            },
+        )
+        assert r.status_code in (200, 201), f"Profile create failed: {r.get_json()}"
+        return r.get_json()
+
+    # ── 409 on allergy conflict ───────────────────────────────────────────────
+
+    def test_amoxicillin_vs_penicillin_allergy_returns_409(self, client, jwt_encode):
+        """Prescribing Amoxicillin to a patient with Penicillin allergy → 409."""
+        uid = "PAT-ALLERGY-001"
+        self._create_patient_profile_with_penicillin_allergy(client, jwt_encode, uid)
+
+        r = client.post(
+            "/emr/prescriptions",
+            headers=_auth_headers(jwt_encode, role="doctor", uid="DOC-ALLERGY-001"),
+            json={
+                "patient_id":  uid,
+                "diagnosis":   "Throat infection",
+                "medications": [{"name": "Amoxicillin", "dosage": "500mg"}],
+            },
+        )
+        assert r.status_code == 409
+        data = r.get_json()
+        assert data["error"] == "allergy_conflict"
+        assert isinstance(data["conflicts"], list)
+        assert len(data["conflicts"]) >= 1
+        assert data["conflicts"][0]["medication"] == "Amoxicillin"
+        assert data["conflicts"][0]["allergy"] == "Penicillin"
+
+    def test_conflict_prescription_not_saved_on_409(self, client, jwt_encode):
+        """When 409 is returned the prescription must NOT be written to the DB."""
+        from emr import store
+        uid = "PAT-ALLERGY-002"
+        self._create_patient_profile_with_penicillin_allergy(client, jwt_encode, uid)
+
+        client.post(
+            "/emr/prescriptions",
+            headers=_auth_headers(jwt_encode, role="doctor", uid="DOC-ALLERGY-002"),
+            json={
+                "patient_id":  uid,
+                "diagnosis":   "Skin infection",
+                "medications": [{"name": "Amoxicillin"}],
+            },
+        )
+
+        # Verify nothing was written
+        saved = store.prescriptions_for_patient(uid)
+        assert saved == [], f"Expected no prescriptions, found: {saved}"
+
+    # ── 201 with override ─────────────────────────────────────────────────────
+
+    def test_override_flag_saves_prescription(self, client, jwt_encode):
+        """Same conflict + override_allergy_check: true → 201, prescription saved."""
+        uid = "PAT-ALLERGY-003"
+        self._create_patient_profile_with_penicillin_allergy(client, jwt_encode, uid)
+
+        r = client.post(
+            "/emr/prescriptions",
+            headers=_auth_headers(jwt_encode, role="doctor", uid="DOC-ALLERGY-003"),
+            json={
+                "patient_id":           uid,
+                "diagnosis":            "Throat infection",
+                "medications":          [{"name": "Amoxicillin", "dosage": "500mg"}],
+                "override_allergy_check": True,
+            },
+        )
+        assert r.status_code == 201
+        data = r.get_json()
+        assert data["patient_id"] == uid
+
+    def test_override_prescription_actually_stored(self, client, jwt_encode):
+        """After override 201 the prescription must be retrievable."""
+        from emr import store
+        uid = "PAT-ALLERGY-004"
+        self._create_patient_profile_with_penicillin_allergy(client, jwt_encode, uid)
+
+        client.post(
+            "/emr/prescriptions",
+            headers=_auth_headers(jwt_encode, role="doctor", uid="DOC-ALLERGY-004"),
+            json={
+                "patient_id":           uid,
+                "diagnosis":            "Ear infection",
+                "medications":          [{"name": "Amoxicillin"}],
+                "override_allergy_check": True,
+            },
+        )
+        saved = store.prescriptions_for_patient(uid)
+        assert len(saved) == 1
+        assert saved[0]["medications"][0]["name"] == "Amoxicillin"
+
+    def test_override_produces_audit_log_entry(self, client, jwt_encode):
+        """Override must write a prescription_allergy_override audit entry."""
+        uid = "PAT-ALLERGY-005"
+        doc_email = "overriding.doctor@test.com"
+        self._create_patient_profile_with_penicillin_allergy(client, jwt_encode, uid)
+
+        token = jwt_encode({
+            "sub": doc_email,
+            "uid": "DOC-ALLERGY-005",
+            "role": "doctor",
+            "exp": time.time() + 3600,
+        })
+        client.post(
+            "/emr/prescriptions",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={
+                "patient_id":           uid,
+                "diagnosis":            "Test override audit",
+                "medications":          [{"name": "Amoxicillin"}],
+                "override_allergy_check": True,
+            },
+        )
+
+        # Check the audit_log table for the override entry
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server"))
+        from db import db_cursor
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                "SELECT * FROM audit_log WHERE action='prescription_allergy_override' AND target=%s",
+                (uid,),
+            )
+            rows = cur.fetchall()
+        assert len(rows) >= 1, "Expected audit_log entry for prescription_allergy_override"
+        assert "Amoxicillin" in rows[0]["detail"]
+
+    # ── No allergies recorded ─────────────────────────────────────────────────
+
+    def test_no_allergies_recorded_prescription_succeeds(self, client, jwt_encode):
+        """Patient has an EMR profile but no allergies → prescription succeeds."""
+        uid = "PAT-ALLERGY-006"
+        client.put(
+            f"/emr/patient/{uid}/profile",
+            headers=_auth_headers(jwt_encode, role="patient", uid=uid),
+            json={"name": "No Allergy Patient", "allergies": []},
+        )
+
+        r = client.post(
+            "/emr/prescriptions",
+            headers=_auth_headers(jwt_encode, role="doctor"),
+            json={
+                "patient_id":  uid,
+                "diagnosis":   "Fever",
+                "medications": [{"name": "Amoxicillin", "dosage": "500mg"}],
+            },
+        )
+        assert r.status_code == 201
+
+    # ── No EMR profile at all ─────────────────────────────────────────────────
+
+    def test_no_emr_profile_prescription_succeeds(self, client, jwt_encode):
+        """Patient with no EMR profile → no conflict possible → prescription saved."""
+        uid = "PAT-ALLERGY-007"  # No profile created for this patient
+
+        r = client.post(
+            "/emr/prescriptions",
+            headers=_auth_headers(jwt_encode, role="doctor"),
+            json={
+                "patient_id":  uid,
+                "diagnosis":   "Bacterial infection",
+                "medications": [{"name": "Amoxicillin", "dosage": "500mg"}],
+            },
+        )
+        assert r.status_code == 201, f"Expected 201, got {r.status_code}: {r.get_json()}"
+
+    # ── Allergy string normalisation round-trip via profile endpoint ──────────
+
+    def test_allergy_comma_string_saved_as_list(self, client, jwt_encode):
+        """
+        If the browser sends allergies as a comma-separated string (the known
+        bug in emr.html), the API should still persist it as a proper list.
+        """
+        # Use a unique UID unrelated to any other test to avoid rate-limiter 429
+        uid = "PAT-NORM-ROUNDTRIP"
+        # Simulate the broken browser payload: allergies as a string
+        r = client.put(
+            f"/emr/patient/{uid}/profile",
+            headers=_auth_headers(jwt_encode, role="patient", uid=uid),
+            json={"allergies": "Penicillin, Latex"},
+        )
+        assert r.status_code in (200, 201)
+        data = r.get_json()
+        # The stored value must be a list, not a string
+        assert isinstance(data["allergies"], list), (
+            f"Expected list, got {type(data['allergies'])}: {data['allergies']}"
+        )
+        assert "Penicillin" in data["allergies"]
+        assert "Latex" in data["allergies"]

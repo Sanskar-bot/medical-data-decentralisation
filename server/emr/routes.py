@@ -112,10 +112,14 @@ def upsert_patient_profile(patient_id):
     if existing:
         # Partial update — merge incoming fields into existing
         for key in ("name", "age", "gender", "blood_group",
-                     "medical_history", "allergies", "emergency_contact",
+                     "medical_history", "emergency_contact",
                      "past_visits"):
             if key in body:
                 existing[key] = body[key]
+        # Allergies require normalisation: the browser may send a
+        # comma-separated string; we always persist a list.
+        if "allergies" in body:
+            existing["allergies"] = models._norm_allergy_list(body["allergies"])
         existing["updated_at"] = models._now_iso()
         store.upsert_profile(existing)
         _audit("emr_profile_updated", actor=p.get("sub", ""), target=patient_id)
@@ -246,6 +250,44 @@ def create_prescription():
     errors = models.validate_prescription(body)
     if errors:
         return jsonify({"error": "validation_failed", "details": errors}), 400
+
+    # ── Allergy / interaction safety check ───────────────────────────────────
+    # Fetch the patient's EMR profile (None if they haven't created one yet).
+    # A missing profile is not an error — it simply means no allergies are
+    # recorded, so no conflicts are possible.
+    patient_profile = store.get_profile(body["patient_id"])
+    recorded_allergies = []
+    if patient_profile:
+        raw = patient_profile.get("allergies", [])
+        recorded_allergies = models._norm_allergy_list(raw)
+
+    conflicts = models.check_allergy_conflicts(
+        recorded_allergies,
+        body.get("medications", []),
+    )
+
+    if conflicts:
+        override = body.get("override_allergy_check") is True
+        if not override:
+            # Return 409 Conflict — this is a clinical conflict, not a
+            # malformed request (400).  The doctor can override via the UI.
+            return jsonify({
+                "error":     "allergy_conflict",
+                "conflicts": conflicts,
+            }), 409
+
+        # Override was explicitly acknowledged — save and audit.
+        conflict_summary = "; ".join(
+            f"{c['medication']} vs {c['allergy']} allergy ({c['severity']})"
+            for c in conflicts
+        )
+        _audit(
+            "prescription_allergy_override",
+            actor=jwt_p.get("sub", ""),
+            target=body["patient_id"],
+            detail=conflict_summary,
+        )
+    # ── End safety check ──────────────────────────────────────────────────────
 
     rx = models.new_prescription(body)
     store.add_prescription(rx)
