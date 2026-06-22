@@ -1144,10 +1144,11 @@ def doctor_request_access():
     if err: return err
     try:
         d = request.get_json(force=True) or {}
-        # Resolve username → profile_code before forwarding
-        pat_code = _resolve_patient_code(d.get("patient_code", ""))
+        # Accept either key — JS dashboard sends 'profile_code', older callers send 'patient_code'
+        raw_code = d.get("profile_code") or d.get("patient_code") or ""
+        pat_code = _resolve_patient_code(raw_code.strip())
         if not pat_code:
-            return jsonify({"error": "Patient username is required"}), 400
+            return jsonify({"error": "Patient identifier is required"}), 400
         try:
             r = http.post(
                 f"{DOCTOR_PORTAL}/api/request_access",
@@ -1181,10 +1182,11 @@ def doctor_fetch_record():
     if err: return err
     try:
         d = request.get_json(force=True) or {}
-        # Resolve username → profile_code before forwarding
-        pat_code = _resolve_patient_code(d.get("patient_code", ""))
+        # Accept either key name — JS sends 'profile_code', older callers send 'patient_code'
+        raw_code = d.get("profile_code") or d.get("patient_code") or ""
+        pat_code = _resolve_patient_code(raw_code.strip())
         if not pat_code:
-            return jsonify({"error": "Patient username is required"}), 400
+            return jsonify({"error": "Patient identifier is required"}), 400
         try:
             r = http.post(
                 f"{DOCTOR_PORTAL}/api/fetch_record",
