@@ -2003,6 +2003,45 @@ EMR_LR   = os.path.join(ROOT, "server", "emr_data", "emr_lab_reports.json")
 NOTES_DB = os.path.join(ROOT, "server", "doctor_notes.json")
 
 
+def _enrich_with_doctor_name(records: list) -> list:
+    """Enrich EMR records with the doctor's actual name from the users table."""
+    if not _HAS_PSYCOPG2 or not records:
+        return records
+    # Collect unique doctor identifiers (could be code, UUID, or email)
+    doctor_ids = set()
+    for r in records:
+        did = r.get("doctor_id") or r.get("doctor_email") or ""
+        if did:
+            doctor_ids.add(did)
+    if not doctor_ids:
+        return records
+    # Bulk lookup
+    name_map = {}
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        for did in doctor_ids:
+            if did in name_map:
+                continue
+            cur.execute(
+                "SELECT name, doctor_code FROM users WHERE doctor_code=%s OR id::text=%s OR email=%s LIMIT 1",
+                (did, did, did)
+            )
+            row = cur.fetchone()
+            if row and row.get("name"):
+                name_map[did] = row["name"]
+        cur.close(); conn.close()
+    except Exception as e:
+        pass  # best-effort
+    # Enrich records
+    for r in records:
+        did = r.get("doctor_id") or r.get("doctor_email") or ""
+        if did and did in name_map and not r.get("doctor_name"):
+            r["doctor_name"] = name_map[did]
+    return records
+
+
+
 def _load_json_safe(path):
     try:
         if os.path.exists(path):
@@ -2211,6 +2250,7 @@ def patient_prescriptions_direct():
         if isinstance(file_rxs, list):
             rxs = [r for r in file_rxs if r.get("patient_id") == pid]
 
+    rxs = _enrich_with_doctor_name(rxs)
     rxs.sort(key=lambda x: str(x.get("created_at", "")), reverse=True)
     return jsonify(rxs), 200
 
@@ -2262,6 +2302,7 @@ def patient_lab_reports_direct():
         if isinstance(file_lrs, list):
             lrs = [r for r in file_lrs if r.get("patient_id") == pid]
 
+    lrs = _enrich_with_doctor_name(lrs)
     lrs.sort(key=lambda x: str(x.get("created_at", "")), reverse=True)
     return jsonify(lrs), 200
 

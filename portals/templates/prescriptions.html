@@ -58,23 +58,32 @@
         var medsHtml = meds.length
           ? '<ul style="margin:var(--sp-3) 0 0; padding-left:var(--sp-5); font-size:var(--t-sm); color:var(--tx2);">' +
             meds.map(function(m) {
-              return '<li style="margin-bottom:var(--sp-1);">' +
-                '<strong>' + (m.name||m) + '</strong>' +
-                (m.dose ? ' — ' + m.dose : '') +
-                (m.frequency ? ' · ' + m.frequency : '') +
-              '</li>';
+              var medStr = '<strong>' + (m.name || m) + '</strong>';
+              if (m.dosage || m.dose)  medStr += ' <span style="color:var(--tx3);">– ' + (m.dosage || m.dose) + '</span>';
+              if (m.frequency)         medStr += ' <span style="color:var(--t5);">· ' + m.frequency + '</span>';
+              if (m.duration)          medStr += ' <span style="color:var(--tx3); font-size:var(--t-xs);">' + m.duration + '</span>';
+              return '<li style="margin-bottom:var(--sp-2);">' + medStr + '</li>';
             }).join('') + '</ul>'
-          : '<div style="font-size:var(--t-sm); color:var(--tx3); margin-top:var(--sp-3);">' + (rx.note||'No details') + '</div>';
+          : '<div style="font-size:var(--t-sm); color:var(--tx3); margin-top:var(--sp-3);">' + (rx.notes || rx.note || 'No medication details') + '</div>';
+
+        // Resolve best available doctor name
+        var drName = rx.doctor_name || rx.doctor_email || rx.doctor_id || '';
+        // Prefix "Dr." only if not already present and it's a real name (not a code/email)
+        if (drName && !drName.startsWith('Dr.') && !drName.includes('@') && !drName.match(/^[A-Z0-9]{8,}$/)) {
+          drName = 'Dr. ' + drName;
+        } else if (!drName) {
+          drName = 'Dr. —';
+        }
 
         return '<div class="card" style="display:flex;flex-direction:column;gap:var(--sp-2);">' +
           '<div class="section-header" style="margin-bottom:0;">' +
             '<span class="badge badge-gold">Rx</span>' +
-            '<span style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(rx.created_at||rx.date) + '</span>' +
+            '<span style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(rx.created_at || rx.date) + '</span>' +
           '</div>' +
-          '<div style="font-weight:600; color:var(--tx1); font-size:var(--t-sm);">' + (rx.doctor_name||'Dr. —') + '</div>' +
-          '<div style="font-size:var(--t-xs); color:var(--tx3);">Diagnosis: ' + (rx.diagnosis||'—') + '</div>' +
+          '<div style="font-weight:600; color:var(--tx1); font-size:var(--t-sm);">' + drName + '</div>' +
+          '<div style="font-size:var(--t-xs); color:var(--tx3); margin-bottom:var(--sp-1);">Diagnosis: ' + (rx.diagnosis || '—') + '</div>' +
           medsHtml +
-          (rx.instructions ? '<div style="margin-top:var(--sp-3); font-size:var(--t-xs); color:var(--tx3); border-top:1px solid var(--b1); padding-top:var(--sp-3);">📝 ' + rx.instructions + '</div>' : '') +
+          (rx.notes && meds.length ? '<div style="margin-top:var(--sp-3); font-size:var(--t-xs); color:var(--tx3); border-top:1px solid var(--b1); padding-top:var(--sp-3);">📝 ' + rx.notes + '</div>' : '') +
         '</div>';
       }).join('');
       grid.classList.remove('hidden');
