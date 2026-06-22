@@ -1141,8 +1141,7 @@ def doctor_load_profile():
 @app.route("/doctor/request_access", methods=["POST"])
 def doctor_request_access():
     """Send an access request to a patient — no password required.
-    The patient's password is only needed when they APPROVE the request
-    (to cryptographically share their key). Sending is just a notification.
+    Uses the JWT-authenticated /access/request endpoint on the backend.
     """
     err = _doctor_session_check()
     if err: return err
@@ -1154,19 +1153,53 @@ def doctor_request_access():
         if not pat_code:
             return jsonify({"error": "Patient identifier is required"}), 400
 
-        doc_code = session.get("doctor_code", "")
-        jwt      = session.get("jwt_token", "")
-        hdrs     = {**_headers()}
-        if jwt:
-            hdrs["Authorization"] = f"Bearer {jwt}"
+        jwt = session.get("jwt_token", "")
+        if not jwt:
+            return jsonify({"error": "Doctor session expired — please log in again"}), 401
 
-        # Go straight to backend — no password needed to send a request
+        # Resolve profile_code → internal patient UUID for /access/request
+        patient_uid = None
+        if _HAS_PSYCOPG2:
+            try:
+                conn = psycopg2.connect(DB_URL)
+                cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute(
+                    "SELECT id FROM users WHERE profile_code=%s AND role='patient' LIMIT 1",
+                    (pat_code,)
+                )
+                row = cur.fetchone()
+                cur.close(); conn.close()
+                if row:
+                    patient_uid = str(row["id"])
+            except Exception as e:
+                app.logger.warning("doctor_request_access uid lookup: %s", e)
+
+        if not patient_uid:
+            # Fallback: try backend resolve
+            try:
+                rx = http.get(f"{BACKEND}/api/resolve_username/{raw_code.strip()}",
+                              headers=_headers(), timeout=5)
+                if rx.ok:
+                    patient_uid = rx.json().get("id") or rx.json().get("uid") or pat_code
+            except Exception:
+                patient_uid = pat_code  # last resort: use profile_code as-is
+
+        hdrs = {**_headers(), "Authorization": f"Bearer {jwt}"}
+
         rb = http.post(
-            f"{BACKEND}/request_access",
-            json={"doctor_code": doc_code, "patient_code": pat_code},
+            f"{BACKEND}/access/request",
+            json={"patient_id": patient_uid},
             headers=hdrs, timeout=10,
         )
-        return jsonify(rb.json()), rb.status_code
+        # Safe JSON parse — backend may return empty body on some paths
+        try:
+            data = rb.json()
+        except Exception:
+            if rb.ok:
+                data = {"message": "Access request sent successfully"}
+            else:
+                data = {"error": f"Backend error ({rb.status_code}): {rb.text[:200]}"}
+        return jsonify(data), rb.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
