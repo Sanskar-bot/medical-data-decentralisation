@@ -715,11 +715,15 @@
         }
         body.innerHTML = reqs.map(function(r) {
           var badgeClass = r.status === 'approved' ? 'badge-approved' : (r.status === 'denied' ? 'badge-denied' : 'badge-pending');
+          var displayCode = r.profile_code || r.patient_code || r.username || '—';
+          var displayName = r.name ? (' <span style="color:var(--tx3);font-size:var(--t-xs);">(' + r.name + ')</span>') : '';
+          // Use profile_code, then username, then request_id as navigation key
+          var navCode = r.profile_code || r.patient_code || r.username || r.id || '';
           return '<tr>' +
-            '<td class="type-mono">' + (r.profile_code||r.patient_code||'—') + '</td>' +
+            '<td class="type-mono">' + displayCode + displayName + '</td>' +
             '<td><span class="badge ' + badgeClass + '">' + r.status + '</span></td>' +
             '<td>' + formatDate(r.requested_at||r.timestamp) + '</td>' +
-            '<td><button class="btn-secondary btn-sm" onclick="viewPatient(\'' + (r.profile_code||'') + '\')" type="button">View</button></td>' +
+            '<td>' + (navCode ? '<button class="btn-secondary btn-sm" onclick="viewPatient(\'' + navCode.replace(/'/g,"\'") + '\')" type="button">View</button>' : '<span style="color:var(--tx3);font-size:var(--t-xs);">No code</span>') + '</td>' +
             '</tr>';
         }).join('');
         document.getElementById('stat-notes-count').textContent = '—';
@@ -728,7 +732,7 @@
     }
 
     window.viewPatient = function(code) {
-      if (!code) return;
+      if (!code) { alert('Patient code not found. The patient may need to log in to generate a profile code.'); return; }
       window.location.href = '/doctor/view_patient?code=' + encodeURIComponent(code);
     };
   }

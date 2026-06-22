@@ -2289,28 +2289,85 @@ def doctor_my_requests():
                 )
                 doc_row = cur.fetchone()
                 if doc_row:
+                    doc_uuid = str(doc_row["id"])
+                    # Primary query: UUID-based doctor_id (new system)
                     cur.execute("""
                         SELECT a.id as req_id, a.status, a.created_at,
+                               a.patient_id,
                                p.profile_code, p.username, p.name, p.email
                         FROM access_db a
-                        JOIN users p ON a.patient_id = p.id
-                        WHERE a.doctor_id = %s
+                        LEFT JOIN users p ON a.patient_id::text = p.id::text
+                        WHERE a.doctor_id::text = %s
                         ORDER BY a.created_at DESC
-                    """, (str(doc_row["id"]),))
+                    """, (doc_uuid,))
+                    seen = set()
                     for row in cur.fetchall():
+                        rid = str(row.get("req_id", ""))
+                        if rid in seen: continue
+                        seen.add(rid)
+                        # profile_code from JOIN, or fallback to patient_id if it looks like a code
                         pc = row.get("profile_code") or ""
+                        if not pc:
+                            pid = row.get("patient_id", "")
+                            # If patient_id is not UUID-shaped, treat it as profile_code
+                            if pid and "-" not in str(pid) and len(str(pid)) <= 12:
+                                pc = str(pid).upper()
+                            else:
+                                # Try reverse lookup by UUID
+                                cur2 = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                                cur2.execute("SELECT profile_code, username, name, email FROM users WHERE id::text=%s LIMIT 1", (str(pid),))
+                                r2 = cur2.fetchone()
+                                cur2.close()
+                                if r2:
+                                    pc = r2.get("profile_code") or ""
                         ts = row["created_at"].isoformat() if row.get("created_at") else ""
                         reqs.append({
-                            "id":           str(row.get("req_id", "")),
-                            "request_id":   str(row.get("req_id", "")),
+                            "id":           rid,
+                            "request_id":   rid,
                             "profile_code": pc,
-                            "patient_code": pc,          # alias
+                            "patient_code": pc,
                             "username":     row.get("username") or pc,
                             "name":         row.get("name") or "",
                             "email":        row.get("email") or "",
                             "status":       row.get("status", "pending"),
                             "requested_at": ts,
-                            "timestamp":    ts,          # alias
+                            "timestamp":    ts,
+                            "approved_at":  ts,
+                            "doctor_code":  doc_code,
+                        })
+
+                    # Also check legacy rows where doctor_id = doctor_code string (not UUID)
+                    cur.execute("""
+                        SELECT a.id as req_id, a.status, a.created_at,
+                               a.patient_id,
+                               p.profile_code, p.username, p.name, p.email
+                        FROM access_db a
+                        LEFT JOIN users p ON a.patient_id::text = p.id::text
+                        WHERE a.doctor_id = %s
+                          AND a.id NOT IN (SELECT id FROM access_db WHERE doctor_id::text = %s)
+                        ORDER BY a.created_at DESC
+                    """, (doc_code, doc_uuid))
+                    for row in cur.fetchall():
+                        rid = str(row.get("req_id", ""))
+                        if rid in seen: continue
+                        seen.add(rid)
+                        pc = row.get("profile_code") or ""
+                        if not pc:
+                            pid = row.get("patient_id", "")
+                            if pid and "-" not in str(pid):
+                                pc = str(pid).upper()
+                        ts = row["created_at"].isoformat() if row.get("created_at") else ""
+                        reqs.append({
+                            "id":           rid,
+                            "request_id":   rid,
+                            "profile_code": pc,
+                            "patient_code": pc,
+                            "username":     row.get("username") or pc,
+                            "name":         row.get("name") or "",
+                            "email":        row.get("email") or "",
+                            "status":       row.get("status", "pending"),
+                            "requested_at": ts,
+                            "timestamp":    ts,
                             "approved_at":  ts,
                             "doctor_code":  doc_code,
                         })
@@ -2532,6 +2589,23 @@ def api_cache_password():
     if pw:
         session["_pw_cache"] = pw
     return jsonify({"status": "ok"}), 200
+
+
+# ─── Doctor: view patient detail page ──────────────────────────────────────
+@app.route("/doctor/view_patient")
+def doctor_view_patient():
+    """Navigate doctor to the patient detail page."""
+    if not session.get("logged_in"): return redirect("/")
+    if session.get("role") != "doctor": return redirect("/dashboard")
+    code = request.args.get("code", "").strip()
+    if not code:
+        return redirect("/dashboard")
+    # Try to resolve username to profile_code
+    resolved = _resolve_patient_code(code)
+    ctx = _page_context()
+    ctx["patient_code"] = resolved or code
+    return render_template("patient_detail.html", **ctx)
+
 
 if __name__ == "__main__":
     print("  ðŸŒ  Landing Page â†’ http://127.0.0.1:5003")
