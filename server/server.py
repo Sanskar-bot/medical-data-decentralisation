@@ -1952,18 +1952,35 @@ def auth_upgrade_password():
 
 @app.route("/api/resolve_username/<username>", methods=["GET"])
 def resolve_username(username):
+    """Resolve a username, profile_code, or doctor_code to a user record."""
     auth_err = _require_api_key()
     if auth_err:
         return auth_err
+    # Try username first, then profile_code, then doctor_code
     u = _db_get_user_by_username(username)
+    if not u:
+        u = _db_get_user_by_profile_code(username)
+    if not u:
+        # Try by doctor_code
+        try:
+            with db_cursor(commit=False) as cur:
+                cur.execute("SELECT * FROM users WHERE doctor_code=%s LIMIT 1", (username,))
+                row = cur.fetchone()
+                if row:
+                    u = dict(row)
+        except Exception:
+            pass
     if not u:
         return jsonify({"error": "user_not_found"}), 404
     return jsonify({
+        "id": str(u.get("id", "")),
+        "uid": str(u.get("id", "")),
         "username": u.get("username"),
         "profile_code": u.get("profile_code", ""),
         "doctor_code": u.get("doctor_code", ""),
         "role": u.get("role", "patient"),
         "name": u.get("name", ""),
+        "email": u.get("email", ""),
     }), 200
 
 

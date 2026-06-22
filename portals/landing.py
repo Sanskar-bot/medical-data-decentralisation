@@ -2164,23 +2164,104 @@ def patient_timeline():
 
 @app.route("/api/patient/prescriptions-direct", methods=["GET"])
 def patient_prescriptions_direct():
-    """Returns all prescriptions for the logged-in patient directly from file (no JWT needed)."""
+    """Returns all prescriptions for the logged-in patient.
+    Reads from PostgreSQL EMR table first, falls back to flat file."""
     if not session.get("logged_in"):
         return jsonify({"error": "unauthenticated"}), 401
-    pid = session.get("profile_code", "")
-    rxs = [r for r in _load_json_safe(EMR_RX) if r.get("patient_id") == pid]
-    rxs.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    pid      = session.get("profile_code", "")
+    jwt_tok  = session.get("jwt_token", "")
+    rxs      = []
+
+    # Primary: PostgreSQL via JWT
+    if jwt_tok:
+        try:
+            hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
+            r = http.get(f"{BACKEND}/emr/prescriptions", headers=hdrs, timeout=8)
+            if r.ok:
+                data = r.json()
+                rxs = data if isinstance(data, list) else data.get("prescriptions", [])
+        except Exception as e:
+            app.logger.debug("prescriptions JWT fetch: %s", e)
+
+    # Secondary: direct PostgreSQL query
+    if not rxs and _HAS_PSYCOPG2:
+        try:
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            # Resolve profile_code -> UUID
+            cur.execute("SELECT id FROM users WHERE profile_code=%s LIMIT 1", (pid,))
+            pt = cur.fetchone()
+            if pt:
+                patient_uuid = str(pt["id"])
+                cur.execute("""
+                    SELECT * FROM emr_prescriptions
+                    WHERE patient_id::text = %s OR patient_id = %s
+                    ORDER BY created_at DESC
+                """, (patient_uuid, pid))
+                for row in cur.fetchall():
+                    rxs.append(dict(row))
+            cur.close(); conn.close()
+        except Exception as e:
+            app.logger.debug("prescriptions psycopg2 fetch: %s", e)
+
+    # Fallback: flat file
+    if not rxs:
+        file_rxs = _load_json_safe(EMR_RX)
+        if isinstance(file_rxs, list):
+            rxs = [r for r in file_rxs if r.get("patient_id") == pid]
+
+    rxs.sort(key=lambda x: str(x.get("created_at", "")), reverse=True)
     return jsonify(rxs), 200
 
 
 @app.route("/api/patient/lab-reports-direct", methods=["GET"])
 def patient_lab_reports_direct():
-    """Returns all lab reports for the logged-in patient directly from file (no JWT needed)."""
+    """Returns all lab reports for the logged-in patient.
+    Reads from PostgreSQL EMR table first, falls back to flat file."""
     if not session.get("logged_in"):
         return jsonify({"error": "unauthenticated"}), 401
-    pid = session.get("profile_code", "")
-    lrs = [r for r in _load_json_safe(EMR_LR) if r.get("patient_id") == pid]
-    lrs.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    pid     = session.get("profile_code", "")
+    jwt_tok = session.get("jwt_token", "")
+    lrs     = []
+
+    # Primary: PostgreSQL via JWT
+    if jwt_tok:
+        try:
+            hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
+            r = http.get(f"{BACKEND}/emr/lab-reports", headers=hdrs, timeout=8)
+            if r.ok:
+                data = r.json()
+                lrs = data if isinstance(data, list) else data.get("lab_reports", data.get("reports", []))
+        except Exception as e:
+            app.logger.debug("lab-reports JWT fetch: %s", e)
+
+    # Secondary: direct PostgreSQL query
+    if not lrs and _HAS_PSYCOPG2:
+        try:
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT id FROM users WHERE profile_code=%s LIMIT 1", (pid,))
+            pt = cur.fetchone()
+            if pt:
+                patient_uuid = str(pt["id"])
+                cur.execute("""
+                    SELECT * FROM emr_lab_reports
+                    WHERE patient_id::text = %s OR patient_id = %s
+                    ORDER BY created_at DESC
+                """, (patient_uuid, pid))
+                for row in cur.fetchall():
+                    lrs.append(dict(row))
+            cur.close(); conn.close()
+        except Exception as e:
+            app.logger.debug("lab-reports psycopg2 fetch: %s", e)
+
+    # Fallback: flat file
+    if not lrs:
+        file_lrs = _load_json_safe(EMR_LR)
+        if isinstance(file_lrs, list):
+            lrs = [r for r in file_lrs if r.get("patient_id") == pid]
+
+    lrs.sort(key=lambda x: str(x.get("created_at", "")), reverse=True)
     return jsonify(lrs), 200
 
 
