@@ -2290,16 +2290,16 @@ def doctor_my_requests():
                 doc_row = cur.fetchone()
                 if doc_row:
                     doc_uuid = str(doc_row["id"])
-                    # Primary query: UUID-based doctor_id (new system)
+                    # Query by BOTH UUID and doctor_code to handle old + new rows
                     cur.execute("""
                         SELECT a.id as req_id, a.status, a.created_at,
                                a.patient_id,
                                p.profile_code, p.username, p.name, p.email
                         FROM access_db a
                         LEFT JOIN users p ON a.patient_id::text = p.id::text
-                        WHERE a.doctor_id::text = %s
+                        WHERE a.doctor_id::text = %s OR a.doctor_id = %s
                         ORDER BY a.created_at DESC
-                    """, (doc_uuid,))
+                    """, (doc_uuid, doc_code))
                     seen = set()
                     for row in cur.fetchall():
                         rid = str(row.get("req_id", ""))
@@ -2336,41 +2336,6 @@ def doctor_my_requests():
                             "doctor_code":  doc_code,
                         })
 
-                    # Also check legacy rows where doctor_id = doctor_code string (not UUID)
-                    cur.execute("""
-                        SELECT a.id as req_id, a.status, a.created_at,
-                               a.patient_id,
-                               p.profile_code, p.username, p.name, p.email
-                        FROM access_db a
-                        LEFT JOIN users p ON a.patient_id::text = p.id::text
-                        WHERE a.doctor_id = %s
-                          AND a.id NOT IN (SELECT id FROM access_db WHERE doctor_id::text = %s)
-                        ORDER BY a.created_at DESC
-                    """, (doc_code, doc_uuid))
-                    for row in cur.fetchall():
-                        rid = str(row.get("req_id", ""))
-                        if rid in seen: continue
-                        seen.add(rid)
-                        pc = row.get("profile_code") or ""
-                        if not pc:
-                            pid = row.get("patient_id", "")
-                            if pid and "-" not in str(pid):
-                                pc = str(pid).upper()
-                        ts = row["created_at"].isoformat() if row.get("created_at") else ""
-                        reqs.append({
-                            "id":           rid,
-                            "request_id":   rid,
-                            "profile_code": pc,
-                            "patient_code": pc,
-                            "username":     row.get("username") or pc,
-                            "name":         row.get("name") or "",
-                            "email":        row.get("email") or "",
-                            "status":       row.get("status", "pending"),
-                            "requested_at": ts,
-                            "timestamp":    ts,
-                            "approved_at":  ts,
-                            "doctor_code":  doc_code,
-                        })
                 cur.close(); conn.close()
             except Exception as e:
                 app.logger.debug("doctor_my_requests psycopg2: %s", e)
@@ -2594,16 +2559,55 @@ def api_cache_password():
 # ─── Doctor: view patient detail page ──────────────────────────────────────
 @app.route("/doctor/view_patient")
 def doctor_view_patient():
-    """Navigate doctor to the patient detail page."""
+    """Navigate doctor to the patient detail page.
+    Accepts: profile_code, username, OR access_db request UUID.
+    Resolves all to a profile_code before rendering.
+    """
     if not session.get("logged_in"): return redirect("/")
     if session.get("role") != "doctor": return redirect("/dashboard")
     code = request.args.get("code", "").strip()
     if not code:
         return redirect("/dashboard")
-    # Try to resolve username to profile_code
-    resolved = _resolve_patient_code(code)
+
+    profile_code = code  # default fallback
+
+    # If code looks like a UUID (access_db request id), resolve patient_id → profile_code
+    import re as _re
+    if _re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', code.lower()):
+        if _HAS_PSYCOPG2:
+            try:
+                conn = psycopg2.connect(DB_URL)
+                cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                # Try as access_db.id first
+                cur.execute("SELECT patient_id FROM access_db WHERE id::text=%s LIMIT 1", (code,))
+                row = cur.fetchone()
+                if row:
+                    patient_id = str(row["patient_id"])
+                    # patient_id could be UUID or profile_code
+                    if _re.match(r'^[0-9a-f]{8}-', patient_id.lower()):
+                        cur.execute("SELECT profile_code, username FROM users WHERE id::text=%s LIMIT 1", (patient_id,))
+                        u = cur.fetchone()
+                        if u:
+                            profile_code = u.get("profile_code") or u.get("username") or code
+                    else:
+                        profile_code = patient_id  # it's already a profile_code
+                else:
+                    # Try as patient UUID directly
+                    cur.execute("SELECT profile_code, username FROM users WHERE id::text=%s LIMIT 1", (code,))
+                    u = cur.fetchone()
+                    if u:
+                        profile_code = u.get("profile_code") or u.get("username") or code
+                cur.close(); conn.close()
+            except Exception as e:
+                app.logger.debug("doctor_view_patient uuid resolve: %s", e)
+    else:
+        # Try to resolve username to profile_code
+        resolved = _resolve_patient_code(code)
+        if resolved:
+            profile_code = resolved
+
     ctx = _page_context()
-    ctx["patient_code"] = resolved or code
+    ctx["patient_code"] = profile_code
     return render_template("patient_detail.html", **ctx)
 
 
