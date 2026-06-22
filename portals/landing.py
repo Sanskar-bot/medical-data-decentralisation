@@ -29,7 +29,8 @@ from common.secure_key_store import SecureKeyStore
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
-app = Flask(__name__, template_folder=TEMPLATE_DIR)
+STATIC_DIR   = os.path.join(os.path.dirname(__file__), "static")
+app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 
 # Shared secret key: same file used by patient_portal and doctor_portal
 # so session cookies are accepted across all three apps.
@@ -47,6 +48,12 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV") != "development",  # fix #14
     PERMANENT_SESSION_LIFETIME=3600 * 8,   # 8-hour session
 )
+
+# ── Template context: inject `now` for dashboard greeting ─────────────────────
+from datetime import datetime as _datetime
+@app.context_processor
+def _inject_now():
+    return {'now': _datetime.now()}
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 BACKEND     = os.environ.get("SERVER_BASE", "http://127.0.0.1:5000")

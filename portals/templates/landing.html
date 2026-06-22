@@ -1,335 +1,518 @@
-﻿<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width, initial-scale=1"> <title>MedVault — Secure Health Data Platform</title> <meta name="description" content="MedVault: Patient-controlled, cryptographically secured medical records. Login or Sign Up to get started."> <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"> <style> :root {
- --bg-from: #0d0221;
- --bg-to: #1a0533;
- --purple: #7c3aed;
- --purple-light: #a78bfa;
- --purple-dark: #4a1a8a;
- --glass: rgba(255,255,255,0.07);
- --glass-border: rgba(255,255,255,0.13);
- --glass-hover: rgba(255,255,255,0.12);
- --text: #f8f4ff;
- --text-muted: rgba(248,244,255,0.60);
- --input-bg: rgba(255,255,255,0.08);
- --input-border: rgba(255,255,255,0.18);
- --input-focus: rgba(124,58,237,0.70);
- --danger: #f87171;
- --success: #6ee7b7;
- --radius: 18px;
- --shadow: 0 8px 40px rgba(0,0,0,0.45);
-}
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07090F">
+  <meta name="description" content="MedVault — Patient-owned encrypted medical records. Your health data belongs to you, not to hospitals or insurers.">
+  <title>MedVault — Patient-Owned Encrypted Medical Records</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
+</head>
+<body>
 
-body {
- font-family: 'Inter', sans-serif;
- background: linear-gradient(135deg, var(--bg-from) 0%, var(--bg-to) 60%, #2a0a5e 100%);
- min-height: 100vh;
- color: var(--text);
- display: flex;
- flex-direction: column;
- position: relative;
- overflow-x: hidden;
-}
+  <!-- ── NAV ── -->
+  <nav class="landing-nav" aria-label="Main navigation">
+    <div class="landing-nav-logo">Med<span>VAULT</span></div>
+    <div class="landing-nav-links">
+      <a href="#how-it-works">How it works</a>
+      <a href="#security">Security</a>
+      <a href="#trust">Architecture</a>
+    </div>
+    <div class="landing-nav-actions">
+      <button class="btn-secondary btn-sm" id="nav-login-btn" type="button">Sign in</button>
+      <button class="btn-primary btn-sm" id="nav-register-btn" type="button">Get started</button>
+    </div>
+  </nav>
 
-/* ── Animated background orbs ─────────────────── */
-.orb {
- position: fixed;
- border-radius: 50%;
- filter: blur(90px);
- opacity: 0.30;
- animation: float 10s ease-in-out infinite alternate;
- pointer-events: none;
- z-index: 0;
-}
-.orb-1 { width: 520px; height: 520px; background: #7c3aed; top: -180px; left: -180px; animation-delay: 0s; }
-.orb-2 { width: 400px; height: 400px; background: #db2777; top: 40%; right: -120px; animation-delay: 3s; }
-.orb-3 { width: 300px; height: 300px; background: #2563eb; bottom: -100px; left: 30%; animation-delay: 6s; }
-@keyframes float { from { transform: translateY(0) scale(1); } to { transform: translateY(-40px) scale(1.06); } }
+  <!-- ── HERO ── -->
+  <section aria-labelledby="hero-headline" style="background: var(--s0);">
+    <div class="hero">
+      <div class="hero-left fade-in">
+        <p class="landing-section-label">Zero-Trust Medical Platform</p>
+        <h1 class="hero-headline" id="hero-headline">
+          Your health data,<br>
+          <em>only yours.</em>
+        </h1>
+        <p class="hero-sub">
+          MedVault gives patients cryptographic ownership of their medical records.
+          Doctors access only what you approve, only when you allow it.
+        </p>
+        <div class="hero-actions">
+          <button class="btn-primary" id="hero-register-btn" type="button">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+            Create your vault
+          </button>
+          <button class="btn-secondary" id="hero-login-btn" type="button">Sign in</button>
+        </div>
+      </div>
 
-/* ── Layout ───────────────────────────────────── */
-.wrapper {
- position: relative;
- z-index: 1;
- display: flex;
- flex-direction: column;
- min-height: 100vh;
- align-items: center;
- padding: 32px 16px 48px;
-}
+      <!-- Vault visual -->
+      <div class="vault-visual" aria-hidden="true">
+        <div class="vault-ring vault-ring-1"></div>
+        <div class="vault-ring vault-ring-2"></div>
+        <div class="vault-ring vault-ring-3"></div>
+        <div class="vault-ring vault-ring-4"></div>
+        <!-- orbital dots -->
+        <div class="vault-dot" style="top:28px; left:50%; transform:translateX(-50%); background: var(--p5);"></div>
+        <div class="vault-dot" style="bottom:28px; left:50%; transform:translateX(-50%); background: var(--t5);"></div>
+        <div class="vault-dot" style="left:28px; top:50%; transform:translateY(-50%); background: var(--g5);"></div>
+        <div class="vault-dot" style="right:28px; top:50%; transform:translateY(-50%); background: var(--p5);"></div>
+        <div class="vault-core">
+          <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="var(--p6)" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
 
-/* ── Navbar ───────────────────────────────────── */
-nav {
- width: 100%; max-width: 1100px;
- display: flex; align-items: center; justify-content: space-between;
- padding: 0 8px 32px;
-}
-.nav-logo { display: flex; align-items: center; gap: 10px; }
-.nav-logo-icon {
- width: 40px; height: 40px; border-radius: 12px;
- background: rgba(124,58,237,0.35);
- border: 1px solid rgba(124,58,237,0.55);
- display: flex; align-items: center; justify-content: center;
- font-size: 20px;
-}
-.nav-logo h1 { font-family: 'Playfair Display', serif; font-size: 20px; color: var(--text); }
-.nav-logo span { color: var(--purple-light); }
-.nav-badge {
- font-size: 11px; font-weight: 600; letter-spacing: .06em;
- padding: 5px 14px; border-radius: 20px;
- background: rgba(124,58,237,0.20); border: 1px solid rgba(124,58,237,0.40);
- color: var(--purple-light);
-}
+  <!-- ── STATS ── -->
+  <section aria-label="Platform statistics" style="background: var(--s0); padding: 0 var(--sp-10) var(--sp-20);">
+    <div style="max-width:1280px; margin:0 auto;">
+      <div class="stat-bar">
+        <div class="stat-bar-item fade-in" style="animation-delay:0ms">
+          <div class="stat-bar-value"><em>256</em>-bit</div>
+          <div class="stat-bar-label">AES-GCM Encryption</div>
+        </div>
+        <div class="stat-bar-item fade-in" style="animation-delay:60ms">
+          <div class="stat-bar-value"><em>Zero</em></div>
+          <div class="stat-bar-label">Data stored in plaintext</div>
+        </div>
+        <div class="stat-bar-item fade-in" style="animation-delay:120ms">
+          <div class="stat-bar-value"><em>100%</em></div>
+          <div class="stat-bar-label">Patient-controlled access</div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-/* ── Hero ─────────────────────────────────────── */
-.hero { text-align: center; margin-bottom: 48px; max-width: 640px; }
-.hero-tag {
- display: inline-block; font-size: 12px; font-weight: 600; letter-spacing: .10em;
- text-transform: uppercase; padding: 5px 18px; border-radius: 20px; margin-bottom: 18px;
- background: rgba(124,58,237,0.18); border: 1px solid rgba(124,58,237,0.35);
- color: var(--purple-light);
-}
-.hero h2 {
- font-family: 'Playfair Display', serif; font-size: clamp(36px,6vw,58px);
- font-weight: 800; line-height: 1.10;
- background: linear-gradient(130deg, #fff 30%, #a78bfa 70%, #db2777 100%);
- -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
- margin-bottom: 16px;
-}
-.hero p { font-size: 16px; color: var(--text-muted); line-height: 1.7; max-width: 480px; margin: 0 auto; }
+  <!-- ── HOW IT WORKS ── -->
+  <section id="how-it-works" aria-labelledby="how-title" style="border-top:1px solid var(--b1);">
+    <div class="landing-section">
+      <p class="landing-section-label">Process</p>
+      <h2 class="landing-section-title" id="how-title">Three steps to sovereign health data</h2>
+      <div class="grid-3" style="margin-top: var(--sp-8);">
+        <div class="how-step fade-in" style="animation-delay:0ms">
+          <div class="how-step-number">01</div>
+          <div class="how-step-title">Register</div>
+          <div class="how-step-desc">
+            Create your account. A unique RSA keypair is generated on your device.
+            Your private key never leaves your machine — not even to us.
+          </div>
+        </div>
+        <div class="how-step fade-in" style="animation-delay:80ms">
+          <div class="how-step-number">02</div>
+          <div class="how-step-title">Encrypt</div>
+          <div class="how-step-desc">
+            Your medical records are encrypted with AES-256-GCM using a data key
+            that only you control. The ciphertext is stored; the key lives with you.
+          </div>
+        </div>
+        <div class="how-step fade-in" style="animation-delay:160ms">
+          <div class="how-step-number">03</div>
+          <div class="how-step-title">Control Access</div>
+          <div class="how-step-desc">
+            When a doctor requests access, you approve it with your password.
+            Access is time-limited to 24 hours and every event is audit-logged.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-/* ── Cards container ──────────────────────────── */
-.cards { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 900px; }
+  <!-- ── TRUST / ARCHITECTURE ── -->
+  <section id="trust" aria-labelledby="trust-title" style="border-top:1px solid var(--b1);">
+    <div class="landing-section">
+      <div class="grid-sidebar" style="align-items:start;">
+        <div>
+          <p class="landing-section-label">Architecture</p>
+          <h2 class="landing-section-title" id="trust-title">Your data never leaves your hands</h2>
+          <div class="stack-4" style="margin-top: var(--sp-6);">
+            <div class="cluster-3">
+              <div style="width:6px;height:6px;background:var(--t5);border-radius:50%;flex-shrink:0;"></div>
+              <span class="type-label">Records are encrypted before leaving your device</span>
+            </div>
+            <div class="cluster-3">
+              <div style="width:6px;height:6px;background:var(--t5);border-radius:50%;flex-shrink:0;"></div>
+              <span class="type-label">The server stores ciphertext only — never plaintext</span>
+            </div>
+            <div class="cluster-3">
+              <div style="width:6px;height:6px;background:var(--t5);border-radius:50%;flex-shrink:0;"></div>
+              <span class="type-label">Doctor access is cryptographically gated by your approval</span>
+            </div>
+            <div class="cluster-3">
+              <div style="width:6px;height:6px;background:var(--t5);border-radius:50%;flex-shrink:0;"></div>
+              <span class="type-label">Every access event is recorded in the immutable audit log</span>
+            </div>
+            <div class="cluster-3">
+              <div style="width:6px;height:6px;background:var(--t5);border-radius:50%;flex-shrink:0;"></div>
+              <span class="type-label">Keys are wrapped with PBKDF2 — your password, your key</span>
+            </div>
+          </div>
+        </div>
+        <div id="security">
+          <div class="arch-diagram">
+            <div style="margin-bottom:var(--sp-3);">
+              <span class="arch-node arch-node-patient">Patient</span>
+            </div>
+            <div style="padding-left:var(--sp-6); color:var(--tx3); font-size:var(--t-xs); margin-bottom:var(--sp-2);">
+              ↓ encrypts with AES-256-GCM
+            </div>
+            <div style="margin-bottom:var(--sp-3);">
+              <span class="arch-node arch-node-data">Encrypted Record</span>
+              <span style="margin-left:var(--sp-3); font-size:var(--t-xs); color: var(--p6);">&#9679; stored on server</span>
+            </div>
+            <div style="padding-left:var(--sp-6); color:var(--tx3); font-size:var(--t-xs); margin-bottom:var(--sp-2);">
+              ↓ patient approves request
+            </div>
+            <div style="margin-bottom:var(--sp-3);">
+              <span class="arch-node" style="border-color:var(--b2); color:var(--tx3);">Wrapped Key</span>
+              <span style="margin-left:var(--sp-3); font-size:var(--t-xs); color:var(--g6);">&#9679; time-limited · 24h</span>
+            </div>
+            <div style="padding-left:var(--sp-6); color:var(--tx3); font-size:var(--t-xs); margin-bottom:var(--sp-2);">
+              ↓ decrypts with RSA private key
+            </div>
+            <div>
+              <span class="arch-node arch-node-doctor">Doctor</span>
+              <span style="margin-left:var(--sp-3); font-size:var(--t-xs); color:var(--tx3);">read-only access</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-/* ── Glass card ───────────────────────────────── */
-.card {
- background: var(--glass);
- border: 1px solid var(--glass-border);
- border-radius: var(--radius);
- padding: 32px 30px;
- backdrop-filter: blur(18px);
- -webkit-backdrop-filter: blur(18px);
- box-shadow: var(--shadow);
- flex: 1; min-width: 320px; max-width: 430px;
- transition: transform .25s, border-color .25s, box-shadow .25s;
-}
-.card:hover { transform: translateY(-4px); border-color: rgba(124,58,237,0.40); box-shadow: 0 16px 50px rgba(0,0,0,0.55); }
+  <!-- ── CTA ── -->
+  <section aria-label="Call to action" style="border-top:1px solid var(--b1);">
+    <div class="cta-section">
+      <div class="cta-box">
+        <h2 class="type-h2" style="margin-bottom:var(--sp-3);">Take ownership of your health data</h2>
+        <p style="color:var(--tx2); font-size:var(--t-md); margin-bottom:var(--sp-8); max-width:560px; margin-left:auto; margin-right:auto;">
+          Join MedVault and put your medical records back where they belong — in your hands.
+        </p>
+        <div class="cluster-3" style="justify-content:center;">
+          <button class="btn-primary" id="cta-register-btn" type="button">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+            Create your vault — it's free
+          </button>
+          <button class="btn-secondary" id="cta-login-btn" type="button">Sign in</button>
+        </div>
+      </div>
+    </div>
+  </section>
 
-.card-header { margin-bottom: 24px; }
-.card-icon { font-size: 28px; margin-bottom: 10px; }
-.card h3 { font-family: 'Playfair Display', serif; font-size: 22px; margin-bottom: 4px; }
-.card-sub { font-size: 13px; color: var(--text-muted); }
+  <!-- ── FOOTER ── -->
+  <footer class="landing-footer" aria-label="Site footer">
+    <div class="landing-footer-inner">
+      <div>
+        <div class="sidebar-logo-mark" style="font-size:var(--t-md); margin-bottom:var(--sp-3);">Med<span>VAULT</span></div>
+        <p style="font-size:var(--t-sm); color:var(--tx3); max-width:280px; line-height:1.6;">
+          A zero-trust medical records platform built for patient sovereignty.
+        </p>
+      </div>
+      <div>
+        <div style="font-size:var(--t-xs); text-transform:uppercase; letter-spacing:0.08em; color:var(--tx3); margin-bottom:var(--sp-4);">Platform</div>
+        <nav class="landing-footer-links" aria-label="Platform links">
+          <a href="#how-it-works">How it works</a>
+          <a href="#security">Security</a>
+          <a href="#trust">Architecture</a>
+        </nav>
+      </div>
+      <div>
+        <div style="font-size:var(--t-xs); text-transform:uppercase; letter-spacing:0.08em; color:var(--tx3); margin-bottom:var(--sp-4);">Legal</div>
+        <nav class="landing-footer-links" aria-label="Legal links">
+          <a href="#">Privacy Policy</a>
+          <a href="#">Terms of Service</a>
+          <a href="#">Data Processing</a>
+        </nav>
+      </div>
+    </div>
+    <div class="landing-footer-legal" style="max-width:1280px; margin:0 auto;">
+      &copy; 2026 MedVault. All records are encrypted end-to-end.
+      MedVault does not store plaintext health data.
+    </div>
+  </footer>
 
-/* ── Tabs ─────────────────────────────────────── */
-.tab-bar { display: flex; gap: 4px; background: rgba(0,0,0,0.25); border-radius: 10px; padding: 4px; margin-bottom: 20px; }
-.tab-btn {
- flex: 1; text-align: center; padding: 8px; border-radius: 7px;
- font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-muted);
- border: none; background: transparent; transition: all .15s;
-}
-.tab-btn.active { background: rgba(124,58,237,0.40); color: #fff; font-weight: 600; }
+  <!-- ── AUTH MODAL ── -->
+  <div id="auth-modal" style="display:none; position:fixed; inset:0; background:rgba(7,9,15,0.85); z-index:200; align-items:center; justify-content:center;">
+    <div class="auth-shell" style="max-width:900px; max-height:90vh; width:90%; border-radius:var(--r-md); overflow:auto; box-shadow:var(--shadow-lg); position:relative;">
 
-/* ── Form ─────────────────────────────────────── */
-.form-group { margin-bottom: 14px; }
-label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 7px; }
-input[type="text"], input[type="email"], input[type="password"] {
- width: 100%; padding: 12px 14px;
- background: var(--input-bg); border: 1.5px solid var(--input-border); border-radius: 11px;
- font-size: 14px; font-family: 'Inter', sans-serif; color: var(--text);
- outline: none; transition: border-color .20s, box-shadow .20s;
-}
-input::placeholder { color: rgba(248,244,255,0.30); }
-input:focus { border-color: var(--input-focus); box-shadow: 0 0 0 3px rgba(124,58,237,0.22); }
+      <!-- Left panel -->
+      <div class="auth-left">
+        <div class="sidebar-logo-mark" style="font-size:var(--t-md);">Med<span>VAULT</span></div>
+        <div>
+          <blockquote>
+            <p class="auth-quote">
+              "Your health data belongs to you.<br>
+              Not to hospitals. Not to insurers.<br>
+              Not to us."
+            </p>
+            <footer class="auth-quote-attr">— MedVault Privacy Commitment</footer>
+          </blockquote>
+        </div>
+        <div class="auth-trust-list">
+          <div class="auth-trust-item">AES-256-GCM Encryption</div>
+          <div class="auth-trust-item">Zero-Knowledge Architecture</div>
+          <div class="auth-trust-item">Full Audit Trail</div>
+        </div>
+      </div>
 
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      <!-- Right panel -->
+      <div class="auth-right" style="position:relative;">
+        <button id="auth-modal-close" type="button" style="position:absolute;top:var(--sp-4);right:var(--sp-4);" class="btn-ghost btn-sm" aria-label="Close">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
 
-/* ── Buttons ──────────────────────────────────── */
-.btn-primary {
- width: 100%; padding: 13px;
- border: none; border-radius: 11px; cursor: pointer;
- font-size: 14px; font-weight: 600; font-family: 'Inter', sans-serif;
- background: linear-gradient(135deg, #7c3aed, #4a1a8a);
- color: #fff; letter-spacing: .02em;
- transition: all .20s; box-shadow: 0 4px 18px rgba(124,58,237,0.35);
- display: flex; align-items: center; justify-content: center; gap: 8px;
- margin-top: 6px;
-}
-.btn-primary:hover { background: linear-gradient(135deg, #a78bfa, #7c3aed); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(124,58,237,0.45); }
-.btn-primary:active { transform: translateY(0); }
-.btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+        <div class="auth-form">
+          <!-- Tab switcher -->
+          <div class="auth-tab-switcher" role="tablist" aria-label="Sign in or register">
+            <button class="auth-tab active" data-role="login" role="tab" aria-selected="true" id="tab-login" type="button">Sign in</button>
+            <button class="auth-tab" data-role="register" role="tab" aria-selected="false" id="tab-register" type="button">Register</button>
+          </div>
 
-/* ── Divider ─────────────────────────────────── */
-.divider { height: 1px; background: var(--glass-border); margin: 18px 0; }
+          <!-- LOGIN FORM -->
+          <div id="role-login" class="auth-role-panel">
+            <h1 class="auth-form-title">Welcome back</h1>
+            <p class="auth-form-sub">Sign in with your email or username and password.</p>
+            <div id="login-alert" style="display:none;"></div>
+            <form id="login-form" novalidate>
+              <div class="input-group">
+                <label class="input-label" for="login-identifier">Email or username</label>
+                <input class="input-field" type="text" id="login-identifier" name="identifier" autocomplete="username" placeholder="you@example.com" required>
+              </div>
+              <div class="input-group">
+                <label class="input-label" for="login-password">Password</label>
+                <input class="input-field" type="password" id="login-password" name="password" autocomplete="current-password" placeholder="••••••••" required>
+              </div>
+              <button class="btn-primary w-full" type="submit" id="login-submit-btn">
+                <span id="login-btn-text">Sign in</span>
+                <span id="login-spinner" class="spinner" style="display:none;"></span>
+              </button>
+            </form>
+          </div>
 
-/* ── Alert ───────────────────────────────────── */
-.alert { padding: 11px 15px; border-radius: 10px; font-size: 13px; margin-bottom: 14px; display: none; }
-.alert-error { background: rgba(248,113,113,0.14); border: 1px solid rgba(248,113,113,0.35); color: var(--danger); }
-.alert-success { background: rgba(110,231,183,0.14); border: 1px solid rgba(110,231,183,0.35); color: var(--success); }
-.alert.show { display: block; }
+          <!-- REGISTER FORM -->
+          <div id="role-register" class="auth-role-panel hidden">
+            <h1 class="auth-form-title">Create your vault</h1>
+            <p class="auth-form-sub">Register as a patient or doctor.</p>
+            <div id="register-alert" style="display:none;"></div>
+            <!-- Role selector -->
+            <div class="auth-tab-switcher" role="tablist" aria-label="Account type" style="margin-bottom:var(--sp-5);">
+              <button class="auth-tab active" data-reg-role="patient" role="tab" aria-selected="true" id="reg-tab-patient" type="button">Patient</button>
+              <button class="auth-tab" data-reg-role="doctor" role="tab" aria-selected="false" id="reg-tab-doctor" type="button">Doctor</button>
+            </div>
+            <form id="register-form" novalidate>
+              <input type="hidden" id="reg-role" value="patient">
+              <div class="input-group">
+                <label class="input-label" for="reg-name">Full name</label>
+                <input class="input-field" type="text" id="reg-name" name="name" autocomplete="name" placeholder="Jane Smith" required>
+              </div>
+              <div class="input-group">
+                <label class="input-label" for="reg-email">Email address</label>
+                <input class="input-field" type="email" id="reg-email" name="email" autocomplete="email" placeholder="you@example.com" required>
+              </div>
+              <div class="input-group">
+                <label class="input-label" for="reg-username">Username</label>
+                <input class="input-field" type="text" id="reg-username" name="username" autocomplete="username" placeholder="janesmith" required>
+                <span class="input-hint">Lowercase letters, numbers, dot, underscore only</span>
+              </div>
+              <!-- Doctor-only fields -->
+              <div id="doctor-fields" class="hidden">
+                <div class="input-group">
+                  <label class="input-label" for="reg-specialization">Specialization</label>
+                  <input class="input-field" type="text" id="reg-specialization" name="specialization" placeholder="Cardiology">
+                </div>
+                <div class="input-group">
+                  <label class="input-label" for="reg-hospital">Hospital / Clinic</label>
+                  <input class="input-field" type="text" id="reg-hospital" name="hospital" placeholder="City General Hospital">
+                </div>
+              </div>
+              <div class="input-group">
+                <label class="input-label" for="reg-password">Password</label>
+                <input class="input-field" type="password" id="reg-password" name="password" autocomplete="new-password" placeholder="Min. 8 characters" required>
+                <span class="input-hint" id="password-strength"></span>
+              </div>
+              <button class="btn-primary w-full" type="submit" id="register-submit-btn">
+                <span id="register-btn-text">Create account</span>
+                <span id="register-spinner" class="spinner" style="display:none;"></span>
+              </button>
+            </form>
+          </div>
 
-/* ── Spinner ──────────────────────────────────── */
-.spin { display: inline-block; width: 15px; height: 15px; border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+        </div>
+      </div>
+    </div>
+  </div>
 
-/* ── Features strip ──────────────────────────── */
-.features { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; margin-top: 52px; max-width: 900px; width: 100%; }
-.feat {
- display: flex; align-items: flex-start; gap: 12px;
- background: var(--glass); border: 1px solid var(--glass-border);
- border-radius: 14px; padding: 16px 20px;
- flex: 1; min-width: 210px; max-width: 260px;
- backdrop-filter: blur(12px);
-}
-.feat-icon { font-size: 22px; flex-shrink: 0; }
-.feat-title { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
-.feat-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <script>
+  (function() {
+    var modal    = document.getElementById('auth-modal');
+    var closeBtn = document.getElementById('auth-modal-close');
 
-/* ── Footer ───────────────────────────────────── */
-footer { color: var(--text-muted); font-size: 12px; text-align: center; margin-top: auto; padding-top: 40px; }
+    function openModal(defaultTab) {
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+      if (defaultTab === 'register') {
+        document.querySelector('[data-role="register"]').click();
+      } else {
+        document.querySelector('[data-role="login"]').click();
+      }
+    }
+    function closeModal() {
+      modal.style.display = 'none';
+      document.body.style.overflow = '';
+    }
 
-/* ── Flash message (server-side) ─────────────── */
-.flash { padding: 11px 15px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
-.flash-error { background: rgba(248,113,113,0.14); border: 1px solid rgba(248,113,113,0.35); color: var(--danger); }
-.flash-success { background: rgba(110,231,183,0.14); border: 1px solid rgba(110,231,183,0.35); color: var(--success); }
+    // Open triggers
+    ['nav-login-btn','hero-login-btn','cta-login-btn'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('click', function() { openModal('login'); });
+    });
+    ['nav-register-btn','hero-register-btn','cta-register-btn'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('click', function() { openModal('register'); });
+    });
 
-@media (max-width: 680px) {
- .cards { flex-direction: column; align-items: center; }
- .card { max-width: 100%; }
- .form-row { grid-template-columns: 1fr; }
-}
-</style> </head> <body> <div class="orb orb-1"></div> <div class="orb orb-2"></div> <div class="orb orb-3"></div> <div class="wrapper"> <!-- Navbar --> <nav> <div class="nav-logo"> <div class="nav-logo-icon"></div> <h1>Med<span>Vault</span></h1> </div> <span class="nav-badge"> Zero-Trust Health Platform</span> </nav> <!-- Hero --> <div class="hero"> <div class="hero-tag">✦ Patient-Controlled Records</div> <h2>Your Health Data,<br>Your Keys</h2> <p>End-to-end encrypted medical records secured by RSA-2048 &amp; AES-256-GCM. You decide who sees your data — and for how long.</p> </div> <!-- Flash messages from server --> {% with messages = get_flashed_messages(with_categories=true) %}
- {% if messages %}
- {% for category, message in messages %}
- <div class="flash flash-{{ category }}" style="max-width:900px;width:100%;margin-bottom:8px;"> {{ message }}
- </div> {% endfor %}
- {% endif %}
- {% endwith %}
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });
+    document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
 
- <!-- Auth Cards --> <div class="cards"> <!-- ── LOGIN CARD ── --> <div class="card"> <div class="card-header"> <div class="card-icon"></div> <h3>Welcome Back</h3> <p class="card-sub">Sign in to your MedVault account</p> </div> <div id="login-alert" class="alert alert-error"></div> <div id="login-success" class="alert alert-success"></div> <form id="login-form" onsubmit="handleLogin(event)"> <div class="form-group"> <label for="login-email">Email or Username</label> <input id="login-email" type="text" placeholder="you@example.com or your_username" autocomplete="username" required> </div> <div class="form-group"> <label for="login-pw">Password</label> <input id="login-pw" type="password" placeholder="Your password" autocomplete="current-password" required> </div> <button class="btn-primary" type="submit" id="login-btn"> <span>Sign In</span> </button> </form> </div> <!-- ── REGISTER CARD ── --> <div class="card"> <div class="card-header"> <div class="card-icon"></div> <h3>Create Account</h3> <p class="card-sub">Register as Patient or Doctor</p> </div> <div id="reg-alert" class="alert alert-error"></div> <div id="reg-success" class="alert alert-success"></div> <!-- Role tabs --> <div class="tab-bar"> <button class="tab-btn active" id="tab-patient" onclick="switchTab('patient')"> Patient</button> <button class="tab-btn" id="tab-doctor" onclick="switchTab('doctor')"> Doctor</button> </div> <!-- Patient registration form --> <div id="form-patient"> <form onsubmit="handleRegister(event, 'patient')"> <div class="form-group"> <label for="p-name">Full Name *</label> <input id="p-name" type="text" placeholder="Ananya Sharma" required> </div> <div class="form-row"> <div class="form-group"> <label for="p-username">Username *</label> <input id="p-username" type="text" placeholder="ananya_sharma" required> </div> <div class="form-group"> <label for="p-email">Email *</label> <input id="p-email" type="email" placeholder="ananya@email.com" required> </div> </div> <div class="form-group"> <label for="p-age">Age</label> <input id="p-age" type="text" placeholder="28"> </div> <div class="form-row"> <div class="form-group"> <label for="p-pw">Password *</label> <input id="p-pw" type="password" placeholder="Strong password" required> </div> <div class="form-group"> <label for="p-pw2">Confirm *</label> <input id="p-pw2" type="password" placeholder="Repeat password" required> </div> </div> <button class="btn-primary" type="submit" id="reg-patient-btn"> <span>Create Patient Account</span> </button> </form> </div> <!-- Doctor registration form --> <div id="form-doctor" style="display:none;"> <form onsubmit="handleRegister(event, 'doctor')"> <div class="form-group"> <label for="d-name">Full Name *</label> <input id="d-name" type="text" placeholder="Dr. Priya Mehta" required> </div> <div class="form-row"> <div class="form-group"> <label for="d-username">Username *</label> <input id="d-username" type="text" placeholder="dr_priya" required> </div> <div class="form-group"> <label for="d-email">Email</label> <input id="d-email" type="email" placeholder="priya@hospital.com"> </div> </div> <div class="form-group"> <label for="d-spec">Specialization</label> <input id="d-spec" type="text" placeholder="Cardiologist"> </div> <div class="form-group"> <label for="d-hosp">Hospital / Clinic</label> <input id="d-hosp" type="text" placeholder="Apollo Hospital, Delhi"> </div> <div class="form-row"> <div class="form-group"> <label for="d-pw">Password *</label> <input id="d-pw" type="password" placeholder="Strong password" required> </div> <div class="form-group"> <label for="d-pw2">Confirm *</label> <input id="d-pw2" type="password" placeholder="Repeat password" required> </div> </div> <button class="btn-primary" type="submit" id="reg-doctor-btn"> <span>Create Doctor Account</span> </button> </form> </div> </div> </div><!-- /cards --> <!-- Feature strip --> <div class="features"> <div class="feat"> <div class="feat-icon"></div> <div> <div class="feat-title">RSA-2048 + AES-256-GCM</div> <div class="feat-desc">Your records are encrypted end-to-end. The server never sees plaintext.</div> </div> </div> <div class="feat"> <div class="feat-icon"></div> <div> <div class="feat-title">24-Hour Access Windows</div> <div class="feat-desc">Doctors only access your data after explicit consent, for a limited time.</div> </div> </div> <div class="feat"> <div class="feat-icon"></div> <div> <div class="feat-title">Full Audit Trail</div> <div class="feat-desc">Every action is logged with timestamps — visible only to you.</div> </div> </div> <div class="feat"> <div class="feat-icon"></div> <div> <div class="feat-title">You Hold the Keys</div> <div class="feat-desc">Private keys live in Windows Credential Manager, never on the server.</div> </div> </div> </div> <footer>MedVault &mdash; Minor Project &copy; 2026 &nbsp;·&nbsp; Zero-Trust Health Platform</footer> </div><!-- /wrapper --> <script> // ── Tab switching ─────────────────────────────────────────────────────────
-function switchTab(role) {
- ['patient','doctor'].forEach(r => {
- document.getElementById('tab-' + r).classList.toggle('active', r === role);
- document.getElementById('form-' + r).style.display = r === role ? 'block' : 'none';
- });
- document.getElementById('reg-alert').classList.remove('show');
- document.getElementById('reg-success').classList.remove('show');
-}
+    // ── Register role tabs ────────────────────────────────────────
+    document.querySelectorAll('[data-reg-role]').forEach(function(tab) {
+      tab.addEventListener('click', function() {
+        document.querySelectorAll('[data-reg-role]').forEach(function(t) { t.classList.remove('active'); });
+        tab.classList.add('active');
+        document.getElementById('reg-role').value = tab.dataset.regRole;
+        var df = document.getElementById('doctor-fields');
+        if (tab.dataset.regRole === 'doctor') { df.classList.remove('hidden'); }
+        else { df.classList.add('hidden'); }
+      });
+    });
 
-// ── Helpers ───────────────────────────────────────────────────────────────
-function showAlert(id, msg) {
- const el = document.getElementById(id);
- el.textContent = msg;
- el.classList.add('show');
-}
+    // ── Alert helper ──────────────────────────────────────────────
+    function showAlert(el, msg, type) {
+      el.className = 'alert alert-' + (type || 'error');
+      el.textContent = msg;
+      el.style.display = 'flex';
+    }
 
-function hideAlerts(...ids) {
- ids.forEach(id => document.getElementById(id)?.classList.remove('show'));
-}
+    // ── Login submit ──────────────────────────────────────────────
+    document.getElementById('login-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var btn = document.getElementById('login-submit-btn');
+      var alertEl = document.getElementById('login-alert');
+      var identifier = document.getElementById('login-identifier').value.trim();
+      var password   = document.getElementById('login-password').value;
 
-function setLoading(btnId, loading, defaultText) {
- const btn = document.getElementById(btnId);
- if (!btn) return;
- btn.disabled = loading;
- btn.innerHTML = loading
- ? '<span class="spin"></span> Please wait…'
- : `<span>${defaultText}</span>`;
-}
+      if (!identifier || !password) {
+        showAlert(alertEl, 'Email/username and password are required.', 'error');
+        return;
+      }
+      btn.disabled = true;
+      document.getElementById('login-btn-text').textContent = 'Signing in…';
+      document.getElementById('login-spinner').style.display = 'inline-block';
 
-// ── Login ─────────────────────────────────────────────────────────────────
-async function handleLogin(e) {
- e.preventDefault();
- hideAlerts('login-alert', 'login-success');
- const email = document.getElementById('login-email').value.trim();
- const pw = document.getElementById('login-pw').value;
- if (!email || !pw) { showAlert('login-alert', ' Username/email and password are required.'); return; }
+      fetch('/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email: identifier, password: password})
+      })
+      .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+      .then(function(res) {
+        if (res.ok && res.data.redirect) {
+          window.location.href = res.data.redirect;
+        } else {
+          showAlert(alertEl, res.data.error || 'Login failed. Please check your credentials.', 'error');
+          btn.disabled = false;
+          document.getElementById('login-btn-text').textContent = 'Sign in';
+          document.getElementById('login-spinner').style.display = 'none';
+        }
+      })
+      .catch(function() {
+        showAlert(alertEl, 'Network error. Please try again.', 'error');
+        btn.disabled = false;
+        document.getElementById('login-btn-text').textContent = 'Sign in';
+        document.getElementById('login-spinner').style.display = 'none';
+      });
+    });
 
- setLoading('login-btn', true, 'Sign In');
- try {
- const res = await fetch('/login', {
- method: 'POST',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ email, password: pw }),
- });
- const d = await res.json();
- if (!res.ok) throw new Error(d.error || 'Login failed');
- showAlert('login-success', ' Login successful! Redirecting…');
- document.getElementById('login-success').classList.add('show');
- setTimeout(() => { window.location.href = d.redirect || '/dashboard'; }, 800);
- } catch(err) {
- showAlert('login-alert', ' ' + err.message);
- } finally {
- setLoading('login-btn', false, 'Sign In');
- }
-}
+    // ── Register submit ───────────────────────────────────────────
+    document.getElementById('register-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var btn = document.getElementById('register-submit-btn');
+      var alertEl = document.getElementById('register-alert');
+      var role     = document.getElementById('reg-role').value;
+      var name     = document.getElementById('reg-name').value.trim();
+      var email    = document.getElementById('reg-email').value.trim();
+      var username = document.getElementById('reg-username').value.trim();
+      var password = document.getElementById('reg-password').value;
+      var spec     = document.getElementById('reg-specialization').value.trim();
+      var hosp     = document.getElementById('reg-hospital').value.trim();
 
-// ── Register ──────────────────────────────────────────────────────────────
-async function handleRegister(e, role) {
- e.preventDefault();
- hideAlerts('reg-alert', 'reg-success');
+      if (!name || !email || !username || !password) {
+        showAlert(alertEl, 'All required fields must be filled in.', 'error');
+        return;
+      }
+      if (password.length < 8) {
+        showAlert(alertEl, 'Password must be at least 8 characters.', 'error');
+        return;
+      }
 
- let payload = { role };
- let btnId = 'reg-' + role + '-btn';
- let btnText = role === 'patient' ? 'Create Patient Account' : 'Create Doctor Account';
+      btn.disabled = true;
+      document.getElementById('register-btn-text').textContent = 'Creating account…';
+      document.getElementById('register-spinner').style.display = 'inline-block';
 
- if (role === 'patient') {
- const pw = document.getElementById('p-pw').value;
- const pw2 = document.getElementById('p-pw2').value;
- if (pw !== pw2) { showAlert('reg-alert', ' Passwords do not match.'); return; }
- if (pw.length < 8) { showAlert('reg-alert', ' Password must be at least 8 characters.'); return; }
- payload = { ...payload,
- name: document.getElementById('p-name').value.trim(),
- email: document.getElementById('p-email').value.trim(),
- username: document.getElementById('p-username').value.trim(),
- age: document.getElementById('p-age').value.trim(),
- password: pw,
- };
- if (!payload.name) { showAlert('reg-alert', ' Name is required.'); return; }
- if (!payload.email) { showAlert('reg-alert', ' Email is required.'); return; }
- if (!payload.username) { showAlert('reg-alert', ' Username is required.'); return; }
- if (!/^[a-z0-9_\.]+$/.test(payload.username)) { showAlert('reg-alert', ' Username can only contain lowercase letters, numbers, dots, and underscores.'); return; }
- } else {
- const pw = document.getElementById('d-pw').value;
- const pw2 = document.getElementById('d-pw2').value;
- if (pw !== pw2) { showAlert('reg-alert', ' Passwords do not match.'); return; }
- if (pw.length < 8) { showAlert('reg-alert', ' Password must be at least 8 characters.'); return; }
- payload = { ...payload,
- name: document.getElementById('d-name').value.trim(),
- email: document.getElementById('d-email').value.trim(),
- username: document.getElementById('d-username').value.trim(),
- specialization: document.getElementById('d-spec').value.trim(),
- hospital: document.getElementById('d-hosp').value.trim(),
- password: pw,
- };
- if (!payload.name) { showAlert('reg-alert', ' Name is required.'); return; }
- if (!payload.username) { showAlert('reg-alert', ' Username is required.'); return; }
- if (!/^[a-z0-9_\.]+$/.test(payload.username)) { showAlert('reg-alert', ' Username can only contain lowercase letters, numbers, dots, and underscores.'); return; }
- }
+      var endpoint = role === 'doctor' ? '/register/doctor' : '/register/patient';
+      var payload  = {name: name, email: email, username: username, password: password};
+      if (role === 'doctor') { payload.specialization = spec; payload.hospital = hosp; }
 
- setLoading(btnId, true, btnText);
- try {
- const endpoint = role === 'patient' ? '/register/patient' : '/register/doctor';
- const res = await fetch(endpoint, {
- method: 'POST',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify(payload),
- });
- const d = await res.json();
- if (!res.ok) throw new Error(d.error || 'Registration failed');
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      })
+      .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+      .then(function(res) {
+        if (res.ok && res.data.redirect) {
+          window.location.href = res.data.redirect;
+        } else {
+          showAlert(alertEl, res.data.error || 'Registration failed. Please try again.', 'error');
+          btn.disabled = false;
+          document.getElementById('register-btn-text').textContent = 'Create account';
+          document.getElementById('register-spinner').style.display = 'none';
+        }
+      })
+      .catch(function() {
+        showAlert(alertEl, 'Network error. Please try again.', 'error');
+        btn.disabled = false;
+        document.getElementById('register-btn-text').textContent = 'Create account';
+        document.getElementById('register-spinner').style.display = 'none';
+      });
+    });
 
- let msg = ' Account created!';
- if (d.profile_code) msg += ` Your profile code: <strong>${d.profile_code}</strong> — save this!`;
- if (d.doctor_code) msg += ` Your doctor code: <strong>${d.doctor_code}</strong> — save this!`;
- document.getElementById('reg-success').innerHTML = msg;
- document.getElementById('reg-success').classList.add('show');
- setTimeout(() => { window.location.href = d.redirect || '/dashboard'; }, 1400);
- } catch(err) {
- showAlert('reg-alert', ' ' + err.message);
- } finally {
- setLoading(btnId, false, btnText);
- }
-}
-</script> <script> (function(){
- function isEmoji(cp){return(cp>=0x1F000&&cp<=0x1FFFF)||(cp>=0x2600&&cp<=0x27BF)||(cp>=0x1F900&&cp<=0x1FAFF)||(cp===0x2B50||cp===0x2B55);}
- function stripText(s){var o="",i=0;while(i<s.length){var cp=s.codePointAt(i);if(!isEmoji(cp)){o+=s[i];if(cp>0xFFFF)i++;}else if(cp>0xFFFF){i++;}i++;}return o.replace(/ +/g," ");}
- function clean(n){if(n.nodeType===3){var t=stripText(n.textContent);if(t!==n.textContent)n.textContent=t;}else if(n.nodeType===1&&!/^(SCRIPT|STYLE|SVG|INPUT|TEXTAREA)$/.test(n.tagName))n.childNodes.forEach(clean);}
- document.addEventListener("DOMContentLoaded",function(){document.body.childNodes.forEach(clean);});
- })();
- </script> </body> </html> 
+    // Password strength inline
+    var pwInput = document.getElementById('reg-password');
+    var meter   = document.getElementById('password-strength');
+    if (pwInput && meter) {
+      pwInput.addEventListener('input', function() {
+        var val = pwInput.value;
+        var score = 0;
+        if (val.length >= 8)          score++;
+        if (/[A-Z]/.test(val))        score++;
+        if (/[0-9]/.test(val))        score++;
+        if (/[^A-Za-z0-9]/.test(val)) score++;
+        var labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+        var colors = ['', 'var(--r5)', 'var(--g4)', 'var(--g5)', 'var(--t5)'];
+        meter.textContent = val.length > 0 ? 'Strength: ' + labels[score] : '';
+        meter.style.color = colors[score] || '';
+      });
+    }
+  })();
+  </script>
+</body>
+</html>

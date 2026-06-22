@@ -1,0 +1,11 @@
+<header class="topbar" role="banner">
+  <span class="topbar-title" id="page-title">{% block topbar_title %}Dashboard{% endblock %}</span>
+  <div class="topbar-actions">
+    {% if session.get('logged_in') %}
+      <span class="type-caption" style="letter-spacing:0.04em;">
+        {{ session.get('email', '') }}
+      </span>
+      <a href="/logout" class="btn-ghost btn-sm" id="topbar-signout">Sign out</a>
+    {% endif %}
+  </div>
+</header>

@@ -1,0 +1,281 @@
+/* ═══════════════════════════════════════════════════════════════════
+   base.css — MedVault Design System
+   Reset · Root variables · Typography · Layout utilities
+═══════════════════════════════════════════════════════════════════ */
+
+/* Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Reset ───────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+img, svg { display: block; max-width: 100%; }
+button, input, select, textarea { font: inherit; }
+a { color: inherit; text-decoration: none; }
+ul, ol { list-style: none; }
+table { border-collapse: collapse; }
+
+/* ── Design Tokens ───────────────────────────────────────────────── */
+:root {
+  /* Surfaces */
+  --s0: #07090F;
+  --s1: #0D1117;
+  --s2: #111827;
+  --s3: #1A2236;
+
+  /* Borders */
+  --b1: #1C2A40;
+  --b2: #253347;
+  --b3: #2E3F5C;
+
+  /* Purple */
+  --p1: #0F0626;
+  --p2: #2D1260;
+  --p3: #4C1D95;
+  --p4: #6D28D9;
+  --p5: #8B5CF6;
+  --p6: #C4B5FD;
+  --pa: rgba(76,29,149,0.15);
+
+  /* Gold */
+  --g1: #451A03;
+  --g2: #92400E;
+  --g3: #B45309;
+  --g4: #D97706;
+  --g5: #F59E0B;
+  --g6: #FDE68A;
+  --ga: rgba(217,119,6,0.12);
+
+  /* Teal */
+  --t1: #042F2E;
+  --t2: #065F46;
+  --t3: #047857;
+  --t4: #059669;
+  --t5: #10B981;
+  --t6: #6EE7B7;
+  --ta: rgba(5,150,105,0.12);
+
+  /* Crimson */
+  --r1: #450A0A;
+  --r3: #991B1B;
+  --r5: #EF4444;
+  --r6: #FCA5A5;
+  --ra: rgba(239,68,68,0.10);
+
+  /* Text */
+  --tx1: #EEF2FF;
+  --tx2: #94A3B8;
+  --tx3: #475569;
+  --tx4: #1E293B;
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Type scale */
+  --t-xs:   11px;
+  --t-sm:   13px;
+  --t-base: 14px;
+  --t-md:   16px;
+  --t-lg:   20px;
+  --t-xl:   25px;
+  --t-2xl:  31px;
+  --t-3xl:  39px;
+  --t-4xl:  49px;
+
+  /* Spacing */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  20px;
+  --sp-6:  24px;
+  --sp-8:  32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  --sp-20: 80px;
+  --sp-24: 96px;
+
+  /* Border radius */
+  --r-sm: 6px;
+  --r-md: 10px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.3);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.6), 0 4px 8px rgba(0,0,0,0.4);
+
+  /* Transitions */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 300ms;
+}
+
+/* ── Base ────────────────────────────────────────────────────────── */
+body {
+  font-family: var(--font-sans);
+  font-size: var(--t-base);
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--tx2);
+  background: var(--s0);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Typography Classes ──────────────────────────────────────────── */
+.type-display {
+  font-size: var(--t-4xl);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--tx1);
+}
+.type-h1 {
+  font-size: var(--t-3xl);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  color: var(--tx1);
+}
+.type-h2 {
+  font-size: var(--t-2xl);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--tx1);
+}
+.type-h3 {
+  font-size: var(--t-xl);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  color: var(--tx1);
+}
+.type-label {
+  font-size: var(--t-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  color: var(--tx2);
+}
+.type-caption {
+  font-size: var(--t-xs);
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--tx3);
+  text-transform: uppercase;
+}
+.type-mono {
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--g6);
+}
+
+/* ── Layout System ───────────────────────────────────────────────── */
+.page-shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+  background: var(--s0);
+}
+.page-main {
+  margin-left: 240px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.page-content {
+  flex: 1;
+  padding: var(--sp-8) var(--sp-10);
+  max-width: 1200px;
+  width: 100%;
+}
+.page-header {
+  margin-bottom: var(--sp-8);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+.page-header-text { display: flex; flex-direction: column; gap: var(--sp-2); }
+.page-eyebrow {
+  font-size: var(--t-xs);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+/* Grids */
+.grid-2 { display: grid; grid-template-columns: repeat(2,1fr); gap: var(--sp-5); }
+.grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: var(--sp-5); }
+.grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: var(--sp-5); }
+.grid-sidebar { display: grid; grid-template-columns: 1fr 320px; gap: var(--sp-6); }
+
+/* Stacks */
+.stack-2 { display: flex; flex-direction: column; gap: var(--sp-2); }
+.stack-3 { display: flex; flex-direction: column; gap: var(--sp-3); }
+.stack-4 { display: flex; flex-direction: column; gap: var(--sp-4); }
+.stack-6 { display: flex; flex-direction: column; gap: var(--sp-6); }
+.stack-8 { display: flex; flex-direction: column; gap: var(--sp-8); }
+
+/* Clusters */
+.cluster-2 { display: flex; align-items: center; gap: var(--sp-2); }
+.cluster-3 { display: flex; align-items: center; gap: var(--sp-3); }
+.cluster-4 { display: flex; align-items: center; gap: var(--sp-4); }
+
+/* Sections */
+.section { margin-bottom: var(--sp-10); }
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-5);
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--b1);
+}
+
+/* ── Animations ──────────────────────────────────────────────────── */
+.fade-in {
+  animation: fadeIn var(--dur-base) var(--ease) both;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Utilities ───────────────────────────────────────────────────── */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+.text-primary { color: var(--tx1); }
+.text-secondary { color: var(--tx2); }
+.text-muted { color: var(--tx3); }
+.text-gold { color: var(--g5); }
+.text-teal { color: var(--t5); }
+.text-purple { color: var(--p5); }
+.text-crimson { color: var(--r5); }
+.w-full { width: 100%; }
+.flex-1 { flex: 1; }
+.ml-auto { margin-left: auto; }
+.mt-1 { margin-top: var(--sp-1); }
+.mt-2 { margin-top: var(--sp-2); }
+.mt-4 { margin-top: var(--sp-4); }
+.mt-6 { margin-top: var(--sp-6); }
+.mb-2 { margin-bottom: var(--sp-2); }
+.mb-4 { margin-bottom: var(--sp-4); }
+.mb-6 { margin-bottom: var(--sp-6); }
+.hidden { display: none !important; }
