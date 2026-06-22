@@ -8,22 +8,24 @@
     <span class="page-eyebrow">Security</span>
     <h1 class="type-h1">Audit Log</h1>
     <p class="type-label" style="color:var(--tx3); margin-top:var(--sp-1);">
-      Every login, access request, approval, and data view — immutably recorded.
+      Every login, access request, approval, data view, and password change — immutably recorded.
     </p>
   </div>
-  <div class="filter-bar">
+  <div class="cluster-3">
     <select class="filter-select" id="type-filter" aria-label="Filter by type">
-      <option value="">All types</option>
-      <option value="login">Login</option>
+      <option value="">All events</option>
+      <option value="login">Logins</option>
+      <option value="password">Password changes</option>
       <option value="access">Access</option>
-      <option value="approved">Approved</option>
-      <option value="denied">Denied</option>
-      <option value="viewed">Viewed</option>
+      <option value="register">Registrations</option>
+      <option value="logout">Logouts</option>
     </select>
+    <button class="btn-secondary" id="refresh-btn" type="button">
+      <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      Refresh
+    </button>
   </div>
 </div>
-
-<div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
 
 <!-- Stats row -->
 <div class="grid-4 section">
@@ -36,12 +38,20 @@
     <div class="stat-card-value" id="stat-logins">—</div>
   </div>
   <div class="stat-card fade-in" style="animation-delay:120ms">
-    <div class="stat-card-label">Access Approved</div>
-    <div class="stat-card-value stat-card-teal" id="stat-approved">—</div>
+    <div class="stat-card-label">Password Changes</div>
+    <div class="stat-card-value stat-card-teal" id="stat-pw">—</div>
   </div>
   <div class="stat-card fade-in" style="animation-delay:180ms">
-    <div class="stat-card-label">Access Denied</div>
-    <div class="stat-card-value" style="color:var(--r5);" id="stat-denied">—</div>
+    <div class="stat-card-label">Access Events</div>
+    <div class="stat-card-value" style="color:var(--g5);" id="stat-access">—</div>
+  </div>
+</div>
+
+<!-- Latest password change banner -->
+<div id="pw-banner" style="display:none; margin-bottom:var(--sp-5);">
+  <div class="alert alert-info" style="align-items:center; gap:var(--sp-3);">
+    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+    <span>Last password change: <strong id="last-pw-reset">—</strong></span>
   </div>
 </div>
 
@@ -53,14 +63,13 @@
         <th>Timestamp</th>
         <th>Event</th>
         <th>Actor</th>
-        <th>Detail</th>
-        <th>IP</th>
-        <th>Status</th>
+        <th>Detail / Target</th>
+        <th>IP Address</th>
       </tr>
     </thead>
     <tbody id="audit-body">
       <tr>
-        <td colspan="6" style="text-align:center; padding:var(--sp-8); color:var(--tx3);">
+        <td colspan="5" style="text-align:center; padding:var(--sp-10);">
           <div class="spinner" style="margin:0 auto;"></div>
         </td>
       </tr>
@@ -72,96 +81,133 @@
 {% block scripts %}
 <script>
 (function() {
-  var JWT = {{ session.get('jwt_token','') | tojson }};
   var allEvents = [];
 
   function fmt(s) {
     if (!s) return '—';
-    try { return new Date(s).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}); }
+    try { return new Date(s).toLocaleString('en-IN', {dateStyle:'medium', timeStyle:'short'}); }
     catch(e) { return s; }
   }
 
-  function eventRowClass(type) {
-    if (!type) return '';
-    type = type.toLowerCase();
-    if (type.includes('approved') || type.includes('approve')) return 'row-approved';
-    if (type.includes('denied')   || type.includes('deny'))    return 'row-denied';
-    if (type.includes('login'))    return 'row-login';
-    if (type.includes('view')  || type.includes('access')) return 'row-viewed';
-    return '';
+  var EVENT_LABELS = {
+    'login':             'Sign in',
+    'logout':            'Sign out',
+    'register':          'Account registered',
+    'register_via_legacy': 'Account registered (legacy)',
+    'password_upgraded': '🔐 Password upgraded',
+    'account_locked':    '🔒 Account locked',
+    'otp_sent':          'OTP sent',
+    'otp_verified':      'OTP verified',
+    'access_request':    'Access requested',
+    'access_approved':   '✅ Access approved',
+    'access_denied':     '❌ Access denied',
+    'access_revoked':    'Access revoked',
+    'report_upload':     'Report uploaded',
+    'image_upload':      'Image uploaded',
+    'image_download':    'Image downloaded',
+  };
+
+  function eventLabel(action) {
+    return EVENT_LABELS[action] || action;
   }
 
-  function statusBadge(success) {
-    if (success === true || success === 'success' || success === 'ok')
-      return '<span class="badge badge-approved">Success</span>';
-    if (success === false || success === 'failed' || success === 'error')
-      return '<span class="badge badge-denied">Failed</span>';
-    return '—';
+  function rowClass(action) {
+    if (!action) return '';
+    if (action === 'login')                               return 'row-login';
+    if (action.includes('password') || action.includes('upgrade')) return 'row-approved';
+    if (action.includes('approved'))                      return 'row-approved';
+    if (action.includes('denied') || action.includes('locked'))    return 'row-denied';
+    if (action.includes('access'))                        return 'row-viewed';
+    return '';
   }
 
   function render(events) {
     var body = document.getElementById('audit-body');
-    if (!events.length) {
-      body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-state-title">No audit events found</div></div></td></tr>';
+    if (!events || !events.length) {
+      body.innerHTML = '<tr><td colspan="5"><div class="empty-state" style="padding:var(--sp-10) 0;"><div class="empty-state-title">No audit events found</div><div class="empty-state-desc">Events are recorded as you use the platform. Try signing out and back in.</div></div></td></tr>';
       return;
     }
     body.innerHTML = events.map(function(e) {
-      var rowClass = eventRowClass(e.event || e.action || e.type || '');
-      return '<tr class="' + rowClass + '">' +
-        '<td class="type-mono" style="font-size:var(--t-xs); white-space:nowrap;">' + fmt(e.timestamp || e.ts || e.created_at) + '</td>' +
-        '<td style="font-weight:500; color:var(--tx1);">' + (e.event || e.action || e.type || '—') + '</td>' +
-        '<td class="type-mono" style="font-size:var(--t-xs);">' + (e.actor || e.user || e.email || e.doctor_code || '—') + '</td>' +
-        '<td style="color:var(--tx3); font-size:var(--t-sm); max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (e.detail || e.resource || e.patient_code || e.profile_code || '') + '</td>' +
-        '<td class="type-mono" style="font-size:var(--t-xs);">' + (e.ip || e.ip_address || '—') + '</td>' +
-        '<td>' + statusBadge(e.success !== undefined ? e.success : (e.status === 'success' ? true : (e.status === 'failed' ? false : undefined))) + '</td>' +
+      var action   = e.action || e.event || e.type || '—';
+      var detail   = e.detail || e.target || '';
+      return '<tr class="' + rowClass(action) + '">' +
+        '<td class="type-mono" style="font-size:var(--t-xs); white-space:nowrap;">' + fmt(e.ts || e.timestamp || e.created_at) + '</td>' +
+        '<td style="font-weight:500; color:var(--tx1);">' + eventLabel(action) + '</td>' +
+        '<td class="type-mono" style="font-size:var(--t-xs); color:var(--tx3);">' + (e.actor || '—') + '</td>' +
+        '<td style="color:var(--tx3); font-size:var(--t-sm); max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + detail + '">' + (detail || '—') + '</td>' +
+        '<td class="type-mono" style="font-size:var(--t-xs);">' + (e.ip || '—') + '</td>' +
         '</tr>';
     }).join('');
   }
 
   function updateStats(events) {
-    var logins   = events.filter(function(e){ var t = (e.event||e.action||e.type||'').toLowerCase(); return t.includes('login'); });
-    var approved = events.filter(function(e){ var t = (e.event||e.action||e.type||'').toLowerCase(); return t.includes('approv'); });
-    var denied   = events.filter(function(e){ var t = (e.event||e.action||e.type||'').toLowerCase(); return t.includes('den'); });
-    document.getElementById('stat-total').textContent    = events.length;
-    document.getElementById('stat-logins').textContent   = logins.length;
-    document.getElementById('stat-approved').textContent = approved.length;
-    document.getElementById('stat-denied').textContent   = denied.length;
+    var logins  = events.filter(function(e){ return (e.action||'').includes('login'); });
+    var pw      = events.filter(function(e){ return (e.action||'').includes('password') || (e.action||'').includes('upgrade'); });
+    var access  = events.filter(function(e){ return (e.action||'').includes('access'); });
+    document.getElementById('stat-total').textContent  = events.length;
+    document.getElementById('stat-logins').textContent = logins.length;
+    document.getElementById('stat-pw').textContent     = pw.length;
+    document.getElementById('stat-access').textContent = access.length;
+
+    // Show last password change banner
+    if (pw.length) {
+      var latest = pw[0];
+      document.getElementById('last-pw-reset').textContent = fmt(latest.ts || latest.timestamp);
+      document.getElementById('pw-banner').style.display = 'block';
+    }
   }
 
   function applyFilter() {
     var filter = document.getElementById('type-filter').value.toLowerCase();
     var filtered = filter
       ? allEvents.filter(function(e) {
-          var t = (e.event||e.action||e.type||'').toLowerCase();
-          return t.includes(filter);
+          return (e.action || e.event || '').toLowerCase().includes(filter);
         })
       : allEvents;
     render(filtered);
   }
 
-  document.getElementById('type-filter').addEventListener('change', applyFilter);
-
-  // Try login history as the audit source (only endpoint available without JWT auth issues)
-  fetch('/patient/history', {headers:{'Authorization':'Bearer '+JWT}})
-  .then(function(r) { return r.json(); })
-  .then(function(d) {
-    allEvents = (d.history || []).map(function(h) {
-      return {
-        timestamp: h.timestamp || h.ts,
-        event:     h.event || 'login',
-        actor:     h.email || h.user || '—',
-        detail:    h.device || h.user_agent || '',
-        ip:        h.ip || '—',
-        success:   h.success !== undefined ? h.success : (h.status === 'success'),
-      };
-    });
-    updateStats(allEvents);
-    render(allEvents);
-  })
-  .catch(function() {
+  function load() {
     document.getElementById('audit-body').innerHTML =
-      '<tr><td colspan="6" style="text-align:center; padding:var(--sp-8); color:var(--r6);">Could not load audit log.</td></tr>';
-  });
+      '<tr><td colspan="5" style="text-align:center;padding:var(--sp-8);"><div class="spinner" style="margin:0 auto;"></div></td></tr>';
+    document.getElementById('pw-banner').style.display = 'none';
+
+    fetch('/portal/audit-log')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      allEvents = d.events || [];
+
+      // Merge login_history as well
+      return fetch('/patient/history')
+      .then(function(r2) { return r2.json(); })
+      .then(function(h) {
+        var hist = (h.history || []).map(function(x) {
+          return {
+            action: 'login',
+            actor:  x.email || x.user || '—',
+            ts:     x.ts || x.timestamp,
+            ip:     x.ip || '—',
+            detail: 'Session login',
+          };
+        });
+        // Merge: deduplicate by ts
+        var existingTs = new Set(allEvents.map(function(e) { return e.ts; }));
+        hist.forEach(function(h) { if (!existingTs.has(h.ts)) allEvents.push(h); });
+        allEvents.sort(function(a,b) { return (b.ts||'').localeCompare(a.ts||''); });
+        updateStats(allEvents);
+        applyFilter();
+      });
+    })
+    .catch(function(err) {
+      document.getElementById('audit-body').innerHTML =
+        '<tr><td colspan="5" style="text-align:center;padding:var(--sp-8);color:var(--r6);">Failed to load audit events. Check your connection.</td></tr>';
+    });
+  }
+
+  document.getElementById('type-filter').addEventListener('change', applyFilter);
+  document.getElementById('refresh-btn').addEventListener('click', load);
+
+  load();
 })();
 </script>
 {% endblock %}

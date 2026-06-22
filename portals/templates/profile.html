@@ -14,7 +14,7 @@
 
 <div class="grid-sidebar" style="align-items:start;">
 
-  <!-- Left: profile details -->
+  <!-- Left -->
   <div class="stack-6">
 
     <!-- Identity card -->
@@ -23,24 +23,15 @@
         <h2 class="type-h3">Identity</h2>
         <span class="badge badge-{{ role }}">{{ role | capitalize }}</span>
       </div>
-      <div class="field-row" style="padding-top:0;">
-        <div class="field-label">Full name</div>
-        <div class="field-value">{{ name }}</div>
-      </div>
-      <div class="field-row">
-        <div class="field-label">Email address</div>
-        <div class="field-value">{{ email }}</div>
-      </div>
-      <div class="field-row">
-        <div class="field-label">Username</div>
-        <div class="field-value type-mono">{{ username }}</div>
-      </div>
+      <div class="field-row" style="padding-top:0;"><div class="field-label">Full name</div><div class="field-value">{{ name }}</div></div>
+      <div class="field-row"><div class="field-label">Email address</div><div class="field-value">{{ email }}</div></div>
+      <div class="field-row"><div class="field-label">Username</div><div class="field-value type-mono">{{ username }}</div></div>
       {% if role == 'patient' and profile_code %}
       <div class="field-row">
         <div class="field-label">Profile code</div>
         <div class="field-value">
-          <span class="type-mono" id="profile-code-text">{{ profile_code }}</span>
-          <button class="btn-ghost btn-sm" id="copy-code-btn" data-copy="{{ profile_code }}" type="button" style="margin-left:var(--sp-2);">Copy</button>
+          <span class="type-mono">{{ profile_code }}</span>
+          <button class="btn-ghost btn-sm" data-copy="{{ profile_code }}" type="button" style="margin-left:var(--sp-2);">Copy</button>
         </div>
       </div>
       {% elif role == 'doctor' and doctor_code %}
@@ -51,14 +42,8 @@
           <button class="btn-ghost btn-sm" data-copy="{{ doctor_code }}" type="button" style="margin-left:var(--sp-2);">Copy</button>
         </div>
       </div>
-      <div class="field-row">
-        <div class="field-label">Specialization</div>
-        <div class="field-value">{{ specialization or '—' }}</div>
-      </div>
-      <div class="field-row">
-        <div class="field-label">Hospital / Clinic</div>
-        <div class="field-value">{{ hospital or '—' }}</div>
-      </div>
+      <div class="field-row"><div class="field-label">Specialization</div><div class="field-value">{{ specialization or '—' }}</div></div>
+      <div class="field-row"><div class="field-label">Hospital / Clinic</div><div class="field-value">{{ hospital or '—' }}</div></div>
       {% endif %}
     </div>
 
@@ -66,30 +51,32 @@
     <div class="card" id="security">
       <div class="section-header" style="margin-bottom:var(--sp-5);">
         <h2 class="type-h3">Security</h2>
-        <span class="badge badge-verified">Verified</span>
+        <span class="badge badge-verified" id="pw-badge">Verified</span>
       </div>
-      <div class="field-row" style="padding-top:0;">
-        <div class="field-label">Encryption</div>
-        <div class="field-value">AES-256-GCM (end-to-end)</div>
+      <div class="field-row" style="padding-top:0;"><div class="field-label">Encryption</div><div class="field-value">AES-256-GCM (end-to-end)</div></div>
+      <div class="field-row"><div class="field-label">Key derivation</div><div class="field-value">PBKDF2-SHA256, 100 000 iterations</div></div>
+      <div class="field-row"><div class="field-label">Private key storage</div><div class="field-value">Device-local (Credential Manager)</div></div>
+      <div class="field-row"><div class="field-label">Session duration</div><div class="field-value">8 hours</div></div>
+      <div class="field-row">
+        <div class="field-label">Password hash</div>
+        <div class="field-value" id="pw-strength-label">
+          <span class="skeleton" style="width:180px; height:20px; display:inline-block; border-radius:4px;"></span>
+        </div>
       </div>
       <div class="field-row">
-        <div class="field-label">Key derivation</div>
-        <div class="field-value">PBKDF2-SHA256, 100 000 iterations</div>
+        <div class="field-label">Last password change</div>
+        <div class="field-value" id="last-pw-change">
+          <span class="skeleton" style="width:160px; height:14px; display:inline-block;"></span>
+        </div>
       </div>
-      <div class="field-row">
-        <div class="field-label">Private key storage</div>
-        <div class="field-value">Device-local (Windows Credential Manager)</div>
-      </div>
-      <div class="field-row">
-        <div class="field-label">Session duration</div>
-        <div class="field-value">8 hours</div>
-      </div>
+
       {% if role == 'patient' %}
       <div style="margin-top:var(--sp-6);">
-        <h3 class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-4);">Login History</h3>
+        <h3 class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-4);">Recent Logins</h3>
         <div id="history-loading">
-          <div class="skeleton" style="height:40px; margin-bottom:var(--sp-2);"></div>
-          <div class="skeleton" style="height:40px;"></div>
+          <div class="skeleton" style="height:44px; margin-bottom:var(--sp-2);"></div>
+          <div class="skeleton" style="height:44px; margin-bottom:var(--sp-2);"></div>
+          <div class="skeleton" style="height:44px;"></div>
         </div>
         <div id="history-list" style="display:none;"></div>
       </div>
@@ -98,7 +85,7 @@
 
   </div>
 
-  <!-- Right: quick actions + danger zone -->
+  <!-- Right -->
   <div class="stack-4">
 
     <!-- Quick actions -->
@@ -106,26 +93,30 @@
       <div class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-4);">Quick Actions</div>
       <div class="stack-2">
         {% if role == 'patient' %}
-        <a href="/dashboard#record" class="quick-action-item">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        <a href="/health-record" class="quick-action-item">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           View health record
         </a>
-        <a href="/dashboard#requests" class="quick-action-item">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-5-5.917V4a1 1 0 10-2 0v1.083A6 6 0 006 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        <a href="/access-requests" class="quick-action-item">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-5-5.917V4a1 1 0 10-2 0v1.083A6 6 0 006 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
           Manage access requests
         </a>
-        {% elif role == 'doctor' %}
-        <a href="/dashboard#request" class="quick-action-item">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
-          Request patient access
+        <a href="/audit" class="quick-action-item">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+          Audit log
         </a>
-        <a href="/dashboard#add-note" class="quick-action-item">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        {% elif role == 'doctor' %}
+        <a href="/dashboard" class="quick-action-item">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+          Patient dashboard
+        </a>
+        <a href="/notes" class="quick-action-item">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
           Add clinical note
         </a>
         {% endif %}
         <a href="/logout" class="quick-action-item" style="color:var(--tx3);">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
           Sign out
         </a>
       </div>
@@ -137,9 +128,7 @@
       <p style="font-size:var(--t-sm); color:var(--tx3); margin-bottom:var(--sp-4); line-height:1.6;">
         Signing out clears your session. Your encrypted data remains safe on the server and on your device.
       </p>
-      <a href="/logout" class="btn-danger w-full" id="signout-danger-btn" style="justify-content:center;">
-        Sign out everywhere
-      </a>
+      <a href="/logout" class="btn-danger w-full" style="justify-content:center;">Sign out everywhere</a>
     </div>
 
   </div>
@@ -149,14 +138,18 @@
 {% block scripts %}
 <script>
 (function() {
-  var JWT  = {{ session.get('jwt_token','') | tojson }};
   var ROLE = {{ role | tojson }};
 
-  // Copy buttons
+  function fmt(s) {
+    if (!s) return '—';
+    try { return new Date(s).toLocaleString('en-IN', {dateStyle:'medium', timeStyle:'short'}); }
+    catch(e) { return s; }
+  }
+
+  // ── Copy buttons ──────────────────────────────────────────────
   document.querySelectorAll('[data-copy]').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var text = btn.dataset.copy;
-      navigator.clipboard.writeText(text).then(function() {
+      navigator.clipboard.writeText(btn.dataset.copy).then(function() {
         var orig = btn.textContent;
         btn.textContent = 'Copied!';
         setTimeout(function() { btn.textContent = orig; }, 1500);
@@ -164,36 +157,75 @@
     });
   });
 
-  // Login history (patient only)
+  // ── Audit events → Last password change + password strength ───
+  var pwEl  = document.getElementById('last-pw-change');
+  var strEl = document.getElementById('pw-strength-label');
+  var badge = document.getElementById('pw-badge');
+
+  fetch('/portal/audit-log')
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    var events = d.events || [];
+    var pwEv = events.find(function(e) {
+      var act = (e.action || '').toLowerCase();
+      return act === 'password_upgraded' || act.includes('password') || act.includes('upgrade');
+    });
+
+    if (pwEl) {
+      if (pwEv) {
+        pwEl.textContent = fmt(pwEv.ts || pwEv.timestamp);
+        pwEl.style.color = 'var(--t5)';
+      } else {
+        pwEl.innerHTML = '<span style="color:var(--r5);">Never changed</span>';
+      }
+    }
+    if (strEl) {
+      if (pwEv) {
+        strEl.innerHTML = '<span class="badge badge-approved">PBKDF2-SHA256 (strong)</span>';
+        if (badge) { badge.textContent = 'Secure'; badge.className = 'badge badge-approved'; }
+      } else {
+        strEl.innerHTML = '<span class="badge badge-denied">Legacy SHA-256 — sign in to upgrade</span>';
+        if (badge) { badge.textContent = 'Needs upgrade'; badge.className = 'badge badge-denied'; }
+      }
+    }
+  })
+  .catch(function() {
+    if (pwEl) pwEl.textContent = 'Could not load';
+    if (strEl) strEl.textContent = '—';
+  });
+
+  // ── Login history (patient only) ─────────────────────────────
   if (ROLE === 'patient') {
-    fetch('/patient/history', {headers:{'Authorization':'Bearer '+JWT}})
+    var loadingEl = document.getElementById('history-loading');
+    var listEl    = document.getElementById('history-list');
+    fetch('/patient/history')
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      var hist = (d.history || []).slice(-5).reverse();
-      document.getElementById('history-loading').style.display = 'none';
-      var el = document.getElementById('history-list');
-      el.style.display = 'block';
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (!listEl) return;
+      listEl.style.display = 'block';
+      var hist = (d.history || []).slice(0, 8);
       if (!hist.length) {
-        el.innerHTML = '<div class="empty-state" style="padding:var(--sp-4) 0;"><div class="empty-state-title" style="font-size:var(--t-sm);">No history recorded.</div></div>';
+        listEl.innerHTML = '<div class="empty-state" style="padding:var(--sp-4) 0;"><div class="empty-state-title" style="font-size:var(--t-sm);">No login history recorded yet.</div></div>';
         return;
       }
-      el.innerHTML = hist.map(function(h) {
-        var ok = h.success !== false;
+      listEl.innerHTML = hist.map(function(h) {
         return '<div class="cluster-3" style="padding:var(--sp-3) 0; border-bottom:1px solid var(--b1);">' +
-          '<div style="width:6px;height:6px;background:' + (ok?'var(--t5)':'var(--r5)') + ';border-radius:50%;flex-shrink:0;"></div>' +
-          '<div style="flex:1;">' +
-            '<div style="font-size:var(--t-sm); color:var(--tx1);">' + (h.event||'login') + '</div>' +
-            '<div style="font-size:var(--t-xs); color:var(--tx3);">' +
-              (h.timestamp ? new Date(h.timestamp).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}) : '') +
+          '<div style="width:6px;height:6px;background:var(--t5);border-radius:50%;flex-shrink:0;margin-top:2px;"></div>' +
+          '<div style="flex:1; min-width:0;">' +
+            '<div style="font-size:var(--t-sm); color:var(--tx1);">Sign in</div>' +
+            '<div style="font-size:var(--t-xs); color:var(--tx3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' +
+              fmt(h.ts || h.timestamp) +
               (h.ip ? ' · ' + h.ip : '') +
             '</div>' +
           '</div>' +
-          '<span class="badge ' + (ok?'badge-approved':'badge-denied') + '">' + (ok?'OK':'Failed') + '</span>' +
+          '<span class="badge badge-approved">OK</span>' +
         '</div>';
       }).join('');
     })
     .catch(function() {
-      document.getElementById('history-loading').style.display = 'none';
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (listEl) { listEl.style.display = 'block'; listEl.innerHTML = '<div style="color:var(--tx3); font-size:var(--t-sm);">Could not load history.</div>'; }
     });
   }
 })();

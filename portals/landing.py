@@ -917,6 +917,29 @@ def patient_history():
         return jsonify({"error": str(e), "history": []}), 200
 
 
+# ── Full audit log proxy ───────────────────────────────────────────────────────
+@app.route("/portal/audit-log")
+def portal_audit_log():
+    """Proxy to the server's audit/log endpoint, filtering to the current user."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    jwt = session.get("jwt_token", "")
+    if not jwt:
+        return jsonify({"events": [], "note": "no_jwt"}), 200
+    try:
+        hdrs = {**_headers(), "Authorization": f"Bearer {jwt}"}
+        r = http.get(f"{BACKEND}/audit/log", headers=hdrs, timeout=8)
+        if r.ok:
+            data = r.json()
+            events = data if isinstance(data, list) else data.get("events", data.get("log", []))
+            return jsonify({"events": events})
+        return jsonify({"events": [], "backend_error": r.status_code}), 200
+    except Exception as e:
+        return jsonify({"events": [], "error": str(e)}), 200
+
+
+
+
 # ── Patient: list all registered doctors ─────────────────────────────────────
 @app.route("/patient/doctors", methods=["GET"])
 def patient_list_doctors():
