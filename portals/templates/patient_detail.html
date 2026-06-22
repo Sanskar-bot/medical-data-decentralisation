@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
-{% block title %}Patient Detail{% endblock %}
-{% block topbar_title %}Patient Detail{% endblock %}
+{% block title %}Patient Detail — {{ patient_code }}{% endblock %}
+{% block topbar_title %}Patient Record{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -10,12 +10,13 @@
       <span style="margin:0 var(--sp-2);">›</span>
       <span class="type-mono" style="font-size:inherit;">{{ patient_code or '—' }}</span>
     </span>
-    <h1 class="type-h1">Patient Record</h1>
+    <h1 class="type-h1" id="patient-title">Patient Record</h1>
+    <p id="patient-subtitle" style="font-size:var(--t-sm); color:var(--tx3); margin-top:var(--sp-1);">Profile code: <span class="type-mono">{{ patient_code }}</span></p>
   </div>
   <div class="topbar-actions">
     <button class="btn-primary" id="fetch-record-btn" type="button">
       <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
-      Fetch encrypted record
+      Fetch Health Record
     </button>
   </div>
 </div>
@@ -24,8 +25,8 @@
 
 <!-- Fetch record panel -->
 <div class="card" id="fetch-panel" style="max-width:480px; margin-bottom:var(--sp-6); display:none;">
-  <h3 class="type-h3" style="margin-bottom:var(--sp-5);">Decrypt Patient Record</h3>
-  <p style="font-size:var(--t-sm); color:var(--tx3); margin-bottom:var(--sp-4);">Enter your doctor password to request and decrypt the patient's health record. The patient must have approved your access.</p>
+  <h3 class="type-h3" style="margin-bottom:var(--sp-4);">Decrypt Patient Record</h3>
+  <p style="font-size:var(--t-sm); color:var(--tx3); margin-bottom:var(--sp-4);">Enter your doctor password to decrypt the patient's encrypted health record.</p>
   <div id="fetch-alert" style="display:none;"></div>
   <div class="input-group">
     <label class="input-label" for="doctor-pw">Your password</label>
@@ -34,14 +35,39 @@
   <button class="btn-primary" id="fetch-submit-btn" type="button">Decrypt record</button>
 </div>
 
-<!-- Record display -->
+<!-- Decrypted Record Display -->
 <div id="record-display" style="display:none; margin-bottom:var(--sp-6);"></div>
+
+<!-- Tab Navigation -->
+<div style="display:flex; gap:0; border-bottom:1px solid var(--b1); margin-bottom:var(--sp-6);">
+  <button class="tab-btn active" data-tab="notes" type="button">Doctor Notes</button>
+  <button class="tab-btn" data-tab="prescriptions" type="button">Prescriptions</button>
+  <button class="tab-btn" data-tab="lab-reports" type="button">Lab Reports</button>
+</div>
+
+<style>
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--tx3);
+  cursor: pointer;
+  font-size: var(--t-sm);
+  font-weight: 500;
+  margin-bottom: -1px;
+  padding: var(--sp-3) var(--sp-5);
+  transition: color .15s, border-color .15s;
+}
+.tab-btn:hover { color: var(--tx1); }
+.tab-btn.active { color: var(--t5); border-bottom-color: var(--t5); font-weight: 600; }
+</style>
 
 <div class="grid-sidebar" style="align-items:start;">
 
-  <!-- Timeline / Notes -->
-  <div class="stack-5">
-    <div>
+  <!-- LEFT: Tab content -->
+  <div>
+    <!-- Doctor Notes Tab -->
+    <div id="tab-notes" class="tab-content">
       <div class="section-header" style="margin-bottom:var(--sp-4);">
         <h2 class="type-h3">Doctor Notes</h2>
         <button class="btn-secondary btn-sm" id="refresh-notes-btn" type="button">Refresh</button>
@@ -52,9 +78,35 @@
       </div>
       <div id="notes-list" style="display:none;"></div>
     </div>
+
+    <!-- Prescriptions Tab -->
+    <div id="tab-prescriptions" class="tab-content" style="display:none;">
+      <div class="section-header" style="margin-bottom:var(--sp-4);">
+        <h2 class="type-h3">Prescriptions</h2>
+        <button class="btn-secondary btn-sm" id="refresh-rx-btn" type="button">Refresh</button>
+      </div>
+      <div id="rx-loading">
+        <div class="skeleton" style="height:120px; margin-bottom:var(--sp-3);"></div>
+        <div class="skeleton" style="height:120px;"></div>
+      </div>
+      <div id="rx-list" style="display:none;"></div>
+    </div>
+
+    <!-- Lab Reports Tab -->
+    <div id="tab-lab-reports" class="tab-content" style="display:none;">
+      <div class="section-header" style="margin-bottom:var(--sp-4);">
+        <h2 class="type-h3">Lab Reports</h2>
+        <button class="btn-secondary btn-sm" id="refresh-lr-btn" type="button">Refresh</button>
+      </div>
+      <div id="lr-loading">
+        <div class="skeleton" style="height:120px; margin-bottom:var(--sp-3);"></div>
+        <div class="skeleton" style="height:120px;"></div>
+      </div>
+      <div id="lr-list" style="display:none;"></div>
+    </div>
   </div>
 
-  <!-- Sidebar: Add note -->
+  <!-- RIGHT: Add Note sidebar -->
   <div class="stack-4">
     <div class="card">
       <h3 class="type-h3" style="margin-bottom:var(--sp-5);">Add Note</h3>
@@ -83,6 +135,21 @@
         <span id="note-spinner" class="spinner" style="display:none;"></span>
       </button>
     </div>
+
+    <!-- Quick Actions sidebar -->
+    <div class="card">
+      <div class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-4);">Quick Actions</div>
+      <div class="stack-2">
+        <a href="/doctor/prescriptions" class="quick-action-item">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+          Add Prescription
+        </a>
+        <a href="/doctor/lab-reports" class="quick-action-item">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+          Add Lab Report
+        </a>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -93,25 +160,44 @@
   var PATIENT_CODE = {{ patient_code | tojson }};
   var JWT = {{ session.get('jwt_token','') | tojson }};
 
+  // Set today's date in visit date field
+  var today = new Date().toISOString().slice(0, 10);
+  document.getElementById('note-visit-date').value = today;
+
   function showAlert(el, msg, type) {
-    if(!el) return;
-    el.className = 'alert alert-' + (type||'error'); el.textContent = msg; el.style.display = 'flex';
-    setTimeout(function(){ el.style.display = 'none'; }, 5000);
+    if (!el) return;
+    el.className = 'alert alert-' + (type || 'error');
+    el.textContent = msg;
+    el.style.display = 'flex';
+    setTimeout(function() { el.style.display = 'none'; }, 5000);
   }
   function fmt(s) {
     if (!s) return '—';
-    try{ return new Date(s).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}); } catch(e){ return s; }
+    try { return new Date(s).toLocaleString('en-IN', {dateStyle: 'medium', timeStyle: 'short'}); } catch(e) { return s; }
   }
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function noteTypeColor(t) {
-    var m = {General:'badge-patient', Diagnosis:'badge-approved', Prescription:'badge-gold',
-              'Lab Result':'badge-encrypted', 'Follow-up':'badge-doctor', Referral:'badge-pending'};
-    return m[t]||'badge-patient';
+    var m = {General:'badge-patient',Diagnosis:'badge-approved',Prescription:'badge-gold','Lab Result':'badge-encrypted','Follow-up':'badge-doctor',Referral:'badge-pending'};
+    return m[t] || 'badge-patient';
   }
 
-  // ── Toggle fetch panel ─────────────────────────────────────────
+  // ── Tabs ──────────────────────────────────────────────────────────
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+      document.querySelectorAll('.tab-content').forEach(function(c) { c.style.display = 'none'; });
+      btn.classList.add('active');
+      var tab = btn.dataset.tab;
+      document.getElementById('tab-' + tab).style.display = '';
+      if (tab === 'prescriptions') loadPrescriptions();
+      if (tab === 'lab-reports')   loadLabReports();
+    });
+  });
+
+  // ── Fetch encrypted record panel ──────────────────────────────────
   document.getElementById('fetch-record-btn').addEventListener('click', function() {
-    var panel = document.getElementById('fetch-panel');
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    var p = document.getElementById('fetch-panel');
+    p.style.display = p.style.display === 'none' ? 'block' : 'none';
   });
 
   document.getElementById('fetch-submit-btn').addEventListener('click', function() {
@@ -122,75 +208,146 @@
     var self = this;
     fetch('/doctor/fetch_record', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({profile_code: PATIENT_CODE, password: pw})
     })
-    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
+    .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
     .then(function(res) {
       self.disabled = false; self.textContent = 'Decrypt record';
-      if (!res.ok || res.data.error) {
-        showAlert(alertEl, res.data.error||'Failed to fetch record.', 'error'); return;
-      }
+      if (!res.ok || res.data.error) { showAlert(alertEl, res.data.error || 'Failed.', 'error'); return; }
       var rec = res.data.record || {};
+      // Update page title with patient name
+      if (rec.name) {
+        document.getElementById('patient-title').textContent = rec.name;
+        document.getElementById('patient-subtitle').innerHTML =
+          'Profile code: <span class="type-mono">' + esc(PATIENT_CODE) + '</span>' +
+          (rec.age ? ' · Age: ' + esc(rec.age) : '') +
+          (rec.email ? ' · ' + esc(rec.email) : '');
+      }
       document.getElementById('fetch-panel').style.display = 'none';
       var disp = document.getElementById('record-display');
       disp.style.display = '';
       disp.innerHTML =
-        '<div class="card">' +
+        '<div class="card" style="border-color:var(--t5);">' +
           '<div class="section-header" style="margin-bottom:var(--sp-5);">' +
             '<h2 class="type-h3">Health Record</h2>' +
             '<span class="badge badge-approved">Decrypted</span>' +
           '</div>' +
           '<div class="grid-2">' +
-            '<div class="field-row" style="padding-top:0;"><div class="field-label">Name</div><div class="field-value">' + (rec.name||'—') + '</div></div>' +
-            '<div class="field-row" style="padding-top:0;"><div class="field-label">Age</div><div class="field-value">' + (rec.age||'—') + '</div></div>' +
-            '<div class="field-row"><div class="field-label">Email</div><div class="field-value">' + (rec.email||'—') + '</div></div>' +
+            '<div class="field-row" style="padding-top:0;"><div class="field-label">Full Name</div><div class="field-value">' + esc(rec.name||'—') + '</div></div>' +
+            '<div class="field-row" style="padding-top:0;"><div class="field-label">Age</div><div class="field-value">' + esc(rec.age||'—') + '</div></div>' +
+            '<div class="field-row"><div class="field-label">Email</div><div class="field-value">' + esc(rec.email||'—') + '</div></div>' +
+            '<div class="field-row"><div class="field-label">Profile Code</div><div class="field-value type-mono">' + esc(PATIENT_CODE) + '</div></div>' +
           '</div>' +
-          (rec.notes ? '<div class="field-row"><div class="field-label">Notes</div><div class="field-value">' + rec.notes + '</div></div>' : '') +
+          (rec.notes ? '<div class="field-row"><div class="field-label">Notes</div><div class="field-value">' + esc(rec.notes) + '</div></div>' : '') +
         '</div>';
     })
     .catch(function() {
       self.disabled = false; self.textContent = 'Decrypt record';
-      showAlert(alertEl, 'Network error.', 'error');
+      showAlert(document.getElementById('fetch-alert'), 'Network error.', 'error');
     });
   });
 
-  // ── Load notes ────────────────────────────────────────────────
+  // ── Load Doctor Notes ─────────────────────────────────────────────
   function loadNotes() {
     document.getElementById('notes-loading').style.display = '';
     document.getElementById('notes-list').style.display = 'none';
     fetch('/doctor/patient_notes/' + encodeURIComponent(PATIENT_CODE), {
-      headers: {'Authorization':'Bearer '+JWT}
+      headers: {'Authorization': 'Bearer ' + JWT}
     })
-    .then(function(r){ return r.json(); })
+    .then(function(r) { return r.json(); })
     .then(function(d) {
       document.getElementById('notes-loading').style.display = 'none';
       var nl = document.getElementById('notes-list');
       nl.style.display = '';
       var notes = d.notes || [];
       if (!notes.length) {
-        nl.innerHTML = '<div class="empty-state"><div class="empty-state-title">No notes for this patient yet</div></div>';
+        nl.innerHTML = '<div class="empty-state"><div class="empty-state-title">No notes for this patient yet</div><div class="empty-state-desc">Use the form on the right to add the first clinical note.</div></div>';
         return;
       }
       nl.innerHTML = '<div class="stack-4">' + notes.map(function(n) {
         return '<div class="note-card">' +
           '<div class="note-card-header">' +
-            '<span class="badge ' + noteTypeColor(n.note_type) + '">' + (n.note_type||'General') + '</span>' +
-            '<span class="type-caption">Visit: ' + (n.visit_date||'—') + '</span>' +
+            '<span class="badge ' + noteTypeColor(n.note_type) + '">' + esc(n.note_type || 'General') + '</span>' +
+            '<span class="type-caption">Visit: ' + esc(n.visit_date || '—') + '</span>' +
           '</div>' +
-          '<div class="note-body">' + (n.note_text||n.content||'—') + '</div>' +
+          '<div class="note-body">' + esc(n.note_text || n.content || '—') + '</div>' +
           '<div class="note-footer">Added ' + fmt(n.created_at) + '</div>' +
         '</div>';
       }).join('') + '</div>';
     })
-    .catch(function() {
-      document.getElementById('notes-loading').style.display = 'none';
-    });
+    .catch(function() { document.getElementById('notes-loading').style.display = 'none'; });
   }
 
-  // ── Add note ──────────────────────────────────────────────────
+  // ── Load Prescriptions ────────────────────────────────────────────
+  function loadPrescriptions() {
+    document.getElementById('rx-loading').style.display = '';
+    document.getElementById('rx-list').style.display = 'none';
+    fetch('/doctor/patient_prescriptions/' + encodeURIComponent(PATIENT_CODE))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      document.getElementById('rx-loading').style.display = 'none';
+      var rl = document.getElementById('rx-list');
+      rl.style.display = '';
+      var rxs = Array.isArray(d) ? d : (d.prescriptions || []);
+      if (!rxs.length) {
+        rl.innerHTML = '<div class="empty-state"><div class="empty-state-title">No prescriptions yet</div><div class="empty-state-desc">Add a prescription via the Add Prescription page.</div></div>';
+        return;
+      }
+      rl.innerHTML = '<div class="stack-4">' + rxs.map(function(rx) {
+        var meds = Array.isArray(rx.medications) ? rx.medications : [];
+        var medsHtml = meds.length
+          ? '<div style="margin-top:var(--sp-3); overflow:hidden; border-radius:var(--r-sm); border:1px solid var(--b1);">' +
+            '<table class="data-table" style="width:100%;"><thead><tr><th>Medication</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr></thead><tbody>' +
+            meds.map(function(m) {
+              return '<tr><td style="font-weight:600;">💊 ' + esc(m.name||m) + '</td><td>' + esc(m.dosage||m.dose||'—') + '</td><td style="color:var(--t5);">' + esc(m.frequency||'—') + '</td><td>' + esc(m.duration||'—') + '</td></tr>';
+            }).join('') +
+            '</tbody></table></div>'
+          : '';
+        return '<div class="card">' +
+          '<div class="section-header" style="margin-bottom:var(--sp-3);">' +
+            '<div><span class="badge badge-gold">Rx</span> <strong>' + esc(rx.diagnosis||'—') + '</strong></div>' +
+            '<span style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(rx.created_at) + '</span>' +
+          '</div>' +
+          medsHtml +
+          (rx.notes ? '<div style="margin-top:var(--sp-3); font-size:var(--t-sm); color:var(--tx3); border-top:1px solid var(--b1); padding-top:var(--sp-3);">📝 ' + esc(rx.notes) + '</div>' : '') +
+        '</div>';
+      }).join('') + '</div>';
+    })
+    .catch(function() { document.getElementById('rx-loading').style.display = 'none'; });
+  }
+
+  // ── Load Lab Reports ──────────────────────────────────────────────
+  function loadLabReports() {
+    document.getElementById('lr-loading').style.display = '';
+    document.getElementById('lr-list').style.display = 'none';
+    fetch('/doctor/patient_lab_reports/' + encodeURIComponent(PATIENT_CODE))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      document.getElementById('lr-loading').style.display = 'none';
+      var ll = document.getElementById('lr-list');
+      ll.style.display = '';
+      var lrs = Array.isArray(d) ? d : (d.lab_reports || d.reports || []);
+      if (!lrs.length) {
+        ll.innerHTML = '<div class="empty-state"><div class="empty-state-title">No lab reports yet</div></div>';
+        return;
+      }
+      ll.innerHTML = '<div class="stack-4">' + lrs.map(function(lr) {
+        return '<div class="card">' +
+          '<div class="section-header" style="margin-bottom:var(--sp-3);">' +
+            '<div><span class="badge badge-encrypted">Lab</span> <strong>' + esc(lr.report_type||lr.test_name||'Lab Report') + '</strong></div>' +
+            '<span style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(lr.created_at) + '</span>' +
+          '</div>' +
+          (lr.notes ? '<div style="font-size:var(--t-sm); color:var(--tx2); margin-top:var(--sp-2);">📋 ' + esc(lr.notes) + '</div>' : '') +
+        '</div>';
+      }).join('') + '</div>';
+    })
+    .catch(function() { document.getElementById('lr-loading').style.display = 'none'; });
+  }
+
+  // ── Add Note ──────────────────────────────────────────────────────
   document.getElementById('add-note-btn').addEventListener('click', function() {
-    var noteText = (document.getElementById('note-text').value||'').trim();
+    var noteText = (document.getElementById('note-text').value || '').trim();
     var alertEl  = document.getElementById('note-alert');
     if (!noteText) { showAlert(alertEl, 'Note text is required.', 'error'); return; }
     this.disabled = true;
@@ -199,26 +356,27 @@
     var self = this;
     fetch('/doctor/add_note', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         profile_code: PATIENT_CODE,
+        patient_code: PATIENT_CODE,
         note_type:    document.getElementById('note-type').value,
         visit_date:   document.getElementById('note-visit-date').value,
         note_text:    noteText,
       })
     })
-    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
+    .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
     .then(function(res) {
       self.disabled = false;
       document.getElementById('note-btn-text').textContent = 'Add note';
       document.getElementById('note-spinner').style.display = 'none';
       if (res.ok) {
-        showAlert(document.getElementById('page-alert'), 'Note added. Patient will receive it on next sync.', 'success');
+        showAlert(document.getElementById('page-alert'), 'Note added successfully.', 'success');
         document.getElementById('note-text').value = '';
-        document.getElementById('note-visit-date').value = '';
+        document.getElementById('note-visit-date').value = today;
         loadNotes();
       } else {
-        showAlert(alertEl, res.data.error||'Failed.', 'error');
+        showAlert(alertEl, res.data.error || 'Failed.', 'error');
       }
     })
     .catch(function() {
@@ -230,11 +388,14 @@
   });
 
   document.getElementById('refresh-notes-btn').addEventListener('click', loadNotes);
+  document.getElementById('refresh-rx-btn').addEventListener('click', loadPrescriptions);
+  document.getElementById('refresh-lr-btn').addEventListener('click', loadLabReports);
 
-  if (PATIENT_CODE) { loadNotes(); }
-  else {
+  if (PATIENT_CODE) {
+    loadNotes();
+  } else {
     var a = document.getElementById('page-alert');
-    a.className='alert alert-error'; a.textContent='No patient code provided.'; a.style.display='flex';
+    a.className = 'alert alert-error'; a.textContent = 'No patient code provided.'; a.style.display = 'flex';
   }
 })();
 </script>

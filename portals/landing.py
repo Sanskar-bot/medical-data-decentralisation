@@ -1555,7 +1555,7 @@ def doctor_add_note():
         d = request.get_json(force=True) or {}
 
         # Resolve patient username â†’ profile_code
-        pat_code = _resolve_patient_code(d.get("patient_code", "").strip())
+        pat_code = _resolve_patient_code((d.get("patient_code") or d.get("profile_code") or "").strip())
         if not pat_code:
             return jsonify({"error": "Patient username is required"}), 400
 
@@ -2565,6 +2565,58 @@ def doctor_my_requests():
 # ═══════════════════════════════════════════════════════════════
 #   DOCTOR EMR WRITE ENDPOINTS
 # ═══════════════════════════════════════════════════════════════
+
+@app.route("/doctor/patient_prescriptions/<patient_code>")
+def doctor_patient_prescriptions(patient_code):
+    """Doctor views all prescriptions for a specific patient."""
+    err = _doctor_session_check()
+    if err: return err
+    rxs = []
+    if _HAS_PSYCOPG2:
+        try:
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                "SELECT * FROM emr_prescriptions WHERE patient_id=%s ORDER BY created_at DESC",
+                (patient_code,)
+            )
+            for row in cur.fetchall():
+                r = dict(row)
+                if r.get("created_at"):
+                    r["created_at"] = r["created_at"].isoformat()
+                rxs.append(r)
+            cur.close(); conn.close()
+        except Exception as e:
+            app.logger.warning("doctor_patient_prescriptions: %s", e)
+    rxs = _enrich_with_doctor_name(rxs)
+    return jsonify(rxs), 200
+
+
+@app.route("/doctor/patient_lab_reports/<patient_code>")
+def doctor_patient_lab_reports(patient_code):
+    """Doctor views all lab reports for a specific patient."""
+    err = _doctor_session_check()
+    if err: return err
+    lrs = []
+    if _HAS_PSYCOPG2:
+        try:
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                "SELECT * FROM emr_lab_reports WHERE patient_id=%s ORDER BY created_at DESC",
+                (patient_code,)
+            )
+            for row in cur.fetchall():
+                r = dict(row)
+                if r.get("created_at"):
+                    r["created_at"] = r["created_at"].isoformat()
+                lrs.append(r)
+            cur.close(); conn.close()
+        except Exception as e:
+            app.logger.warning("doctor_patient_lab_reports: %s", e)
+    lrs = _enrich_with_doctor_name(lrs)
+    return jsonify(lrs), 200
+
 
 @app.route("/doctor/add_prescription", methods=["POST"])
 def doctor_add_prescription():
