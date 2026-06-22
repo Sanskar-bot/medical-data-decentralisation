@@ -1870,7 +1870,7 @@ def auth_login():
     access_token  = _jwt_encode({"sub": email, "uid": jwt_uid, "role": user["role"],
                                   "profile_code": user.get("profile_code", ""),
                                   "doctor_code": user.get("doctor_code", ""),
-                                  "exp": time.time() + 3600})
+                                  "exp": time.time() + 28800})  # 8 hours
     refresh_token = _jwt_encode({"sub": email, "uid": jwt_uid, "role": user["role"],
                                   "profile_code": user.get("profile_code", ""),
                                   "doctor_code": user.get("doctor_code", ""),
@@ -1938,7 +1938,7 @@ def auth_upgrade_password():
     access_token  = _jwt_encode({"sub": email, "uid": jwt_uid, "role": user["role"],
                                   "profile_code": user.get("profile_code", ""),
                                   "doctor_code": user.get("doctor_code", ""),
-                                  "exp": time.time() + 3600})
+                                  "exp": time.time() + 28800})  # 8 hours
     refresh_token = _jwt_encode({"sub": email, "uid": jwt_uid, "role": user["role"],
                                   "profile_code": user.get("profile_code", ""),
                                   "doctor_code": user.get("doctor_code", ""),
