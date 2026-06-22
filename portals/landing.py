@@ -783,51 +783,50 @@ def patient_approve():
             except Exception as e:
                 app.logger.debug("patient_approve JWT path: %s", e)
 
-        # ── Path 2: Legacy flat-file system ───────────────────────────────────
+        # ── Path 2: Legacy crypto (only if local profile + doctor public key exist) ──
         try:
             from common.crypto_utils import (
                 derive_kek_from_password, unwrap_key_with_kek,
-                aesgcm_decrypt, aesgcm_encrypt,
-                rsa_load_private, rsa_load_public, rsa_wrap_key,
+                aesgcm_encrypt, rsa_load_private, rsa_load_public, rsa_wrap_key,
             )
             req_r = http.get(f"{BACKEND}/request_status/{request_id}", headers=_headers(), timeout=8)
-            if not req_r.ok:
-                return jsonify({"error": "Access request not found"}), 404
-            req_entry   = req_r.json()
-            doc_pub_pem = req_entry.get("doctor_public_pem", "")
-            if doc_pub_pem and os.path.exists(upath):
-                local    = json.load(open(upath, encoding="utf-8"))
-                kp       = local.get("key_protection", {})
-                salt     = b64decode(kp["salt_b64"])
-                kek, _   = derive_kek_from_password(pw, salt=salt)
-                K_data   = unwrap_key_with_kek(kek, kp["wrapped_k"])
-                priv_pem = SecureKeyStore.load_private_key(f"patient__{profile_code}")
-                priv     = rsa_load_private(priv_pem)
-                doc_pub  = rsa_load_public(doc_pub_pem.encode())
-                from os import urandom
-                T        = urandom(32)
-                enc_kdata= aesgcm_encrypt(T, K_data)
-                wrapped_T= rsa_wrap_key(doc_pub, T)
-                resp = http.post(
-                    f"{BACKEND}/approve_request",
-                    json={"request_id": request_id, "patient_code": profile_code,
-                          "doctor_code": doc_code, "wrapped_key": wrapped_T,
-                          "encrypted_kdata_with_temp": enc_kdata},
-                    headers=_headers(), timeout=10,
-                )
-                try:
-                    return jsonify(resp.json()), resp.status_code
-                except Exception:
-                    return jsonify({"status": "approved"}), 200
-        # ── Path 3: Direct psycopg2 UPDATE (fallback when JWT uid mismatch) ──
+            if req_r.ok:
+                req_entry   = req_r.json()
+                doc_pub_pem = req_entry.get("doctor_public_pem", "")
+                if doc_pub_pem and os.path.exists(upath):
+                    local    = json.load(open(upath, encoding="utf-8"))
+                    kp       = local.get("key_protection", {})
+                    salt     = b64decode(kp["salt_b64"])
+                    kek, _   = derive_kek_from_password(pw, salt=salt)
+                    K_data   = unwrap_key_with_kek(kek, kp["wrapped_k"])
+                    priv_pem = SecureKeyStore.load_private_key(f"patient__{profile_code}")
+                    priv     = rsa_load_private(priv_pem)
+                    doc_pub  = rsa_load_public(doc_pub_pem.encode())
+                    from os import urandom
+                    T        = urandom(32)
+                    enc_kdata= aesgcm_encrypt(T, K_data)
+                    wrapped_T= rsa_wrap_key(doc_pub, T)
+                    resp = http.post(
+                        f"{BACKEND}/approve_request",
+                        json={"request_id": request_id, "patient_code": profile_code,
+                              "doctor_code": doc_code, "wrapped_key": wrapped_T,
+                              "encrypted_kdata_with_temp": enc_kdata},
+                        headers=_headers(), timeout=10,
+                    )
+                    try:
+                        return jsonify(resp.json()), resp.status_code
+                    except Exception:
+                        return jsonify({"status": "approved"}), 200
+        except Exception as e:
+            app.logger.debug("patient_approve legacy path: %s", e)
+
+        # ── Path 3: Direct psycopg2 UPDATE (ownership verified via profile_code) ─
         if _HAS_PSYCOPG2:
             try:
                 conn = psycopg2.connect(DB_URL)
                 cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-                # Verify ownership via profile_code (session-proven identity)
                 cur.execute("""
-                    UPDATE access_db a SET status='approved',
-                        responded_at=NOW()
+                    UPDATE access_db a SET status='approved', responded_at=NOW()
                     FROM users p
                     WHERE a.patient_id = p.id
                       AND p.profile_code = %s
