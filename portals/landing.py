@@ -66,7 +66,7 @@ BACKEND     = os.environ.get("SERVER_BASE", "http://127.0.0.1:5000")
 USERS_DIR   = os.path.join(ROOT, "client", "Users")
 DOCTORS_DIR = os.path.join(ROOT, "doctor", "Doctors")
 DB_URL      = os.environ.get("DATABASE_URL",
-    "postgresql://medvault_user:StrongPassword123!@localhost:5432/medvault")
+    "postgresql://medvault_user:StrongPassword123!@127.0.0.1:5432/medvault")
 os.makedirs(USERS_DIR,   exist_ok=True)
 os.makedirs(DOCTORS_DIR, exist_ok=True)
 
