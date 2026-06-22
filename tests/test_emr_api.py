@@ -80,13 +80,26 @@ def _auth_headers(jwt_encode, role="doctor", uid="test-uid-001"):
 
 @pytest.fixture(autouse=True)
 def _clean_emr_data():
-    """Clear EMR data files before each test."""
-    data_dir = os.path.join(ROOT, "server", "emr_data")
-    os.makedirs(data_dir, exist_ok=True)
-    for f in os.listdir(data_dir):
-        fp = os.path.join(data_dir, f)
-        if os.path.isfile(fp):
-            os.remove(fp)
+    """
+    Clear EMR DB tables before each test to ensure test isolation.
+    Previously deleted emr_data/*.json files; now truncates PostgreSQL tables.
+    """
+    import sys, os
+    sys.path.insert(0, os.path.join(ROOT, "server"))
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(ROOT, ".env"))
+    from db import init_db, db_cursor
+    try:
+        init_db()
+        with db_cursor() as cur:
+            cur.execute("""
+                TRUNCATE TABLE
+                    emr_profiles, emr_appointments,
+                    emr_prescriptions, emr_lab_reports
+                RESTART IDENTITY CASCADE
+            """)
+    except Exception as e:
+        print(f"[test cleanup] DB truncate failed: {e}")
     yield
 
 
