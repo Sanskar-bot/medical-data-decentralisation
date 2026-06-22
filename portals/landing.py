@@ -2244,20 +2244,80 @@ def doctor_my_requests():
     err = _doctor_session_check()
     if err: return err
     try:
-        r = http.get(f"{BACKEND}/access/doctor_patients",
-                     headers=_jwt_headers(), timeout=8)
-        if r.ok:
-            data = r.json()
-            reqs = data if isinstance(data, list) else data.get("requests", data.get("patients", []))
-            return jsonify({"requests": reqs}), 200
-        # Fallback: read local access_requests.json
-        ar_path = os.path.join(ROOT, "server", "access_requests.json")
-        if os.path.exists(ar_path):
-            all_reqs = json.load(open(ar_path, encoding="utf-8"))
-            doc_code = session.get("doctor_code", "")
-            mine = [req for req in all_reqs if req.get("doctor_code") == doc_code]
-            return jsonify({"requests": mine}), 200
-        return jsonify({"requests": []}), 200
+        doc_code = session.get("doctor_code", "")
+        jwt_tok  = session.get("jwt_token", "")
+        reqs = []
+
+        # ── Primary: psycopg2 JOIN access_db + users ──────────────────────────
+        if _HAS_PSYCOPG2:
+            try:
+                conn = psycopg2.connect(DB_URL)
+                cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                # Look up doctor's UUID
+                cur.execute(
+                    "SELECT id FROM users WHERE doctor_code=%s OR LOWER(username)=LOWER(%s) LIMIT 1",
+                    (doc_code, doc_code)
+                )
+                doc_row = cur.fetchone()
+                if doc_row:
+                    cur.execute("""
+                        SELECT a.id as req_id, a.status, a.created_at,
+                               p.profile_code, p.username, p.name, p.email
+                        FROM access_db a
+                        JOIN users p ON a.patient_id = p.id
+                        WHERE a.doctor_id = %s
+                        ORDER BY a.created_at DESC
+                    """, (str(doc_row["id"]),))
+                    for row in cur.fetchall():
+                        pc = row.get("profile_code") or ""
+                        ts = row["created_at"].isoformat() if row.get("created_at") else ""
+                        reqs.append({
+                            "id":           str(row.get("req_id", "")),
+                            "request_id":   str(row.get("req_id", "")),
+                            "profile_code": pc,
+                            "patient_code": pc,          # alias
+                            "username":     row.get("username") or pc,
+                            "name":         row.get("name") or "",
+                            "email":        row.get("email") or "",
+                            "status":       row.get("status", "pending"),
+                            "requested_at": ts,
+                            "timestamp":    ts,          # alias
+                            "approved_at":  ts,
+                            "doctor_code":  doc_code,
+                        })
+                cur.close(); conn.close()
+            except Exception as e:
+                app.logger.debug("doctor_my_requests psycopg2: %s", e)
+
+        # ── Fallback: JWT /access/doctor_patients ──────────────────────────────
+        if not reqs and jwt_tok:
+            try:
+                r = http.get(f"{BACKEND}/access/doctor_patients",
+                             headers=_jwt_headers(), timeout=8)
+                if r.ok:
+                    data = r.json()
+                    raw  = data if isinstance(data, list) else data.get("requests", data.get("patients", []))
+                    for p in raw:
+                        pc = p.get("profile_code") or p.get("patient_code") or ""
+                        ts = p.get("created_at") or p.get("requested_at") or ""
+                        reqs.append({
+                            "id":           p.get("id", ""),
+                            "request_id":   p.get("id", ""),
+                            "profile_code": pc,
+                            "patient_code": pc,
+                            "username":     p.get("username") or pc,
+                            "name":         p.get("name") or "",
+                            "email":        p.get("email") or "",
+                            "status":       p.get("status", "approved"),
+                            "requested_at": ts,
+                            "timestamp":    ts,
+                            "approved_at":  ts,
+                            "doctor_code":  doc_code,
+                        })
+            except Exception as e:
+                app.logger.debug("doctor_my_requests JWT: %s", e)
+
+        return jsonify({"requests": reqs}), 200
     except Exception as e:
         return jsonify({"error": str(e), "requests": []}), 200
 
