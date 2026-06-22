@@ -7,6 +7,7 @@
   <div class="page-header-text">
     <span class="page-eyebrow">Patient Records</span>
     <h1 class="type-h1">Health Record</h1>
+    <p class="type-label" style="color:var(--tx3); margin-top:var(--sp-1);">End-to-end encrypted personal health record.</p>
   </div>
   <div class="cluster-3">
     <span class="badge badge-encrypted">Encrypted</span>
@@ -43,11 +44,12 @@
 
 <!-- Unlocked panel -->
 <div id="record-unlocked-panel" style="display:none;">
+  <div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
   <div class="grid-sidebar" style="align-items:start;">
 
     <div class="stack-6">
 
-      <!-- Personal Information -->
+      <!-- ── Personal Information ───────────────────────────── -->
       <div class="card">
         <div class="section-header" style="margin-bottom:var(--sp-5);">
           <h2 class="type-h3">Personal Information</h2>
@@ -56,37 +58,275 @@
             Edit
           </button>
         </div>
-        <div id="personal-fields">
+
+        <!-- Read-only view -->
+        <div id="view-personal">
           <div class="field-row" style="padding-top:0;"><div class="field-label">Full Name</div><div class="field-value" id="rec-name">—</div></div>
           <div class="field-row"><div class="field-label">Age</div><div class="field-value" id="rec-age">—</div></div>
+          <div class="field-row"><div class="field-label">Gender</div><div class="field-value" id="rec-gender">—</div></div>
+          <div class="field-row"><div class="field-label">Blood Group</div><div class="field-value" id="rec-blood">—</div></div>
           <div class="field-row"><div class="field-label">Email</div><div class="field-value" id="rec-email">—</div></div>
-          <div class="field-row"><div class="field-label">Notes</div><div class="field-value" id="rec-notes">—</div></div>
+          <div class="field-row"><div class="field-label">Phone</div><div class="field-value" id="rec-phone">—</div></div>
+          <div class="field-row"><div class="field-label">Address</div><div class="field-value" id="rec-address">—</div></div>
+          <div class="field-row"><div class="field-label">Emergency Contact</div><div class="field-value" id="rec-emergency">—</div></div>
+        </div>
+
+        <!-- Edit form -->
+        <div id="edit-personal" style="display:none;">
+          <div id="edit-alert" style="display:none; margin-bottom:var(--sp-4);"></div>
+          <div class="grid-2" style="gap:var(--sp-4);">
+            <div class="input-group">
+              <label class="input-label" for="e-name">Full Name</label>
+              <input class="input-field" id="e-name" type="text" placeholder="Sanskar Phougat">
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-age">Age</label>
+              <input class="input-field" id="e-age" type="number" min="0" max="150" placeholder="23">
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-gender">Gender</label>
+              <select class="input-field" id="e-gender">
+                <option value="">— Select —</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+                <option value="prefer_not_to_say">Prefer not to say</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-blood">Blood Group</label>
+              <select class="input-field" id="e-blood">
+                <option value="">— Select —</option>
+                <option>A+</option><option>A-</option>
+                <option>B+</option><option>B-</option>
+                <option>O+</option><option>O-</option>
+                <option>AB+</option><option>AB-</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-email">Email</label>
+              <input class="input-field" id="e-email" type="email" placeholder="you@example.com">
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-phone">Phone</label>
+              <input class="input-field" id="e-phone" type="tel" placeholder="+91 98765 43210">
+            </div>
+          </div>
+          <div class="input-group" style="margin-top:var(--sp-4);">
+            <label class="input-label" for="e-address">Address</label>
+            <textarea class="input-field" id="e-address" rows="2" placeholder="123 Main St, City, State"></textarea>
+          </div>
+          <div class="input-group" style="margin-top:var(--sp-4);">
+            <label class="input-label" for="e-emergency">Emergency Contact</label>
+            <input class="input-field" id="e-emergency" type="text" placeholder="Name — Phone number">
+          </div>
+          <div class="cluster-3" style="margin-top:var(--sp-5);">
+            <button class="btn-primary" id="save-btn" type="button">
+              <span id="save-lbl">Save changes</span>
+              <span id="save-spin" class="spinner" style="display:none;"></span>
+            </button>
+            <button class="btn-secondary" id="cancel-btn" type="button">Cancel</button>
+          </div>
         </div>
       </div>
 
-      <!-- Medical History -->
-      <div class="card">
-        <div class="section-header" style="margin-bottom:var(--sp-5);">
-          <h2 class="type-h3">Medical History</h2>
-        </div>
-        <div id="medical-history-list" class="stack-3">
-          <div class="empty-state" style="padding:var(--sp-6) 0;"><div class="empty-state-title">No conditions recorded</div></div>
-        </div>
-      </div>
-
-      <!-- Allergies -->
+      <!-- ── Allergies ─────────────────────────────────────── -->
       <div class="card">
         <div class="section-header" style="margin-bottom:var(--sp-5);">
           <h2 class="type-h3">Allergies</h2>
+          <button class="btn-secondary btn-sm" id="edit-allergies-btn" type="button">Edit</button>
         </div>
-        <div id="allergies-list" class="stack-3">
-          <div class="empty-state" style="padding:var(--sp-6) 0;"><div class="empty-state-title">No allergies recorded</div></div>
+        <div id="view-allergies">
+          <div id="allergies-list">
+            <div class="empty-state" style="padding:var(--sp-4) 0;"><div class="empty-state-title">No allergies recorded</div></div>
+          </div>
+        </div>
+        <div id="edit-allergies" style="display:none;">
+          <p style="font-size:var(--t-xs); color:var(--tx3); margin-bottom:var(--sp-3);">Enter each allergy on a new line or separated by commas (e.g. Penicillin, Latex, Peanuts)</p>
+          <textarea class="input-field" id="e-allergies" rows="4" placeholder="Penicillin&#10;Latex&#10;Peanuts"></textarea>
+          <div class="cluster-3" style="margin-top:var(--sp-3);">
+            <button class="btn-primary btn-sm" id="save-allergies-btn" type="button">Save</button>
+            <button class="btn-secondary btn-sm" id="cancel-allergies-btn" type="button">Cancel</button>
+          </div>
         </div>
       </div>
 
-    </div>
+      <!-- ── Medical History ───────────────────────────────── -->
+      <div class="card">
+        <div class="section-header" style="margin-bottom:var(--sp-5);">
+          <h2 class="type-h3">Medical History</h2>
+          <button class="btn-secondary btn-sm" id="edit-history-btn" type="button">Edit</button>
+        </div>
+        <div id="view-history">
+          <div id="medical-history-list">
+            <div class="empty-state" style="padding:var(--sp-4) 0;"><div class="empty-state-title">No conditions recorded</div></div>
+          </div>
+        </div>
+        <div id="edit-history" style="display:none;">
+          <p style="font-size:var(--t-xs); color:var(--tx3); margin-bottom:var(--sp-3);">Enter each condition on a new line (e.g. Type 2 Diabetes, Hypertension)</p>
+          <textarea class="input-field" id="e-history" rows="4" placeholder="Type 2 Diabetes&#10;Hypertension&#10;Asthma"></textarea>
+          <div class="cluster-3" style="margin-top:var(--sp-3);">
+            <button class="btn-primary btn-sm" id="save-history-btn" type="button">Save</button>
+            <button class="btn-secondary btn-sm" id="cancel-history-btn" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
 
-    <!-- Right sidebar -->
+      <!-- ── Current Medications ───────────────────────────── -->
+      <div class="card">
+        <div class="section-header" style="margin-bottom:var(--sp-5);">
+          <h2 class="type-h3">Current Medications</h2>
+          <button class="btn-secondary btn-sm" id="edit-meds-btn" type="button">Edit</button>
+        </div>
+        <div id="view-meds">
+          <div id="meds-list-view">
+            <div class="empty-state" style="padding:var(--sp-4) 0;"><div class="empty-state-title">No medications recorded</div></div>
+          </div>
+        </div>
+        <div id="edit-meds" style="display:none;">
+          <p style="font-size:var(--t-xs); color:var(--tx3); margin-bottom:var(--sp-3);">Enter each medication on a new line (e.g. Metformin 500mg, Amlodipine 5mg)</p>
+          <textarea class="input-field" id="e-meds" rows="4" placeholder="Metformin 500mg&#10;Amlodipine 5mg"></textarea>
+          <div class="cluster-3" style="margin-top:var(--sp-3);">
+            <button class="btn-primary btn-sm" id="save-meds-btn" type="button">Save</button>
+            <button class="btn-secondary btn-sm" id="cancel-meds-btn" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Vitals ────────────────────────────────────────── -->
+      <div class="card">
+        <div class="section-header" style="margin-bottom:var(--sp-5);">
+          <h2 class="type-h3">Vitals</h2>
+          <button class="btn-secondary btn-sm" id="edit-vitals-btn" type="button">Edit</button>
+        </div>
+        <div id="view-vitals">
+          <div class="field-row" style="padding-top:0;"><div class="field-label">Height</div><div class="field-value" id="rec-height">—</div></div>
+          <div class="field-row"><div class="field-label">Weight</div><div class="field-value" id="rec-weight">—</div></div>
+          <div class="field-row"><div class="field-label">BMI</div><div class="field-value" id="rec-bmi">—</div></div>
+          <div class="field-row"><div class="field-label">Blood Pressure</div><div class="field-value" id="rec-bp">—</div></div>
+          <div class="field-row"><div class="field-label">Heart Rate</div><div class="field-value" id="rec-hr">—</div></div>
+          <div class="field-row"><div class="field-label">Blood Sugar</div><div class="field-value" id="rec-sugar">—</div></div>
+          <div class="field-row"><div class="field-label">Oxygen Saturation</div><div class="field-value" id="rec-o2">—</div></div>
+        </div>
+        <div id="edit-vitals" style="display:none;">
+          <div class="grid-2" style="gap:var(--sp-4);">
+            <div class="input-group">
+              <label class="input-label" for="e-height">Height (cm)</label>
+              <input class="input-field" id="e-height" type="number" min="50" max="250" placeholder="175">
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-weight">Weight (kg)</label>
+              <input class="input-field" id="e-weight" type="number" min="1" max="500" placeholder="70">
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-bp">Blood Pressure</label>
+              <input class="input-field" id="e-bp" type="text" placeholder="120/80 mmHg">
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-hr">Heart Rate (bpm)</label>
+              <input class="input-field" id="e-hr" type="number" min="20" max="300" placeholder="72">
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-sugar">Blood Sugar</label>
+              <input class="input-field" id="e-sugar" type="text" placeholder="90 mg/dL (fasting)">
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-o2">Oxygen Saturation (%)</label>
+              <input class="input-field" id="e-o2" type="number" min="50" max="100" placeholder="98">
+            </div>
+          </div>
+          <div class="cluster-3" style="margin-top:var(--sp-4);">
+            <button class="btn-primary btn-sm" id="save-vitals-btn" type="button">Save</button>
+            <button class="btn-secondary btn-sm" id="cancel-vitals-btn" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Lifestyle ─────────────────────────────────────── -->
+      <div class="card">
+        <div class="section-header" style="margin-bottom:var(--sp-5);">
+          <h2 class="type-h3">Lifestyle</h2>
+          <button class="btn-secondary btn-sm" id="edit-lifestyle-btn" type="button">Edit</button>
+        </div>
+        <div id="view-lifestyle">
+          <div class="field-row" style="padding-top:0;"><div class="field-label">Smoking</div><div class="field-value" id="rec-smoking">—</div></div>
+          <div class="field-row"><div class="field-label">Alcohol</div><div class="field-value" id="rec-alcohol">—</div></div>
+          <div class="field-row"><div class="field-label">Exercise</div><div class="field-value" id="rec-exercise">—</div></div>
+          <div class="field-row"><div class="field-label">Diet</div><div class="field-value" id="rec-diet">—</div></div>
+        </div>
+        <div id="edit-lifestyle" style="display:none;">
+          <div class="grid-2" style="gap:var(--sp-4);">
+            <div class="input-group">
+              <label class="input-label" for="e-smoking">Smoking</label>
+              <select class="input-field" id="e-smoking">
+                <option value="">— Select —</option>
+                <option value="Never">Never</option>
+                <option value="Former">Former smoker</option>
+                <option value="Occasional">Occasional</option>
+                <option value="Regular">Regular</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-alcohol">Alcohol</label>
+              <select class="input-field" id="e-alcohol">
+                <option value="">— Select —</option>
+                <option value="Never">Never</option>
+                <option value="Occasional">Occasional</option>
+                <option value="Moderate">Moderate</option>
+                <option value="Heavy">Heavy</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-exercise">Exercise frequency</label>
+              <select class="input-field" id="e-exercise">
+                <option value="">— Select —</option>
+                <option value="Sedentary">Sedentary</option>
+                <option value="1-2x/week">1–2x per week</option>
+                <option value="3-4x/week">3–4x per week</option>
+                <option value="Daily">Daily</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="e-diet">Diet type</label>
+              <select class="input-field" id="e-diet">
+                <option value="">— Select —</option>
+                <option value="Omnivore">Omnivore</option>
+                <option value="Vegetarian">Vegetarian</option>
+                <option value="Vegan">Vegan</option>
+                <option value="Keto">Keto</option>
+                <option value="Diabetic">Diabetic diet</option>
+                <option value="Low-sodium">Low-sodium</option>
+              </select>
+            </div>
+          </div>
+          <div class="cluster-3" style="margin-top:var(--sp-4);">
+            <button class="btn-primary btn-sm" id="save-lifestyle-btn" type="button">Save</button>
+            <button class="btn-secondary btn-sm" id="cancel-lifestyle-btn" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Notes ─────────────────────────────────────────── -->
+      <div class="card">
+        <div class="section-header" style="margin-bottom:var(--sp-5);">
+          <h2 class="type-h3">Notes</h2>
+          <button class="btn-secondary btn-sm" id="edit-notes-btn" type="button">Edit</button>
+        </div>
+        <div id="view-notes">
+          <div id="rec-notes" style="font-size:var(--t-sm); color:var(--tx2); line-height:1.7; white-space:pre-wrap;">—</div>
+        </div>
+        <div id="edit-notes" style="display:none;">
+          <textarea class="input-field" id="e-notes" rows="4" placeholder="Any other medical notes or context…"></textarea>
+          <div class="cluster-3" style="margin-top:var(--sp-3);">
+            <button class="btn-primary btn-sm" id="save-notes-btn" type="button">Save</button>
+            <button class="btn-secondary btn-sm" id="cancel-notes-btn" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end main column -->
+
+    <!-- ── Right sidebar ─────────────────────────────────── -->
     <div class="stack-4">
       <div class="card">
         <div style="margin-bottom:var(--sp-4);"><span class="badge badge-encrypted">Encrypted</span></div>
@@ -106,11 +346,25 @@
             <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
             Audit log
           </a>
+          <a href="/emr" class="quick-action-item">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            EMR Profile
+          </a>
           <button class="quick-action-item" id="lock-record-btn" type="button">
             <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
             Lock record
           </button>
         </div>
+      </div>
+
+      <!-- Completeness card -->
+      <div class="card">
+        <div class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-4);">Record Completeness</div>
+        <div id="completeness-bar" style="height:6px;background:var(--b2);border-radius:3px;margin-bottom:var(--sp-3);overflow:hidden;">
+          <div id="completeness-fill" style="height:100%;background:var(--t5);border-radius:3px;transition:width .5s var(--ease);width:0%;"></div>
+        </div>
+        <div id="completeness-pct" style="font-size:var(--t-xs);color:var(--tx3);">0% complete</div>
+        <div id="completeness-hints" class="stack-2" style="margin-top:var(--sp-4);"></div>
       </div>
     </div>
 
@@ -121,17 +375,172 @@
 {% block scripts %}
 <script>
 (function() {
-  var _pw  = '';   // password kept in memory after decrypt
-  var _rec = {};   // last decrypted record
+  var _pw  = '';
+  var _rec = {};
 
-  function alert_(el, msg, type) {
-    el.className = 'alert alert-' + (type||'error');
+  function showAlert(el, msg, type) {
+    if (!el) return;
+    el.className = 'alert alert-' + (type || 'error');
     el.textContent = msg;
     el.style.display = 'flex';
-    setTimeout(function() { el.style.display = 'none'; }, 4000);
+    if (type === 'success') setTimeout(function() { el.style.display = 'none'; }, 4000);
+  }
+  function esc(v) {
+    return (v || '').toString().replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function listItems(arr, emptyMsg, colorVar) {
+    if (!Array.isArray(arr) || !arr.length) {
+      return '<div class="empty-state" style="padding:var(--sp-4) 0;"><div class="empty-state-title">' + emptyMsg + '</div></div>';
+    }
+    return arr.map(function(a) {
+      return '<div class="cluster-3"><div style="width:8px;height:8px;background:var(' + colorVar + ');border-radius:50%;flex-shrink:0;"></div><span style="font-size:var(--t-sm);">' + esc(a) + '</span></div>';
+    }).join('');
+  }
+  function parseLines(str) {
+    // Accept both newline-separated and comma-separated entries
+    var items = [];
+    (str || '').split(/[\n,]/).forEach(function(s) {
+      s = s.trim();
+      if (s) items.push(s);
+    });
+    // Dedupe case-insensitively
+    var seen = {}, result = [];
+    items.forEach(function(s) {
+      var k = s.toLowerCase();
+      if (!seen[k]) { seen[k] = true; result.push(s); }
+    });
+    return result;
   }
 
-  // ── UNLOCK ─────────────────────────────────────────────────────
+  // ── COMPLETENESS ──────────────────────────────────────────────────────────
+  function updateCompleteness(rec) {
+    var fields = [
+      { key: 'name',           label: 'Full name' },
+      { key: 'age',            label: 'Age' },
+      { key: 'blood_group',    label: 'Blood group' },
+      { key: 'gender',         label: 'Gender' },
+      { key: 'phone',          label: 'Phone number' },
+      { key: 'allergies',      label: 'Allergies (or mark as none)', isArr: true },
+      { key: 'medical_history',label: 'Medical history', isArr: true },
+      { key: 'height',         label: 'Height' },
+      { key: 'weight',         label: 'Weight' },
+      { key: 'blood_pressure', label: 'Blood pressure' },
+      { key: 'emergency_contact', label: 'Emergency contact' },
+    ];
+    var filled = fields.filter(function(f) {
+      var v = rec[f.key];
+      if (f.isArr) return Array.isArray(v) && v.length > 0;
+      return v && String(v).trim() !== '';
+    });
+    var pct = Math.round((filled.length / fields.length) * 100);
+    document.getElementById('completeness-fill').style.width = pct + '%';
+    document.getElementById('completeness-pct').textContent = pct + '% complete';
+    var missing = fields.filter(function(f) {
+      var v = rec[f.key];
+      if (f.isArr) return !(Array.isArray(v) && v.length > 0);
+      return !v || String(v).trim() === '';
+    });
+    var hints = document.getElementById('completeness-hints');
+    if (missing.length === 0) {
+      hints.innerHTML = '<div style="font-size:var(--t-xs);color:var(--t5);">Record fully complete.</div>';
+    } else {
+      hints.innerHTML = '<div style="font-size:var(--t-xs);color:var(--tx3);margin-bottom:var(--sp-2);">Missing:</div>' +
+        missing.slice(0, 4).map(function(f) {
+          return '<div style="font-size:var(--t-xs);color:var(--tx3);display:flex;gap:var(--sp-2);align-items:center;">' +
+            '<svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="var(--g5)" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>' +
+            f.label + '</div>';
+        }).join('') +
+        (missing.length > 4 ? '<div style="font-size:var(--t-xs);color:var(--tx3);">+ ' + (missing.length - 4) + ' more</div>' : '');
+    }
+  }
+
+  // ── RENDER ─────────────────────────────────────────────────────────────────
+  function render(rec) {
+    // Personal
+    document.getElementById('rec-name').textContent    = rec.name  || '—';
+    document.getElementById('rec-age').textContent     = rec.age   ? rec.age + ' yrs' : '—';
+    document.getElementById('rec-gender').textContent  = rec.gender ? rec.gender.charAt(0).toUpperCase() + rec.gender.slice(1).replace(/_/g,' ') : '—';
+    document.getElementById('rec-blood').textContent   = rec.blood_group || '—';
+    document.getElementById('rec-email').textContent   = rec.email || '—';
+    document.getElementById('rec-phone').textContent   = rec.phone || '—';
+    document.getElementById('rec-address').textContent = rec.address || '—';
+    document.getElementById('rec-emergency').textContent = rec.emergency_contact || '—';
+
+    // Allergies
+    var al = Array.isArray(rec.allergies) ? rec.allergies : (rec.allergies ? [rec.allergies] : []);
+    document.getElementById('allergies-list').innerHTML = listItems(al, 'No allergies recorded', '--ra');
+
+    // Medical history
+    var mh = Array.isArray(rec.medical_history) ? rec.medical_history : (rec.medical_history ? [rec.medical_history] : []);
+    document.getElementById('medical-history-list').innerHTML = listItems(mh, 'No conditions recorded', '--t5');
+
+    // Medications
+    var meds = Array.isArray(rec.current_medications) ? rec.current_medications : (rec.current_medications ? [rec.current_medications] : []);
+    document.getElementById('meds-list-view').innerHTML = listItems(meds, 'No medications recorded', '--p5');
+
+    // Vitals
+    var h = rec.height, w = rec.weight;
+    document.getElementById('rec-height').textContent = h ? h + ' cm' : '—';
+    document.getElementById('rec-weight').textContent = w ? w + ' kg' : '—';
+    document.getElementById('rec-bmi').textContent = (h && w) ? (w / Math.pow(h/100, 2)).toFixed(1) + ' kg/m²' : '—';
+    document.getElementById('rec-bp').textContent     = rec.blood_pressure || '—';
+    document.getElementById('rec-hr').textContent     = rec.heart_rate ? rec.heart_rate + ' bpm' : '—';
+    document.getElementById('rec-sugar').textContent  = rec.blood_sugar || '—';
+    document.getElementById('rec-o2').textContent     = rec.oxygen_saturation ? rec.oxygen_saturation + '%' : '—';
+
+    // Lifestyle
+    document.getElementById('rec-smoking').textContent  = rec.smoking  || '—';
+    document.getElementById('rec-alcohol').textContent  = rec.alcohol  || '—';
+    document.getElementById('rec-exercise').textContent = rec.exercise || '—';
+    document.getElementById('rec-diet').textContent     = rec.diet     || '—';
+
+    // Notes
+    document.getElementById('rec-notes').textContent = rec.notes || '—';
+
+    updateCompleteness(rec);
+  }
+
+  // ── SAVE helper ────────────────────────────────────────────────────────────
+  function saveRecord(partial, onDone) {
+    var pageAlert = document.getElementById('page-alert');
+    fetch('/patient/record', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ password: _pw, update: partial }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { showAlert(pageAlert, d.error, 'error'); if (onDone) onDone(false); return; }
+      if (d.record) _rec = d.record; else Object.assign(_rec, partial);
+      render(_rec);
+      showAlert(pageAlert, 'Record updated successfully.', 'success');
+      if (onDone) onDone(true);
+    })
+    .catch(function() {
+      showAlert(pageAlert, 'Network error — please try again.', 'error');
+      if (onDone) onDone(false);
+    });
+  }
+
+  // ── SECTION TOGGLE helper ──────────────────────────────────────────────────
+  function sectionToggle(viewId, editId, btnId, fillFn, cancelFn) {
+    var btn = document.getElementById(btnId);
+    btn.addEventListener('click', function() {
+      var isEditing = document.getElementById(editId).style.display !== 'none';
+      if (isEditing) { cancelFn(); return; }
+      fillFn();
+      document.getElementById(viewId).style.display = 'none';
+      document.getElementById(editId).style.display = 'block';
+      btn.textContent = 'Cancel';
+    });
+    return function closeSection() {
+      document.getElementById(viewId).style.display = 'block';
+      document.getElementById(editId).style.display = 'none';
+      btn.textContent = 'Edit';
+    };
+  }
+
+  // ── UNLOCK ─────────────────────────────────────────────────────────────────
   var unlockBtn = document.getElementById('unlock-btn');
   document.getElementById('unlock-pw').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') unlockBtn.click();
@@ -139,107 +548,176 @@
   unlockBtn.addEventListener('click', function() {
     var pw  = document.getElementById('unlock-pw').value;
     var err = document.getElementById('unlock-alert');
-    if (!pw) { alert_(err, 'Please enter your password.', 'error'); return; }
+    if (!pw) { showAlert(err, 'Please enter your password.', 'error'); return; }
     unlockBtn.disabled = true;
     document.getElementById('unlock-btn-text').textContent = 'Decrypting…';
     document.getElementById('unlock-spinner').style.display = 'inline-block';
-    fetch('/patient/record', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:pw})})
-    .then(function(r){return r.json();})
-    .then(function(d){
+    fetch('/patient/record', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({password: pw}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
       unlockBtn.disabled = false;
       document.getElementById('unlock-btn-text').textContent = 'Decrypt & View';
       document.getElementById('unlock-spinner').style.display = 'none';
-      if (d.error) { alert_(err, d.error, 'error'); return; }
+      if (d.error) { showAlert(err, d.error, 'error'); return; }
       _pw  = pw;
       _rec = d.record || {};
       render(_rec);
       document.getElementById('record-locked-panel').style.display   = 'none';
       document.getElementById('record-unlocked-panel').style.display = 'block';
     })
-    .catch(function(){
+    .catch(function() {
       unlockBtn.disabled = false;
       document.getElementById('unlock-btn-text').textContent = 'Decrypt & View';
       document.getElementById('unlock-spinner').style.display = 'none';
-      alert_(document.getElementById('unlock-alert'), 'Network error.', 'error');
+      showAlert(document.getElementById('unlock-alert'), 'Could not connect to server. Ensure the portal is running.', 'error');
     });
   });
 
-  // ── RENDER (read-only) ─────────────────────────────────────────
-  function render(rec) {
-    document.getElementById('rec-name').textContent  = rec.name  || '—';
-    document.getElementById('rec-age').textContent   = rec.age   || '—';
-    document.getElementById('rec-email').textContent = rec.email || '—';
-    document.getElementById('rec-notes').textContent = rec.notes || 'No notes recorded.';
-    var mh = Array.isArray(rec.medical_history) ? rec.medical_history : [];
-    document.getElementById('medical-history-list').innerHTML = mh.length
-      ? mh.map(function(c){return '<div class="cluster-3"><div style="width:6px;height:6px;background:var(--t5);border-radius:50%;"></div><span style="font-size:var(--t-sm);">'+c+'</span></div>';}).join('')
-      : '<div class="empty-state" style="padding:var(--sp-6) 0;"><div class="empty-state-title">No conditions recorded</div></div>';
-    var al = Array.isArray(rec.allergies) ? rec.allergies : [];
-    document.getElementById('allergies-list').innerHTML = al.length
-      ? al.map(function(a){return '<div class="cluster-3"><div style="width:6px;height:6px;background:var(--g5);border-radius:50%;"></div><span style="font-size:var(--t-sm);">'+a+'</span></div>';}).join('')
-      : '<div class="empty-state" style="padding:var(--sp-6) 0;"><div class="empty-state-title">No allergies recorded</div></div>';
-    // restore edit button
-    var eb = document.getElementById('edit-record-btn');
-    if (eb) {
-      eb.innerHTML = '<svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg> Edit';
-      eb.disabled = false;
-    }
-  }
-
-  // ── EDIT MODE ──────────────────────────────────────────────────
-  document.getElementById('edit-record-btn').addEventListener('click', function() {
-    var eb = document.getElementById('edit-record-btn');
-    eb.innerHTML = '✎ Editing…'; eb.disabled = true;
-    document.getElementById('personal-fields').innerHTML =
-      '<div id="edit-alert" style="display:none;margin-bottom:var(--sp-3);"></div>' +
-      '<div class="input-group"><label class="input-label" for="e-name">Full Name</label><input class="input-field" id="e-name" value="' + esc(_rec.name) + '"></div>' +
-      '<div class="input-group"><label class="input-label" for="e-age">Age</label><input class="input-field" id="e-age" value="' + esc(_rec.age) + '" type="text" inputmode="numeric"></div>' +
-      '<div class="input-group"><label class="input-label" for="e-email">Email</label><input class="input-field" id="e-email" type="email" value="' + esc(_rec.email) + '"></div>' +
-      '<div class="input-group"><label class="input-label" for="e-notes">Notes</label><textarea class="input-field" id="e-notes" rows="3">' + (_rec.notes||'') + '</textarea></div>' +
-      '<div class="cluster-3" style="margin-top:var(--sp-2);">' +
-        '<button class="btn-primary" id="save-btn" type="button"><span id="save-lbl">Save changes</span><span id="save-spin" class="spinner" style="display:none;"></span></button>' +
-        '<button class="btn-secondary" id="cancel-btn" type="button">Cancel</button>' +
-      '</div>';
-
-    document.getElementById('cancel-btn').addEventListener('click', function() { render(_rec); });
-    document.getElementById('save-btn').addEventListener('click', function() {
-      var alertEl = document.getElementById('edit-alert');
-      if (!_pw) { alert_(alertEl, 'Session expired — lock and re-unlock.', 'error'); return; }
-      var upd = {
-        name:  document.getElementById('e-name').value.trim(),
-        age:   document.getElementById('e-age').value.trim(),
-        email: document.getElementById('e-email').value.trim(),
-        notes: document.getElementById('e-notes').value.trim(),
-      };
-      document.getElementById('save-btn').disabled = true;
-      document.getElementById('save-lbl').textContent = 'Saving…';
-      document.getElementById('save-spin').style.display = 'inline-block';
-      fetch('/patient/record', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:_pw, update:upd})})
-      .then(function(r){return r.json();})
-      .then(function(d){
-        document.getElementById('save-btn').disabled = false;
-        document.getElementById('save-lbl').textContent = 'Save changes';
-        document.getElementById('save-spin').style.display = 'none';
-        if (d.error) { alert_(alertEl, d.error, 'error'); return; }
-        if (d.record) _rec = d.record; else Object.assign(_rec, upd);
-        render(_rec);
-      })
-      .catch(function(){
-        document.getElementById('save-btn').disabled = false;
-        document.getElementById('save-lbl').textContent = 'Save changes';
-        document.getElementById('save-spin').style.display = 'none';
-        alert_(document.getElementById('edit-alert'), 'Network error.', 'error');
-      });
+  // ── PERSONAL edit ─────────────────────────────────────────────────────────
+  var closePersonal = sectionToggle('view-personal', 'edit-personal', 'edit-record-btn',
+    function fill() {
+      document.getElementById('e-name').value    = _rec.name || '';
+      document.getElementById('e-age').value     = _rec.age  || '';
+      document.getElementById('e-gender').value  = _rec.gender || '';
+      document.getElementById('e-blood').value   = _rec.blood_group || '';
+      document.getElementById('e-email').value   = _rec.email || '';
+      document.getElementById('e-phone').value   = _rec.phone || '';
+      document.getElementById('e-address').value = _rec.address || '';
+      document.getElementById('e-emergency').value = _rec.emergency_contact || '';
+    },
+    function cancel() { closePersonal(); }
+  );
+  document.getElementById('cancel-btn').addEventListener('click', function() { closePersonal(); });
+  document.getElementById('save-btn').addEventListener('click', function() {
+    var btn = document.getElementById('save-btn');
+    btn.disabled = true;
+    document.getElementById('save-lbl').textContent = 'Saving…';
+    document.getElementById('save-spin').style.display = 'inline-block';
+    saveRecord({
+      name:              document.getElementById('e-name').value.trim(),
+      age:               document.getElementById('e-age').value.trim(),
+      gender:            document.getElementById('e-gender').value,
+      blood_group:       document.getElementById('e-blood').value,
+      email:             document.getElementById('e-email').value.trim(),
+      phone:             document.getElementById('e-phone').value.trim(),
+      address:           document.getElementById('e-address').value.trim(),
+      emergency_contact: document.getElementById('e-emergency').value.trim(),
+    }, function(ok) {
+      btn.disabled = false;
+      document.getElementById('save-lbl').textContent = 'Save changes';
+      document.getElementById('save-spin').style.display = 'none';
+      if (ok) closePersonal();
     });
   });
 
-  function esc(v) { return (v||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+  // ── ALLERGIES edit ────────────────────────────────────────────────────────
+  var closeAllergies = sectionToggle('view-allergies', 'edit-allergies', 'edit-allergies-btn',
+    function fill() {
+      var al = Array.isArray(_rec.allergies) ? _rec.allergies : (_rec.allergies ? [_rec.allergies] : []);
+      document.getElementById('e-allergies').value = al.join('\n');
+    },
+    function cancel() { closeAllergies(); }
+  );
+  document.getElementById('cancel-allergies-btn').addEventListener('click', function() { closeAllergies(); });
+  document.getElementById('save-allergies-btn').addEventListener('click', function() {
+    saveRecord({ allergies: parseLines(document.getElementById('e-allergies').value) },
+      function(ok) { if (ok) closeAllergies(); });
+  });
 
-  // ── LOCK ──────────────────────────────────────────────────────
+  // ── MEDICAL HISTORY edit ──────────────────────────────────────────────────
+  var closeHistory = sectionToggle('view-history', 'edit-history', 'edit-history-btn',
+    function fill() {
+      var mh = Array.isArray(_rec.medical_history) ? _rec.medical_history : (_rec.medical_history ? [_rec.medical_history] : []);
+      document.getElementById('e-history').value = mh.join('\n');
+    },
+    function cancel() { closeHistory(); }
+  );
+  document.getElementById('cancel-history-btn').addEventListener('click', function() { closeHistory(); });
+  document.getElementById('save-history-btn').addEventListener('click', function() {
+    saveRecord({ medical_history: parseLines(document.getElementById('e-history').value) },
+      function(ok) { if (ok) closeHistory(); });
+  });
+
+  // ── MEDICATIONS edit ──────────────────────────────────────────────────────
+  var closeMeds = sectionToggle('view-meds', 'edit-meds', 'edit-meds-btn',
+    function fill() {
+      var m = Array.isArray(_rec.current_medications) ? _rec.current_medications : (_rec.current_medications ? [_rec.current_medications] : []);
+      document.getElementById('e-meds').value = m.join('\n');
+    },
+    function cancel() { closeMeds(); }
+  );
+  document.getElementById('cancel-meds-btn').addEventListener('click', function() { closeMeds(); });
+  document.getElementById('save-meds-btn').addEventListener('click', function() {
+    saveRecord({ current_medications: parseLines(document.getElementById('e-meds').value) },
+      function(ok) { if (ok) closeMeds(); });
+  });
+
+  // ── VITALS edit ───────────────────────────────────────────────────────────
+  var closeVitals = sectionToggle('view-vitals', 'edit-vitals', 'edit-vitals-btn',
+    function fill() {
+      document.getElementById('e-height').value = _rec.height || '';
+      document.getElementById('e-weight').value = _rec.weight || '';
+      document.getElementById('e-bp').value     = _rec.blood_pressure || '';
+      document.getElementById('e-hr').value     = _rec.heart_rate || '';
+      document.getElementById('e-sugar').value  = _rec.blood_sugar || '';
+      document.getElementById('e-o2').value     = _rec.oxygen_saturation || '';
+    },
+    function cancel() { closeVitals(); }
+  );
+  document.getElementById('cancel-vitals-btn').addEventListener('click', function() { closeVitals(); });
+  document.getElementById('save-vitals-btn').addEventListener('click', function() {
+    saveRecord({
+      height:             document.getElementById('e-height').value.trim(),
+      weight:             document.getElementById('e-weight').value.trim(),
+      blood_pressure:     document.getElementById('e-bp').value.trim(),
+      heart_rate:         document.getElementById('e-hr').value.trim(),
+      blood_sugar:        document.getElementById('e-sugar').value.trim(),
+      oxygen_saturation:  document.getElementById('e-o2').value.trim(),
+    }, function(ok) { if (ok) closeVitals(); });
+  });
+
+  // ── LIFESTYLE edit ────────────────────────────────────────────────────────
+  var closeLifestyle = sectionToggle('view-lifestyle', 'edit-lifestyle', 'edit-lifestyle-btn',
+    function fill() {
+      document.getElementById('e-smoking').value  = _rec.smoking  || '';
+      document.getElementById('e-alcohol').value  = _rec.alcohol  || '';
+      document.getElementById('e-exercise').value = _rec.exercise || '';
+      document.getElementById('e-diet').value     = _rec.diet     || '';
+    },
+    function cancel() { closeLifestyle(); }
+  );
+  document.getElementById('cancel-lifestyle-btn').addEventListener('click', function() { closeLifestyle(); });
+  document.getElementById('save-lifestyle-btn').addEventListener('click', function() {
+    saveRecord({
+      smoking:  document.getElementById('e-smoking').value,
+      alcohol:  document.getElementById('e-alcohol').value,
+      exercise: document.getElementById('e-exercise').value,
+      diet:     document.getElementById('e-diet').value,
+    }, function(ok) { if (ok) closeLifestyle(); });
+  });
+
+  // ── NOTES edit ────────────────────────────────────────────────────────────
+  var closeNotes = sectionToggle('view-notes', 'edit-notes', 'edit-notes-btn',
+    function fill() {
+      document.getElementById('e-notes').value = _rec.notes || '';
+    },
+    function cancel() { closeNotes(); }
+  );
+  document.getElementById('cancel-notes-btn').addEventListener('click', function() { closeNotes(); });
+  document.getElementById('save-notes-btn').addEventListener('click', function() {
+    saveRecord({ notes: document.getElementById('e-notes').value.trim() },
+      function(ok) { if (ok) closeNotes(); });
+  });
+
+  // ── LOCK ──────────────────────────────────────────────────────────────────
   document.getElementById('lock-record-btn').addEventListener('click', function() {
     _pw = ''; _rec = {};
     document.getElementById('record-unlocked-panel').style.display = 'none';
-    document.getElementById('record-locked-panel').style.display = 'block';
+    document.getElementById('record-locked-panel').style.display  = 'block';
     document.getElementById('unlock-pw').value = '';
   });
 })();
