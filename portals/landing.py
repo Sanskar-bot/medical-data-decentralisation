@@ -131,6 +131,60 @@ def dashboard():
     )
 
 
+# ── ADDITIONAL PAGE ROUTES ───────────────────────────────────────────────────
+def _page_context():
+    """Common context dict for all authenticated page renders."""
+    role        = session.get("role", "patient")
+    doctor_code = session.get("doctor_code", "")
+    return dict(
+        role=role,
+        name=session.get("name", "User"),
+        email=session.get("email", ""),
+        username=session.get("username", ""),
+        profile_code=session.get("profile_code", "") if role == "patient" else "",
+        doctor_code=doctor_code,
+        specialization=session.get("specialization", ""),
+        hospital=session.get("hospital", ""),
+        jwt_token=session.get("jwt_token", ""),
+    )
+
+@app.route("/health-record")
+def health_record():
+    guard = _require_session()
+    if guard: return guard
+    return render_template("health_record.html", **_page_context())
+
+@app.route("/access-requests")
+def access_requests():
+    guard = _require_session()
+    if guard: return guard
+    return render_template("access_requests.html", **_page_context())
+
+@app.route("/appointments")
+def appointments():
+    guard = _require_session()
+    if guard: return guard
+    return render_template("appointments.html", **_page_context())
+
+@app.route("/notes")
+def notes_page():
+    guard = _require_session()
+    if guard: return guard
+    return render_template("doctor_notes.html", **_page_context())
+
+@app.route("/audit")
+def audit_log():
+    guard = _require_session()
+    if guard: return guard
+    return render_template("audit_log.html", **_page_context())
+
+@app.route("/profile")
+def profile():
+    guard = _require_session()
+    if guard: return guard
+    return render_template("profile.html", **_page_context())
+
+
 @app.route("/logout")
 def logout():
     session.clear()
@@ -149,12 +203,14 @@ def login():
         if not identifier or not password:
             return jsonify({"error": "Username/email and password are required"}), 400
 
+        sha_hash = hashlib.sha256(password.encode()).hexdigest()
+
         # Send raw password to backend — server handles both SHA-256 and werkzeug
         try:
             r = http.post(
                 f"{BACKEND}/auth/login",
                 json={"email": identifier, "password": password,
-                      "password_hash": hashlib.sha256(password.encode()).hexdigest()},
+                      "password_hash": sha_hash},
                 headers=_headers(),
                 timeout=10,
             )
@@ -162,8 +218,22 @@ def login():
         except Exception as e:
             return jsonify({"error": f"Cannot reach backend: {e}"}), 502
 
+        # ── Legacy hash detected: surface as upgrade_required ─────────
+        if r.status_code == 403 and data.get("error") == "password_reset_required":
+            return jsonify({
+                "upgrade_required": True,
+                "identifier": identifier,
+                "old_hash": sha_hash,
+                "message": "Your account uses an outdated password format. Set a new password to continue.",
+            }), 403
+
         if not r.ok:
-            return jsonify({"error": data.get("error", "Invalid credentials")}), r.status_code
+            err = data.get("error", "Invalid credentials")
+            human = {
+                "invalid_credentials": "Incorrect email/username or password.",
+                "account_locked": "Account locked after too many failed attempts. Contact support.",
+            }.get(err, err)
+            return jsonify({"error": human}), r.status_code
 
         # Populate Flask session
         session.clear()
@@ -173,13 +243,12 @@ def login():
         session["logged_in"]    = True
         session["role"]         = role
         session["name"]         = data.get("name", "")
-        session["email"]        = data.get("email", identifier)  # store the real email
+        session["email"]        = data.get("email", identifier)
         session["username"]     = data.get("username", "")
         session["user_id"]      = data.get("user_id", "")
         session["profile_code"] = pcode if role == "patient" else ""
         session["doctor_code"]  = dcode if role == "doctor" else ""
         session["jwt_token"]    = data.get("access_token", "")
-        # Load doctor specialization & hospital from local doctor_data.json
         if role == "doctor" and dcode:
             try:
                 for d_folder in os.listdir(DOCTORS_DIR):
@@ -192,13 +261,82 @@ def login():
                             break
             except Exception:
                 pass
-        session.permanent       = True
+        session.permanent = True
 
         return jsonify({"message": "ok", "redirect": "/dashboard",
                         "role": session["role"]})
     except Exception as e:
         app.logger.exception("Login error")
         return jsonify({"error": str(e)}), 500
+
+
+# ── Password upgrade proxy (legacy SHA-256 → werkzeug pbkdf2) ─────────────────
+@app.route("/login/upgrade", methods=["POST"])
+def login_upgrade():
+    """Transparently upgrades a legacy-hash account to werkzeug pbkdf2 and logs in."""
+    try:
+        d          = request.get_json(force=True) or {}
+        identifier = (d.get("identifier") or "").strip().lower()
+        old_hash   = (d.get("old_hash") or "").strip()
+        new_pw     = d.get("new_password") or ""
+
+        if not identifier or not old_hash or not new_pw:
+            return jsonify({"error": "Missing fields."}), 400
+        if len(new_pw) < 8:
+            return jsonify({"error": "Password must be at least 8 characters."}), 400
+
+        try:
+            r = http.post(
+                f"{BACKEND}/auth/upgrade_password",
+                json={"email": identifier, "old_password_hash": old_hash,
+                      "new_password": new_pw},
+                headers=_headers(), timeout=10,
+            )
+            data = r.json()
+        except Exception as e:
+            return jsonify({"error": f"Cannot reach backend: {e}"}), 502
+
+        if not r.ok:
+            err = data.get("error", "Upgrade failed.")
+            human = {
+                "invalid_credentials": "The original password didn't match. Try again.",
+                "account_locked": "Account locked. Contact support.",
+                "not_legacy": "Account already upgraded — just sign in normally.",
+            }.get(err, err)
+            return jsonify({"error": human}), r.status_code
+
+        # Upgrade succeeded — now log the user in by re-using the new token from the response
+        # Immediately call login with the new password to populate session
+        sha2 = hashlib.sha256(new_pw.encode()).hexdigest()
+        r2 = http.post(
+            f"{BACKEND}/auth/login",
+            json={"email": identifier, "password": new_pw, "password_hash": sha2},
+            headers=_headers(), timeout=10,
+        )
+        data2 = r2.json()
+        if not r2.ok:
+            return jsonify({"error": "Upgrade succeeded but auto-login failed. Please sign in."}), 200
+
+        session.clear()
+        role  = data2.get("role", "patient")
+        pcode = data2.get("profile_code", "")
+        dcode = data2.get("doctor_code", "") or (pcode if role == "doctor" else "")
+        session["logged_in"]    = True
+        session["role"]         = role
+        session["name"]         = data2.get("name", "")
+        session["email"]        = data2.get("email", identifier)
+        session["username"]     = data2.get("username", "")
+        session["user_id"]      = data2.get("user_id", "")
+        session["profile_code"] = pcode if role == "patient" else ""
+        session["doctor_code"]  = dcode if role == "doctor" else ""
+        session["jwt_token"]    = data2.get("access_token", "")
+        session.permanent       = True
+        return jsonify({"message": "upgraded", "redirect": "/dashboard"})
+    except Exception as e:
+        app.logger.exception("login_upgrade error")
+        return jsonify({"error": str(e)}), 500
+
+
 
 
 # ── REGISTER PATIENT ──────────────────────────────────────────────────────────

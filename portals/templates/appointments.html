@@ -1,0 +1,211 @@
+{% extends 'base.html' %}
+{% block title %}Appointments{% endblock %}
+{% block topbar_title %}Appointments{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <span class="page-eyebrow">
+      {% if role == 'patient' %}Your Appointments{% else %}Appointment Requests{% endif %}
+    </span>
+    <h1 class="type-h1">Appointments</h1>
+  </div>
+  {% if role == 'patient' %}
+  <button class="btn-primary" id="new-appt-btn" type="button">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+    Request appointment
+  </button>
+  {% endif %}
+</div>
+
+<div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
+
+<!-- Patient: new appointment form -->
+{% if role == 'patient' %}
+<div id="new-appt-form" class="card" style="max-width:600px; margin-bottom:var(--sp-8); display:none;">
+  <h2 class="type-h3" style="margin-bottom:var(--sp-5);">Request an Appointment</h2>
+  <div id="form-alert" style="display:none;"></div>
+  <div class="grid-2">
+    <div class="input-group">
+      <label class="input-label" for="appt-doctor">Doctor username</label>
+      <input class="input-field" type="text" id="appt-doctor" placeholder="dr.smith" autocomplete="off">
+    </div>
+    <div class="input-group">
+      <label class="input-label" for="appt-date">Preferred date</label>
+      <input class="input-field" type="date" id="appt-date">
+    </div>
+  </div>
+  <div class="grid-2">
+    <div class="input-group">
+      <label class="input-label" for="appt-time">Preferred time</label>
+      <input class="input-field" type="time" id="appt-time">
+    </div>
+    <div class="input-group">
+      <label class="input-label" for="appt-notes">Reason / notes</label>
+      <input class="input-field" type="text" id="appt-notes" placeholder="Brief reason for visit">
+    </div>
+  </div>
+  <div class="cluster-3">
+    <button class="btn-primary" id="submit-appt-btn" type="button">
+      <span id="appt-btn-text">Request appointment</span>
+      <span id="appt-spinner" class="spinner" style="display:none;"></span>
+    </button>
+    <button class="btn-secondary" id="cancel-appt-btn" type="button">Cancel</button>
+  </div>
+</div>
+{% endif %}
+
+<!-- Appointments table -->
+<div class="card" style="padding:0; overflow:hidden;">
+  <table class="data-table" id="appt-table" aria-label="Appointments">
+    <thead>
+      <tr>
+        {% if role == 'patient' %}
+          <th>Doctor</th>
+        {% else %}
+          <th>Patient</th>
+        {% endif %}
+        <th>Date &amp; Time</th>
+        <th>Notes</th>
+        <th>Status</th>
+        <th>Source</th>
+        {% if role == 'doctor' %}<th>Actions</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody id="appt-body">
+      <tr><td colspan="6" style="text-align:center; padding:var(--sp-8); color:var(--tx3);">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var JWT  = {{ session.get('jwt_token','') | tojson }};
+  var ROLE = {{ role | tojson }};
+  var pageAlertEl  = document.getElementById('page-alert');
+  var formAlertEl  = document.getElementById('form-alert');
+
+  function showAlert(el, msg, type) {
+    el.className = 'alert alert-' + (type||'error');
+    el.textContent = msg;
+    el.style.display = 'flex';
+    setTimeout(function() { el.style.display = 'none'; }, 5000);
+  }
+  function fmt(s) {
+    if (!s) return '—';
+    try { return new Date(s).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}); }
+    catch(e) { return s; }
+  }
+  function statusBadge(s) {
+    var map = {pending:'badge-pending', accepted:'badge-approved', approved:'badge-approved',
+               rejected:'badge-denied', completed:'badge-completed', scheduled:'badge-scheduled',
+               cancelled:'badge-cancelled'};
+    return '<span class="badge ' + (map[s]||'badge-pending') + '">' + (s||'pending') + '</span>';
+  }
+
+  function loadAppts() {
+    var url = ROLE === 'patient'
+      ? '/api/patient/appointments-merged'
+      : '/api/doctor/appointments-merged';
+    fetch(url, {headers:{'Authorization':'Bearer ' + JWT}})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var appts = d.appointments || [];
+      var body  = document.getElementById('appt-body');
+      if (!appts.length) {
+        body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-state-title">No appointments found</div><div class="empty-state-desc">' +
+          (ROLE === 'patient' ? 'Request an appointment using the button above.' : 'No patient requests yet.') + '</div></div></td></tr>';
+        return;
+      }
+      body.innerHTML = appts.map(function(a) {
+        var who = ROLE === 'patient'
+          ? (a.doctor_username || '—')
+          : (a.patient_username || a.patient_id || '—');
+        var dateStr = a.date_display || (a.date + ' ' + (a.time||''));
+        var actions = '';
+        if (ROLE === 'doctor' && (a.status === 'pending')) {
+          actions =
+            '<td class="cluster-2">' +
+            '<button class="btn-primary btn-sm" onclick="respond(\'' + a.id + '\',\'accepted\')" type="button">Accept</button>' +
+            '<button class="btn-danger btn-sm" onclick="respond(\'' + a.id + '\',\'rejected\')" type="button">Reject</button>' +
+            '</td>';
+        } else if (ROLE === 'doctor' && a.status === 'accepted') {
+          actions = '<td><button class="btn-secondary btn-sm" onclick="respond(\'' + a.id + '\',\'completed\')" type="button">Complete</button></td>';
+        } else {
+          actions = ROLE === 'doctor' ? '<td>—</td>' : '';
+        }
+        return '<tr>' +
+          '<td>' + who + '</td>' +
+          '<td class="type-mono" style="font-size:var(--t-xs);">' + fmt(dateStr) + '</td>' +
+          '<td style="max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (a.notes||'—') + '</td>' +
+          '<td>' + statusBadge(a.status) + '</td>' +
+          '<td><span class="badge badge-encrypted" style="font-size:10px;">' + (a.source||'—') + '</span></td>' +
+          actions +
+          '</tr>';
+      }).join('');
+    })
+    .catch(function() {
+      document.getElementById('appt-body').innerHTML =
+        '<tr><td colspan="6" style="text-align:center; padding:var(--sp-8); color:var(--r6);">Failed to load appointments.</td></tr>';
+    });
+  }
+
+  window.respond = function(apptId, status) {
+    if (!confirm('Mark appointment as ' + status + '?')) return;
+    fetch('/api/doctor/appointment-respond/' + apptId, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'Authorization':'Bearer ' + JWT},
+      body: JSON.stringify({status: status})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { showAlert(pageAlertEl, d.error, 'error'); }
+      else { showAlert(pageAlertEl, 'Appointment updated to ' + status + '.', 'success'); loadAppts(); }
+    })
+    .catch(function() { showAlert(pageAlertEl, 'Network error.', 'error'); });
+  };
+
+  // ── Patient: new appointment ──────────────────────────────────
+  if (ROLE === 'patient') {
+    var newBtn    = document.getElementById('new-appt-btn');
+    var form      = document.getElementById('new-appt-form');
+    var cancelBtn = document.getElementById('cancel-appt-btn');
+    var submitBtn = document.getElementById('submit-appt-btn');
+
+    newBtn.addEventListener('click', function() { form.style.display = form.style.display === 'none' ? 'block' : 'none'; });
+    cancelBtn.addEventListener('click', function() { form.style.display = 'none'; });
+
+    submitBtn.addEventListener('click', function() {
+      var doctor = (document.getElementById('appt-doctor').value||'').trim();
+      var date   = document.getElementById('appt-date').value;
+      var time   = document.getElementById('appt-time').value;
+      var notes  = (document.getElementById('appt-notes').value||'').trim();
+      if (!doctor || !date) { showAlert(formAlertEl, 'Doctor username and date are required.', 'error'); return; }
+      submitBtn.disabled = true;
+      document.getElementById('appt-btn-text').textContent = 'Requesting…';
+      document.getElementById('appt-spinner').style.display = 'inline-block';
+      fetch('/api/patient/appointment-request-submit', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({doctor_username: doctor, date: date, time: time, notes: notes})
+      })
+      .then(function(r) { return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
+      .then(function(res) {
+        submitBtn.disabled = false;
+        document.getElementById('appt-btn-text').textContent = 'Request appointment';
+        document.getElementById('appt-spinner').style.display = 'none';
+        if (res.ok) {
+          form.style.display = 'none';
+          showAlert(pageAlertEl, 'Appointment request submitted.', 'success');
+          loadAppts();
+        } else { showAlert(formAlertEl, res.data.error||'Failed.', 'error'); }
+      });
+    });
+  }
+
+  loadAppts();
+})();
+</script>
+{% endblock %}

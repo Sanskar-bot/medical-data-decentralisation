@@ -1,0 +1,247 @@
+{% extends 'base.html' %}
+{% block title %}Health Record{% endblock %}
+{% block topbar_title %}Health Record{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <span class="page-eyebrow">Patient Records</span>
+    <h1 class="type-h1">Health Record</h1>
+  </div>
+  <div class="cluster-3">
+    <span class="badge badge-encrypted">Encrypted</span>
+    {% if session.get('profile_code') %}
+      <span class="type-mono" style="font-size:var(--t-xs); color:var(--tx3);">{{ session.get('profile_code') }}</span>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Locked panel -->
+<div id="record-locked-panel">
+  <div class="card-elevated" style="max-width:420px; margin:0 auto; padding:var(--sp-10); text-align:center;">
+    <div style="width:56px;height:56px;background:var(--pa);border:1px solid var(--p4);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto var(--sp-6);">
+      <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="var(--p6)" stroke-width="1.5" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+      </svg>
+    </div>
+    <h2 class="type-h3" style="margin-bottom:var(--sp-2);">Record locked</h2>
+    <p style="color:var(--tx3); font-size:var(--t-sm); margin-bottom:var(--sp-6); line-height:1.6;">
+      Enter your password to decrypt and view your health record. Data never leaves your device in plaintext.
+    </p>
+    <div id="unlock-alert" style="display:none; margin-bottom:var(--sp-4);"></div>
+    <div class="input-group" style="text-align:left;">
+      <label class="input-label" for="unlock-pw">Password</label>
+      <input class="input-field" type="password" id="unlock-pw" placeholder="Your registration password" autocomplete="current-password">
+    </div>
+    <button class="btn-primary w-full" id="unlock-btn" type="button">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+      <span id="unlock-btn-text">Decrypt &amp; View</span>
+      <span id="unlock-spinner" class="spinner" style="display:none;"></span>
+    </button>
+  </div>
+</div>
+
+<!-- Unlocked panel -->
+<div id="record-unlocked-panel" style="display:none;">
+  <div class="grid-sidebar" style="align-items:start;">
+
+    <div class="stack-6">
+
+      <!-- Personal Information -->
+      <div class="card">
+        <div class="section-header" style="margin-bottom:var(--sp-5);">
+          <h2 class="type-h3">Personal Information</h2>
+          <button class="btn-secondary btn-sm" id="edit-record-btn" type="button">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+            Edit
+          </button>
+        </div>
+        <div id="personal-fields">
+          <div class="field-row" style="padding-top:0;"><div class="field-label">Full Name</div><div class="field-value" id="rec-name">—</div></div>
+          <div class="field-row"><div class="field-label">Age</div><div class="field-value" id="rec-age">—</div></div>
+          <div class="field-row"><div class="field-label">Email</div><div class="field-value" id="rec-email">—</div></div>
+          <div class="field-row"><div class="field-label">Notes</div><div class="field-value" id="rec-notes">—</div></div>
+        </div>
+      </div>
+
+      <!-- Medical History -->
+      <div class="card">
+        <div class="section-header" style="margin-bottom:var(--sp-5);">
+          <h2 class="type-h3">Medical History</h2>
+        </div>
+        <div id="medical-history-list" class="stack-3">
+          <div class="empty-state" style="padding:var(--sp-6) 0;"><div class="empty-state-title">No conditions recorded</div></div>
+        </div>
+      </div>
+
+      <!-- Allergies -->
+      <div class="card">
+        <div class="section-header" style="margin-bottom:var(--sp-5);">
+          <h2 class="type-h3">Allergies</h2>
+        </div>
+        <div id="allergies-list" class="stack-3">
+          <div class="empty-state" style="padding:var(--sp-6) 0;"><div class="empty-state-title">No allergies recorded</div></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right sidebar -->
+    <div class="stack-4">
+      <div class="card">
+        <div style="margin-bottom:var(--sp-4);"><span class="badge badge-encrypted">Encrypted</span></div>
+        <div class="field-row" style="padding-top:0;"><div class="field-label">Profile Code</div><div class="field-value type-mono">{{ session.get('profile_code', '—') }}</div></div>
+        <div class="field-row"><div class="field-label">Algorithm</div><div class="field-value">AES-256-GCM</div></div>
+        <div class="field-row"><div class="field-label">Key derivation</div><div class="field-value">PBKDF2-SHA256</div></div>
+        <div class="field-row"><div class="field-label">Key storage</div><div class="field-value">Device-local only</div></div>
+      </div>
+      <div class="card">
+        <div class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-4);">Quick Actions</div>
+        <div class="stack-2">
+          <a href="/access-requests" class="quick-action-item">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-5-5.917V4a1 1 0 10-2 0v1.083A6 6 0 006 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+            Manage access requests
+          </a>
+          <a href="/audit" class="quick-action-item">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            Audit log
+          </a>
+          <button class="quick-action-item" id="lock-record-btn" type="button">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            Lock record
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var _pw  = '';   // password kept in memory after decrypt
+  var _rec = {};   // last decrypted record
+
+  function alert_(el, msg, type) {
+    el.className = 'alert alert-' + (type||'error');
+    el.textContent = msg;
+    el.style.display = 'flex';
+    setTimeout(function() { el.style.display = 'none'; }, 4000);
+  }
+
+  // ── UNLOCK ─────────────────────────────────────────────────────
+  var unlockBtn = document.getElementById('unlock-btn');
+  document.getElementById('unlock-pw').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') unlockBtn.click();
+  });
+  unlockBtn.addEventListener('click', function() {
+    var pw  = document.getElementById('unlock-pw').value;
+    var err = document.getElementById('unlock-alert');
+    if (!pw) { alert_(err, 'Please enter your password.', 'error'); return; }
+    unlockBtn.disabled = true;
+    document.getElementById('unlock-btn-text').textContent = 'Decrypting…';
+    document.getElementById('unlock-spinner').style.display = 'inline-block';
+    fetch('/patient/record', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:pw})})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      unlockBtn.disabled = false;
+      document.getElementById('unlock-btn-text').textContent = 'Decrypt & View';
+      document.getElementById('unlock-spinner').style.display = 'none';
+      if (d.error) { alert_(err, d.error, 'error'); return; }
+      _pw  = pw;
+      _rec = d.record || {};
+      render(_rec);
+      document.getElementById('record-locked-panel').style.display   = 'none';
+      document.getElementById('record-unlocked-panel').style.display = 'block';
+    })
+    .catch(function(){
+      unlockBtn.disabled = false;
+      document.getElementById('unlock-btn-text').textContent = 'Decrypt & View';
+      document.getElementById('unlock-spinner').style.display = 'none';
+      alert_(document.getElementById('unlock-alert'), 'Network error.', 'error');
+    });
+  });
+
+  // ── RENDER (read-only) ─────────────────────────────────────────
+  function render(rec) {
+    document.getElementById('rec-name').textContent  = rec.name  || '—';
+    document.getElementById('rec-age').textContent   = rec.age   || '—';
+    document.getElementById('rec-email').textContent = rec.email || '—';
+    document.getElementById('rec-notes').textContent = rec.notes || 'No notes recorded.';
+    var mh = Array.isArray(rec.medical_history) ? rec.medical_history : [];
+    document.getElementById('medical-history-list').innerHTML = mh.length
+      ? mh.map(function(c){return '<div class="cluster-3"><div style="width:6px;height:6px;background:var(--t5);border-radius:50%;"></div><span style="font-size:var(--t-sm);">'+c+'</span></div>';}).join('')
+      : '<div class="empty-state" style="padding:var(--sp-6) 0;"><div class="empty-state-title">No conditions recorded</div></div>';
+    var al = Array.isArray(rec.allergies) ? rec.allergies : [];
+    document.getElementById('allergies-list').innerHTML = al.length
+      ? al.map(function(a){return '<div class="cluster-3"><div style="width:6px;height:6px;background:var(--g5);border-radius:50%;"></div><span style="font-size:var(--t-sm);">'+a+'</span></div>';}).join('')
+      : '<div class="empty-state" style="padding:var(--sp-6) 0;"><div class="empty-state-title">No allergies recorded</div></div>';
+    // restore edit button
+    var eb = document.getElementById('edit-record-btn');
+    if (eb) {
+      eb.innerHTML = '<svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg> Edit';
+      eb.disabled = false;
+    }
+  }
+
+  // ── EDIT MODE ──────────────────────────────────────────────────
+  document.getElementById('edit-record-btn').addEventListener('click', function() {
+    var eb = document.getElementById('edit-record-btn');
+    eb.innerHTML = '✎ Editing…'; eb.disabled = true;
+    document.getElementById('personal-fields').innerHTML =
+      '<div id="edit-alert" style="display:none;margin-bottom:var(--sp-3);"></div>' +
+      '<div class="input-group"><label class="input-label" for="e-name">Full Name</label><input class="input-field" id="e-name" value="' + esc(_rec.name) + '"></div>' +
+      '<div class="input-group"><label class="input-label" for="e-age">Age</label><input class="input-field" id="e-age" value="' + esc(_rec.age) + '" type="text" inputmode="numeric"></div>' +
+      '<div class="input-group"><label class="input-label" for="e-email">Email</label><input class="input-field" id="e-email" type="email" value="' + esc(_rec.email) + '"></div>' +
+      '<div class="input-group"><label class="input-label" for="e-notes">Notes</label><textarea class="input-field" id="e-notes" rows="3">' + (_rec.notes||'') + '</textarea></div>' +
+      '<div class="cluster-3" style="margin-top:var(--sp-2);">' +
+        '<button class="btn-primary" id="save-btn" type="button"><span id="save-lbl">Save changes</span><span id="save-spin" class="spinner" style="display:none;"></span></button>' +
+        '<button class="btn-secondary" id="cancel-btn" type="button">Cancel</button>' +
+      '</div>';
+
+    document.getElementById('cancel-btn').addEventListener('click', function() { render(_rec); });
+    document.getElementById('save-btn').addEventListener('click', function() {
+      var alertEl = document.getElementById('edit-alert');
+      if (!_pw) { alert_(alertEl, 'Session expired — lock and re-unlock.', 'error'); return; }
+      var upd = {
+        name:  document.getElementById('e-name').value.trim(),
+        age:   document.getElementById('e-age').value.trim(),
+        email: document.getElementById('e-email').value.trim(),
+        notes: document.getElementById('e-notes').value.trim(),
+      };
+      document.getElementById('save-btn').disabled = true;
+      document.getElementById('save-lbl').textContent = 'Saving…';
+      document.getElementById('save-spin').style.display = 'inline-block';
+      fetch('/patient/record', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:_pw, update:upd})})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        document.getElementById('save-btn').disabled = false;
+        document.getElementById('save-lbl').textContent = 'Save changes';
+        document.getElementById('save-spin').style.display = 'none';
+        if (d.error) { alert_(alertEl, d.error, 'error'); return; }
+        if (d.record) _rec = d.record; else Object.assign(_rec, upd);
+        render(_rec);
+      })
+      .catch(function(){
+        document.getElementById('save-btn').disabled = false;
+        document.getElementById('save-lbl').textContent = 'Save changes';
+        document.getElementById('save-spin').style.display = 'none';
+        alert_(document.getElementById('edit-alert'), 'Network error.', 'error');
+      });
+    });
+  });
+
+  function esc(v) { return (v||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+
+  // ── LOCK ──────────────────────────────────────────────────────
+  document.getElementById('lock-record-btn').addEventListener('click', function() {
+    _pw = ''; _rec = {};
+    document.getElementById('record-unlocked-panel').style.display = 'none';
+    document.getElementById('record-locked-panel').style.display = 'block';
+    document.getElementById('unlock-pw').value = '';
+  });
+})();
+</script>
+{% endblock %}

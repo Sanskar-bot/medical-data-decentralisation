@@ -277,8 +277,13 @@
           <!-- LOGIN FORM -->
           <div id="role-login" class="auth-role-panel">
             <h1 class="auth-form-title">Welcome back</h1>
-            <p class="auth-form-sub">Sign in with your email or username and password.</p>
+            <p class="auth-form-sub">Sign in to your patient or doctor account.</p>
             <div id="login-alert" style="display:none;"></div>
+            <!-- Role selector -->
+            <div class="auth-tab-switcher" role="tablist" aria-label="Account type" style="margin-bottom:var(--sp-5);">
+              <button class="auth-tab active" data-login-role="patient" role="tab" aria-selected="true" id="login-tab-patient" type="button">Patient</button>
+              <button class="auth-tab" data-login-role="doctor" role="tab" aria-selected="false" id="login-tab-doctor" type="button">Doctor</button>
+            </div>
             <form id="login-form" novalidate>
               <div class="input-group">
                 <label class="input-label" for="login-identifier">Email or username</label>
@@ -293,6 +298,31 @@
                 <span id="login-spinner" class="spinner" style="display:none;"></span>
               </button>
             </form>
+          </div>
+
+          <!-- PASSWORD UPGRADE PANEL (shown when legacy hash detected) -->
+          <div id="role-upgrade" class="auth-role-panel hidden">
+            <div style="width:48px;height:48px;background:var(--ga);border:1px solid var(--g4);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:var(--sp-5);">
+              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="var(--g5)" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            </div>
+            <h1 class="auth-form-title" style="margin-bottom:var(--sp-2);">Security upgrade required</h1>
+            <p class="auth-form-sub" style="margin-bottom:var(--sp-5);">Your account uses an older password format. Set a new password to upgrade to AES-256 encryption and continue.</p>
+            <div id="upgrade-alert" style="display:none;"></div>
+            <input type="hidden" id="upgrade-identifier">
+            <input type="hidden" id="upgrade-old-hash">
+            <div class="input-group">
+              <label class="input-label" for="upgrade-new-pw">New password</label>
+              <input class="input-field" type="password" id="upgrade-new-pw" placeholder="Min. 8 characters" autocomplete="new-password">
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="upgrade-confirm-pw">Confirm new password</label>
+              <input class="input-field" type="password" id="upgrade-confirm-pw" placeholder="Repeat new password" autocomplete="new-password">
+            </div>
+            <button class="btn-primary w-full" id="upgrade-submit-btn" type="button">
+              <span id="upgrade-btn-text">Upgrade &amp; Sign in</span>
+              <span id="upgrade-spinner" class="spinner" style="display:none;"></span>
+            </button>
+            <button class="btn-ghost w-full" id="upgrade-back-btn" type="button" style="margin-top:var(--sp-2); color:var(--tx3);">← Back to sign in</button>
           </div>
 
           <!-- REGISTER FORM -->
@@ -382,6 +412,21 @@
     modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });
     document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
 
+    // ── Login role tabs ───────────────────────────────────────────
+    document.querySelectorAll('[data-login-role]').forEach(function(tab) {
+      tab.addEventListener('click', function() {
+        document.querySelectorAll('[data-login-role]').forEach(function(t) {
+          t.classList.remove('active');
+          t.setAttribute('aria-selected', 'false');
+        });
+        tab.classList.add('active');
+        tab.setAttribute('aria-selected', 'true');
+        // Update button label to match selected role
+        document.getElementById('login-btn-text').textContent =
+          'Sign in as ' + tab.textContent;
+      });
+    });
+
     // ── Register role tabs ────────────────────────────────────────
     document.querySelectorAll('[data-reg-role]').forEach(function(tab) {
       tab.addEventListener('click', function() {
@@ -424,20 +469,35 @@
       })
       .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
       .then(function(res) {
+        btn.disabled = false;
+        document.getElementById('login-btn-text').textContent = 'Sign in';
+        document.getElementById('login-spinner').style.display = 'none';
+
+        // Legacy hash — show upgrade panel
+        if (res.data.upgrade_required) {
+          document.getElementById('upgrade-identifier').value = res.data.identifier || identifier;
+          document.getElementById('upgrade-old-hash').value   = res.data.old_hash || '';
+          document.getElementById('upgrade-alert').style.display = 'none';
+          document.getElementById('upgrade-new-pw').value     = '';
+          document.getElementById('upgrade-confirm-pw').value = '';
+          // Hide login panel, show upgrade panel
+          document.getElementById('role-login').classList.add('hidden');
+          document.getElementById('role-register').classList.add('hidden');
+          document.getElementById('role-upgrade').classList.remove('hidden');
+          return;
+        }
+
         if (res.ok && res.data.redirect) {
           window.location.href = res.data.redirect;
         } else {
           showAlert(alertEl, res.data.error || 'Login failed. Please check your credentials.', 'error');
-          btn.disabled = false;
-          document.getElementById('login-btn-text').textContent = 'Sign in';
-          document.getElementById('login-spinner').style.display = 'none';
         }
       })
       .catch(function() {
-        showAlert(alertEl, 'Network error. Please try again.', 'error');
         btn.disabled = false;
         document.getElementById('login-btn-text').textContent = 'Sign in';
         document.getElementById('login-spinner').style.display = 'none';
+        showAlert(alertEl, 'Network error. Please try again.', 'error');
       });
     });
 
@@ -512,6 +572,50 @@
         meter.style.color = colors[score] || '';
       });
     }
+
+    // ── Upgrade submit ─────────────────────────────────────────────
+    var upgradeBtn  = document.getElementById('upgrade-submit-btn');
+    var upgradeBack = document.getElementById('upgrade-back-btn');
+    if (upgradeBtn) {
+      upgradeBtn.addEventListener('click', function() {
+        var newPw    = document.getElementById('upgrade-new-pw').value;
+        var confirm  = document.getElementById('upgrade-confirm-pw').value;
+        var alertEl  = document.getElementById('upgrade-alert');
+        var ident    = document.getElementById('upgrade-identifier').value;
+        var oldHash  = document.getElementById('upgrade-old-hash').value;
+        if (!newPw || newPw.length < 8) { showAlert(alertEl, 'Password must be at least 8 characters.', 'error'); return; }
+        if (newPw !== confirm) { showAlert(alertEl, 'Passwords do not match.', 'error'); return; }
+        upgradeBtn.disabled = true;
+        document.getElementById('upgrade-btn-text').textContent = 'Upgrading…';
+        document.getElementById('upgrade-spinner').style.display = 'inline-block';
+        fetch('/login/upgrade', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({identifier: ident, old_hash: oldHash, new_password: newPw})
+        })
+        .then(function(r) { return r.json().then(function(d){ return {ok: r.ok, data: d}; }); })
+        .then(function(res) {
+          upgradeBtn.disabled = false;
+          document.getElementById('upgrade-btn-text').textContent = 'Upgrade & Sign in';
+          document.getElementById('upgrade-spinner').style.display = 'none';
+          if (res.ok && res.data.redirect) { window.location.href = res.data.redirect; }
+          else { showAlert(alertEl, res.data.error || 'Upgrade failed.', 'error'); }
+        })
+        .catch(function() {
+          upgradeBtn.disabled = false;
+          document.getElementById('upgrade-btn-text').textContent = 'Upgrade & Sign in';
+          document.getElementById('upgrade-spinner').style.display = 'none';
+          showAlert(document.getElementById('upgrade-alert'), 'Network error.', 'error');
+        });
+      });
+    }
+    if (upgradeBack) {
+      upgradeBack.addEventListener('click', function() {
+        document.getElementById('role-upgrade').classList.add('hidden');
+        document.getElementById('role-login').classList.remove('hidden');
+      });
+    }
+
   })();
   </script>
 </body>

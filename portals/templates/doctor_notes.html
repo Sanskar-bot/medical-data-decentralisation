@@ -1,0 +1,225 @@
+{% extends 'base.html' %}
+{% block title %}Doctor Notes{% endblock %}
+{% block topbar_title %}
+  {% if role == 'patient' %}Doctor Notes{% else %}Patient Notes{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <span class="page-eyebrow">Clinical Records</span>
+    <h1 class="type-h1">
+      {% if role == 'patient' %}Doctor Notes{% else %}Add Clinical Note{% endif %}
+    </h1>
+  </div>
+  {% if role == 'patient' %}
+  <button class="btn-secondary" id="refresh-notes-btn" type="button">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+    Sync notes
+  </button>
+  {% endif %}
+</div>
+
+<div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
+
+<!-- ── PATIENT VIEW ── -->
+{% if role == 'patient' %}
+  <div id="notes-loading" class="grid-3">
+    <div class="skeleton" style="height:140px;"></div>
+    <div class="skeleton" style="height:140px;"></div>
+    <div class="skeleton" style="height:140px;"></div>
+  </div>
+  <div id="notes-grid" class="grid-3 hidden"></div>
+  <div id="notes-empty" class="empty-state hidden">
+    <div class="empty-state-title">No notes yet</div>
+    <div class="empty-state-desc">
+      Doctor notes will appear here after your doctor adds them and you sync.
+      Notes are pulled to your device and removed from the server.
+    </div>
+  </div>
+
+<!-- ── DOCTOR VIEW ── -->
+{% elif role == 'doctor' %}
+  <div class="grid-sidebar" style="align-items:start;">
+    <div>
+      <!-- Add note form -->
+      <div class="note-form" id="add-note-section">
+        <h2 class="type-h3" style="margin-bottom:var(--sp-5);">Add Note</h2>
+        <div id="form-alert" style="display:none;"></div>
+        <div class="grid-2">
+          <div class="input-group">
+            <label class="input-label" for="note-patient">Patient username or code</label>
+            <input class="input-field" type="text" id="note-patient" placeholder="patient_username">
+          </div>
+          <div class="input-group">
+            <label class="input-label" for="note-type">Note type</label>
+            <select class="input-field" id="note-type">
+              <option value="General">General</option>
+              <option value="Diagnosis">Diagnosis</option>
+              <option value="Prescription">Prescription</option>
+              <option value="Lab Result">Lab Result</option>
+              <option value="Follow-up">Follow-up</option>
+              <option value="Referral">Referral</option>
+            </select>
+          </div>
+        </div>
+        <div class="input-group">
+          <label class="input-label" for="note-visit-date">Visit date</label>
+          <input class="input-field" type="date" id="note-visit-date">
+        </div>
+        <div class="input-group">
+          <label class="input-label" for="note-text">Clinical note</label>
+          <textarea class="input-field" id="note-text" rows="6" placeholder="Clinical observations, diagnosis, treatment plan, follow-up instructions…"></textarea>
+        </div>
+        <button class="btn-primary" id="add-note-btn" type="button">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+          <span id="note-btn-text">Add note</span>
+          <span id="note-spinner" class="spinner" style="display:none;"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Right: info card -->
+    <div class="card">
+      <div class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-4);">Note Delivery</div>
+      <div class="stack-3">
+        <div class="cluster-3">
+          <div style="width:6px;height:6px;background:var(--t5);border-radius:50%;flex-shrink:0;"></div>
+          <span style="font-size:var(--t-sm); color:var(--tx2);">Notes are relayed via the server</span>
+        </div>
+        <div class="cluster-3">
+          <div style="width:6px;height:6px;background:var(--t5);border-radius:50%;flex-shrink:0;"></div>
+          <span style="font-size:var(--t-sm); color:var(--tx2);">Patient pulls them to their device</span>
+        </div>
+        <div class="cluster-3">
+          <div style="width:6px;height:6px;background:var(--t5);border-radius:50%;flex-shrink:0;"></div>
+          <span style="font-size:var(--t-sm); color:var(--tx2);">Server copy deleted after sync</span>
+        </div>
+        <div class="cluster-3">
+          <div style="width:6px;height:6px;background:var(--t5);border-radius:50%;flex-shrink:0;"></div>
+          <span style="font-size:var(--t-sm); color:var(--tx2);">Approved access required to add notes</span>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var ROLE = {{ role | tojson }};
+  var JWT  = {{ session.get('jwt_token','') | tojson }};
+  var pageAlertEl = document.getElementById('page-alert');
+  var formAlertEl = document.getElementById('form-alert');
+
+  function showAlert(el, msg, type) {
+    if (!el) return;
+    el.className = 'alert alert-' + (type||'error');
+    el.textContent = msg;
+    el.style.display = 'flex';
+    setTimeout(function() { el.style.display = 'none'; }, 5000);
+  }
+  function fmt(s) {
+    if (!s) return '—';
+    try { return new Date(s).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}); }
+    catch(e) { return s; }
+  }
+
+  function noteTypeColor(t) {
+    var map = {
+      'General':'badge-patient', 'Diagnosis':'badge-approved', 'Prescription':'badge-gold',
+      'Lab Result':'badge-encrypted', 'Follow-up':'badge-doctor', 'Referral':'badge-pending'
+    };
+    return map[t] || 'badge-patient';
+  }
+
+  // ── PATIENT: load notes ───────────────────────────────────────
+  if (ROLE === 'patient') {
+    function loadNotes() {
+      document.getElementById('notes-loading').classList.remove('hidden');
+      document.getElementById('notes-grid').classList.add('hidden');
+      document.getElementById('notes-empty').classList.add('hidden');
+
+      fetch('/patient/notes', {headers:{'Authorization':'Bearer '+JWT}})
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        document.getElementById('notes-loading').classList.add('hidden');
+        var notes = d.notes || [];
+        if (!notes.length) {
+          document.getElementById('notes-empty').classList.remove('hidden');
+          return;
+        }
+        var grid = document.getElementById('notes-grid');
+        grid.innerHTML = notes.map(function(n) {
+          var imgHtml = n.image_filename
+            ? '<img src="/patient/note_image/' + n.image_filename + '" alt="Note image" style="width:100%; border-radius:var(--r-sm); margin-top:var(--sp-3); max-height:200px; object-fit:cover;">'
+            : '';
+          return '<div class="note-card">' +
+            '<div class="note-card-header">' +
+              '<strong style="color:var(--tx1); font-size:var(--t-sm);">Dr. ' + (n.doctor_name||n.doctor_id||'—') + '</strong>' +
+              '<span class="badge ' + noteTypeColor(n.note_type) + '">' + (n.note_type||'General') + '</span>' +
+            '</div>' +
+            '<div class="note-body">' + (n.note_text||n.content||'—') + '</div>' +
+            imgHtml +
+            '<div class="note-footer">Visit: ' + (n.visit_date||'—') + ' · Added ' + fmt(n.created_at) + '</div>' +
+          '</div>';
+        }).join('');
+        grid.classList.remove('hidden');
+      })
+      .catch(function() {
+        document.getElementById('notes-loading').classList.add('hidden');
+        showAlert(pageAlertEl, 'Failed to sync notes.', 'error');
+      });
+    }
+
+    loadNotes();
+    var refreshBtn = document.getElementById('refresh-notes-btn');
+    if (refreshBtn) refreshBtn.addEventListener('click', loadNotes);
+  }
+
+  // ── DOCTOR: add note ──────────────────────────────────────────
+  if (ROLE === 'doctor') {
+    var addBtn = document.getElementById('add-note-btn');
+    if (addBtn) addBtn.addEventListener('click', function() {
+      var patient   = (document.getElementById('note-patient').value||'').trim();
+      var noteType  = document.getElementById('note-type').value;
+      var visitDate = document.getElementById('note-visit-date').value;
+      var noteText  = (document.getElementById('note-text').value||'').trim();
+
+      if (!patient || !noteText) { showAlert(formAlertEl, 'Patient and note text are required.', 'error'); return; }
+
+      addBtn.disabled = true;
+      document.getElementById('note-btn-text').textContent = 'Adding…';
+      document.getElementById('note-spinner').style.display = 'inline-block';
+
+      fetch('/doctor/add_note', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({patient_code: patient, note_type: noteType, visit_date: visitDate, note_text: noteText})
+      })
+      .then(function(r) { return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
+      .then(function(res) {
+        addBtn.disabled = false;
+        document.getElementById('note-btn-text').textContent = 'Add note';
+        document.getElementById('note-spinner').style.display = 'none';
+        if (res.ok) {
+          showAlert(pageAlertEl, 'Note added successfully. Patient will receive it on next sync.', 'success');
+          document.getElementById('note-text').value    = '';
+          document.getElementById('note-patient').value = '';
+          document.getElementById('note-visit-date').value = '';
+        } else {
+          showAlert(formAlertEl, res.data.error||'Failed to add note.', 'error');
+        }
+      })
+      .catch(function() {
+        addBtn.disabled = false;
+        document.getElementById('note-btn-text').textContent = 'Add note';
+        document.getElementById('note-spinner').style.display = 'none';
+        showAlert(formAlertEl, 'Network error.', 'error');
+      });
+    });
+  }
+})();
+</script>
+{% endblock %}

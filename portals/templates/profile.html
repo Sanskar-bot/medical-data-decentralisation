@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+{% block title %}Profile{% endblock %}
+{% block topbar_title %}Profile Settings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <span class="page-eyebrow">Account</span>
+    <h1 class="type-h1">Profile Settings</h1>
+  </div>
+</div>
+
+<div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
+
+<div class="grid-sidebar" style="align-items:start;">
+
+  <!-- Left: profile details -->
+  <div class="stack-6">
+
+    <!-- Identity card -->
+    <div class="card">
+      <div class="section-header" style="margin-bottom:var(--sp-5);">
+        <h2 class="type-h3">Identity</h2>
+        <span class="badge badge-{{ role }}">{{ role | capitalize }}</span>
+      </div>
+      <div class="field-row" style="padding-top:0;">
+        <div class="field-label">Full name</div>
+        <div class="field-value">{{ name }}</div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Email address</div>
+        <div class="field-value">{{ email }}</div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Username</div>
+        <div class="field-value type-mono">{{ username }}</div>
+      </div>
+      {% if role == 'patient' and profile_code %}
+      <div class="field-row">
+        <div class="field-label">Profile code</div>
+        <div class="field-value">
+          <span class="type-mono" id="profile-code-text">{{ profile_code }}</span>
+          <button class="btn-ghost btn-sm" id="copy-code-btn" data-copy="{{ profile_code }}" type="button" style="margin-left:var(--sp-2);">Copy</button>
+        </div>
+      </div>
+      {% elif role == 'doctor' and doctor_code %}
+      <div class="field-row">
+        <div class="field-label">Doctor code</div>
+        <div class="field-value">
+          <span class="type-mono">{{ doctor_code }}</span>
+          <button class="btn-ghost btn-sm" data-copy="{{ doctor_code }}" type="button" style="margin-left:var(--sp-2);">Copy</button>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Specialization</div>
+        <div class="field-value">{{ specialization or '—' }}</div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Hospital / Clinic</div>
+        <div class="field-value">{{ hospital or '—' }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Security card -->
+    <div class="card" id="security">
+      <div class="section-header" style="margin-bottom:var(--sp-5);">
+        <h2 class="type-h3">Security</h2>
+        <span class="badge badge-verified">Verified</span>
+      </div>
+      <div class="field-row" style="padding-top:0;">
+        <div class="field-label">Encryption</div>
+        <div class="field-value">AES-256-GCM (end-to-end)</div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Key derivation</div>
+        <div class="field-value">PBKDF2-SHA256, 100 000 iterations</div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Private key storage</div>
+        <div class="field-value">Device-local (Windows Credential Manager)</div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Session duration</div>
+        <div class="field-value">8 hours</div>
+      </div>
+      {% if role == 'patient' %}
+      <div style="margin-top:var(--sp-6);">
+        <h3 class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-4);">Login History</h3>
+        <div id="history-loading">
+          <div class="skeleton" style="height:40px; margin-bottom:var(--sp-2);"></div>
+          <div class="skeleton" style="height:40px;"></div>
+        </div>
+        <div id="history-list" style="display:none;"></div>
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <!-- Right: quick actions + danger zone -->
+  <div class="stack-4">
+
+    <!-- Quick actions -->
+    <div class="card">
+      <div class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-4);">Quick Actions</div>
+      <div class="stack-2">
+        {% if role == 'patient' %}
+        <a href="/dashboard#record" class="quick-action-item">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          View health record
+        </a>
+        <a href="/dashboard#requests" class="quick-action-item">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-5-5.917V4a1 1 0 10-2 0v1.083A6 6 0 006 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+          Manage access requests
+        </a>
+        {% elif role == 'doctor' %}
+        <a href="/dashboard#request" class="quick-action-item">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+          Request patient access
+        </a>
+        <a href="/dashboard#add-note" class="quick-action-item">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+          Add clinical note
+        </a>
+        {% endif %}
+        <a href="/logout" class="quick-action-item" style="color:var(--tx3);">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+          Sign out
+        </a>
+      </div>
+    </div>
+
+    <!-- Danger zone -->
+    <div class="card" style="border-color:var(--r3);">
+      <div class="type-label" style="font-weight:600; color:var(--r6); margin-bottom:var(--sp-3);">Danger Zone</div>
+      <p style="font-size:var(--t-sm); color:var(--tx3); margin-bottom:var(--sp-4); line-height:1.6;">
+        Signing out clears your session. Your encrypted data remains safe on the server and on your device.
+      </p>
+      <a href="/logout" class="btn-danger w-full" id="signout-danger-btn" style="justify-content:center;">
+        Sign out everywhere
+      </a>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var JWT  = {{ session.get('jwt_token','') | tojson }};
+  var ROLE = {{ role | tojson }};
+
+  // Copy buttons
+  document.querySelectorAll('[data-copy]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var text = btn.dataset.copy;
+      navigator.clipboard.writeText(text).then(function() {
+        var orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = orig; }, 1500);
+      });
+    });
+  });
+
+  // Login history (patient only)
+  if (ROLE === 'patient') {
+    fetch('/patient/history', {headers:{'Authorization':'Bearer '+JWT}})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var hist = (d.history || []).slice(-5).reverse();
+      document.getElementById('history-loading').style.display = 'none';
+      var el = document.getElementById('history-list');
+      el.style.display = 'block';
+      if (!hist.length) {
+        el.innerHTML = '<div class="empty-state" style="padding:var(--sp-4) 0;"><div class="empty-state-title" style="font-size:var(--t-sm);">No history recorded.</div></div>';
+        return;
+      }
+      el.innerHTML = hist.map(function(h) {
+        var ok = h.success !== false;
+        return '<div class="cluster-3" style="padding:var(--sp-3) 0; border-bottom:1px solid var(--b1);">' +
+          '<div style="width:6px;height:6px;background:' + (ok?'var(--t5)':'var(--r5)') + ';border-radius:50%;flex-shrink:0;"></div>' +
+          '<div style="flex:1;">' +
+            '<div style="font-size:var(--t-sm); color:var(--tx1);">' + (h.event||'login') + '</div>' +
+            '<div style="font-size:var(--t-xs); color:var(--tx3);">' +
+              (h.timestamp ? new Date(h.timestamp).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}) : '') +
+              (h.ip ? ' · ' + h.ip : '') +
+            '</div>' +
+          '</div>' +
+          '<span class="badge ' + (ok?'badge-approved':'badge-denied') + '">' + (ok?'OK':'Failed') + '</span>' +
+        '</div>';
+      }).join('');
+    })
+    .catch(function() {
+      document.getElementById('history-loading').style.display = 'none';
+    });
+  }
+})();
+</script>
+{% endblock %}

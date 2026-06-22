@@ -1,0 +1,229 @@
+{% extends 'base.html' %}
+{% block title %}Access Requests{% endblock %}
+{% block topbar_title %}Access Requests{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <span class="page-eyebrow">Security</span>
+    <h1 class="type-h1">Access Requests</h1>
+    <p class="type-label" style="color:var(--tx3); margin-top:var(--sp-1);">
+      Control which doctors can view your encrypted health record.
+    </p>
+  </div>
+</div>
+
+<!-- Alert area -->
+<div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
+
+<!-- Tabs -->
+<div class="tabs" role="tablist" aria-label="Request filter" data-tab-group="reqs">
+  <button class="tab-item active" role="tab" data-tab="pending" type="button">
+    Pending <span class="tab-count" id="count-pending">0</span>
+  </button>
+  <button class="tab-item" role="tab" data-tab="approved" type="button">
+    Approved <span class="tab-count" id="count-approved">0</span>
+  </button>
+  <button class="tab-item" role="tab" data-tab="denied" type="button">
+    Denied <span class="tab-count" id="count-denied">0</span>
+  </button>
+</div>
+
+<!-- Pending -->
+<div data-tab-panel="pending">
+  <div id="pending-container">
+    <div class="skeleton" style="height:120px; margin-bottom:var(--sp-3);"></div>
+    <div class="skeleton" style="height:120px;"></div>
+  </div>
+</div>
+
+<!-- Approved -->
+<div data-tab-panel="approved" class="hidden">
+  <div id="approved-container">
+    <div class="empty-state"><div class="empty-state-title">Loading…</div></div>
+  </div>
+</div>
+
+<!-- Denied -->
+<div data-tab-panel="denied" class="hidden">
+  <div id="denied-container">
+    <div class="empty-state"><div class="empty-state-title">Loading…</div></div>
+  </div>
+</div>
+
+<!-- Access approve modal (password prompt) -->
+<div id="approve-modal" style="display:none; position:fixed; inset:0; background:rgba(7,9,15,0.85); z-index:200; align-items:center; justify-content:center;" role="dialog" aria-modal="true" aria-labelledby="approve-modal-title">
+  <div class="card-elevated" style="width:100%; max-width:380px; padding:var(--sp-8);">
+    <h2 class="type-h3" id="approve-modal-title" style="margin-bottom:var(--sp-2);">Approve Access</h2>
+    <p style="font-size:var(--t-sm); color:var(--tx3); margin-bottom:var(--sp-6); line-height:1.6;">
+      Enter your password to cryptographically approve access for <strong id="approve-doctor-name" style="color:var(--tx1);">this doctor</strong>.
+      Access is valid for <strong style="color:var(--g5);">24 hours</strong>.
+    </p>
+    <div id="approve-alert" style="display:none; margin-bottom:var(--sp-4);"></div>
+    <div class="input-group">
+      <label class="input-label" for="approve-pw">Your password</label>
+      <input class="input-field" type="password" id="approve-pw" placeholder="Registration password" autocomplete="current-password">
+    </div>
+    <div class="cluster-3" style="margin-top:var(--sp-2);">
+      <button class="btn-primary flex-1" id="approve-confirm-btn" type="button">
+        <span id="approve-btn-text">Approve</span>
+        <span id="approve-spinner" class="spinner" style="display:none;"></span>
+      </button>
+      <button class="btn-secondary" id="approve-cancel-btn" type="button">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var JWT = {{ session.get('jwt_token','') | tojson }};
+  var pendingRequestId = null;
+  var pendingDoctorCode = null;
+
+  function authH() { return {'Content-Type':'application/json', 'Authorization': 'Bearer ' + JWT}; }
+  function showAlert(el, msg, type) {
+    el.className = 'alert alert-' + (type||'error');
+    el.textContent = msg;
+    el.style.display = 'flex';
+    setTimeout(function() { el.style.display = 'none'; }, 5000);
+  }
+  function fmt(s) {
+    if (!s) return '—';
+    try { return new Date(s).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}); }
+    catch(e) { return s; }
+  }
+
+  function renderRequestCard(r, status) {
+    var doctorLabel = r.doctor_name || r.doctor_code || '—';
+    var actions = '';
+    if (status === 'pending') {
+      actions =
+        '<button class="btn-primary btn-sm" id="approve-btn-' + r.request_id + '" type="button">Approve</button>' +
+        '<button class="btn-danger btn-sm" id="deny-btn-' + r.request_id + '" type="button">Deny</button>';
+    } else {
+      actions = '<span class="badge badge-' + status + '">' + status.charAt(0).toUpperCase() + status.slice(1) + '</span>';
+    }
+
+    return '<div class="card" style="margin-bottom:var(--sp-3);" data-req-id="' + r.request_id + '">' +
+      '<div style="display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);">' +
+        '<div>' +
+          '<div style="font-size:var(--t-sm); font-weight:600; color:var(--tx1); margin-bottom:var(--sp-1);">Dr. ' + doctorLabel + '</div>' +
+          '<div class="type-mono" style="font-size:var(--t-xs);">' + (r.doctor_code||'') + '</div>' +
+        '</div>' +
+        '<div class="cluster-3">' + actions + '</div>' +
+      '</div>' +
+      '<div style="margin-top:var(--sp-3); padding-top:var(--sp-3); border-top:1px solid var(--b1); display:flex; gap:var(--sp-6);">' +
+        '<div class="field-row" style="padding:0; border:none; gap:2px;"><div class="field-label">Requested</div><div class="field-value" style="font-size:var(--t-sm);">' + fmt(r.requested_at) + '</div></div>' +
+        '<div class="field-row" style="padding:0; border:none; gap:2px;"><div class="field-label">Status</div><div class="field-value"><span class="badge badge-' + status + '">' + status + '</span></div></div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function load() {
+    fetch('/patient/requests', {headers: authH()})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var reqs = d.requests || [];
+      var pending  = reqs.filter(function(r) { return r.status === 'pending'; });
+      var approved = reqs.filter(function(r) { return r.status === 'approved'; });
+      var denied   = reqs.filter(function(r) { return r.status === 'denied'; });
+
+      document.getElementById('count-pending').textContent  = pending.length;
+      document.getElementById('count-approved').textContent = approved.length;
+      document.getElementById('count-denied').textContent   = denied.length;
+
+      function render(list, containerId, status) {
+        var el = document.getElementById(containerId);
+        if (!list.length) {
+          el.innerHTML = '<div class="empty-state"><div class="empty-state-title">No ' + status + ' requests</div></div>';
+          return;
+        }
+        el.innerHTML = list.map(function(r) { return renderRequestCard(r, status); }).join('');
+        list.forEach(function(r) {
+          var ab = document.getElementById('approve-btn-' + r.request_id);
+          var db = document.getElementById('deny-btn-'   + r.request_id);
+          if (ab) ab.addEventListener('click', function() { openApproveModal(r); });
+          if (db) db.addEventListener('click', function() { deny(r); });
+        });
+      }
+
+      render(pending,  'pending-container',  'pending');
+      render(approved, 'approved-container', 'approved');
+      render(denied,   'denied-container',   'denied');
+    })
+    .catch(function() {
+      document.getElementById('pending-container').innerHTML = '<div class="alert alert-error">Failed to load requests.</div>';
+    });
+  }
+
+  // ── Approve modal ─────────────────────────────────────────────
+  var modal = document.getElementById('approve-modal');
+  function openApproveModal(r) {
+    pendingRequestId = r.request_id;
+    pendingDoctorCode = r.doctor_code;
+    document.getElementById('approve-doctor-name').textContent = r.doctor_name || r.doctor_code || 'this doctor';
+    document.getElementById('approve-pw').value = '';
+    document.getElementById('approve-alert').style.display = 'none';
+    modal.style.display = 'flex';
+    setTimeout(function() { document.getElementById('approve-pw').focus(); }, 100);
+  }
+  document.getElementById('approve-cancel-btn').addEventListener('click', function() {
+    modal.style.display = 'none';
+  });
+  document.getElementById('approve-confirm-btn').addEventListener('click', function() {
+    var pw = document.getElementById('approve-pw').value;
+    var alertEl = document.getElementById('approve-alert');
+    if (!pw) { showAlert(alertEl, 'Password is required.', 'error'); return; }
+    var btn = document.getElementById('approve-confirm-btn');
+    btn.disabled = true;
+    document.getElementById('approve-btn-text').textContent = 'Approving…';
+    document.getElementById('approve-spinner').style.display = 'inline-block';
+    fetch('/patient/approve', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({request_id: pendingRequestId, doctor_code: pendingDoctorCode, password: pw})
+    })
+    .then(function(r) { return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
+    .then(function(res) {
+      btn.disabled = false;
+      document.getElementById('approve-btn-text').textContent = 'Approve';
+      document.getElementById('approve-spinner').style.display = 'none';
+      if (res.ok) {
+        modal.style.display = 'none';
+        showAlert(document.getElementById('page-alert'), 'Access approved. Doctor can now view your record for 24 hours.', 'success');
+        load();
+      } else {
+        showAlert(alertEl, res.data.error || 'Approval failed.', 'error');
+      }
+    })
+    .catch(function() {
+      btn.disabled = false;
+      document.getElementById('approve-btn-text').textContent = 'Approve';
+      document.getElementById('approve-spinner').style.display = 'none';
+      showAlert(alertEl, 'Network error.', 'error');
+    });
+  });
+  document.getElementById('approve-pw').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('approve-confirm-btn').click();
+  });
+
+  // ── Deny ──────────────────────────────────────────────────────
+  function deny(r) {
+    if (!confirm('Deny access request from ' + (r.doctor_name || r.doctor_code) + '?')) return;
+    fetch('/patient/deny', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({request_id: r.request_id, doctor_code: r.doctor_code})
+    })
+    .then(function() {
+      showAlert(document.getElementById('page-alert'), 'Request denied.', 'info');
+      load();
+    });
+  }
+
+  load();
+})();
+</script>
+{% endblock %}
