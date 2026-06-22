@@ -1643,17 +1643,22 @@ def doctor_my_patients():
                         continue
                     seen.add(pc)
                     ca = row.get("created_at")
+                    ts = ca.isoformat() if ca else ""
                     patients.append({
-                        "profile_code": pc,
-                        "username":     row.get("username") or pc,
-                        "name":         row.get("name") or "",
-                        "email":        row.get("email") or "",
-                        "status":       row.get("status", "pending"),
-                        "approved_at":  ca.isoformat() if ca else "",
-                        "is_active":    row.get("status") == "approved",
-                        "expires_at":   "",
-                        "rx_count":     0,
-                        "lab_count":    0,
+                        "profile_code":  pc,
+                        "patient_code":  pc,         # alias for templates
+                        "username":      row.get("username") or pc,
+                        "name":          row.get("name") or "",
+                        "email":         row.get("email") or "",
+                        "status":        row.get("status", "pending"),
+                        "approved_at":   ts,
+                        "requested_at":  ts,         # alias for templates
+                        "timestamp":     ts,         # alias for templates
+                        "is_active":     row.get("status") == "approved",
+                        "expires_at":    "",
+                        "rx_count":      0,
+                        "lab_count":     0,
+                        "note_count":    0,
                     })
             cur.close(); conn.close()
         except Exception as e:
