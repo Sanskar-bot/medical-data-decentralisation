@@ -649,25 +649,104 @@ def patient_requests():
     if err: return err
     try:
         profile_code = session.get("profile_code", "")
-        r = http.get(f"{BACKEND}/active_requests", headers=_headers(), timeout=8)
-        all_reqs = r.json() if r.ok else []
-        # Backend stores patient code as 'profile_code' in active_requests.json
-        mine = [x for x in all_reqs
-                if isinstance(x, dict) and x.get("profile_code") == profile_code]
-        # Normalize fields for frontend (doctor_code, request_id, status, requested_at)
-        normalized = []
-        for x in mine:
-            normalized.append({
-                "id":           x.get("request_id", x.get("id", "")),
-                "request_id":   x.get("request_id", x.get("id", "")),
-                "doctor_code":  x.get("doctor_code", ""),
-                "doctor_name":  x.get("doctor_name", x.get("doctor_code", "Doctor")),
-                "status":       x.get("status", "pending"),
-                "requested_at": x.get("timestamp", x.get("requested_at", "")),
-            })
+        jwt          = session.get("jwt_token", "")
+        normalized   = []
+        seen_ids     = set()
+
+        # ── Source 1: PostgreSQL via JWT /access/patient_requests ────────────
+        if jwt:
+            try:
+                hdrs = {**_headers(), "Authorization": f"Bearer {jwt}"}
+                r = http.get(f"{BACKEND}/access/patient_requests", headers=hdrs, timeout=8)
+                if r.ok:
+                    db_reqs = r.json() if isinstance(r.json(), list) else r.json().get("requests", [])
+                    for x in db_reqs:
+                        rid = str(x.get("id", x.get("request_id", "")))
+                        if rid in seen_ids:
+                            continue
+                        seen_ids.add(rid)
+                        normalized.append({
+                            "id":           rid,
+                            "request_id":   rid,
+                            "doctor_code":  x.get("doctor_code", x.get("doctor_email", "")),
+                            "doctor_name":  x.get("doctor_name", x.get("doctor_email", "Doctor")),
+                            "status":       x.get("status", "pending"),
+                            "requested_at": x.get("created_at", x.get("requested_at", "")),
+                        })
+            except Exception as e:
+                app.logger.debug("patient_requests JWT source: %s", e)
+
+        # ── Source 2: Legacy flat file /active_requests ───────────────────────
+        try:
+            r2 = http.get(f"{BACKEND}/active_requests", headers=_headers(), timeout=8)
+            all_reqs = r2.json() if r2.ok else []
+            for x in (all_reqs if isinstance(all_reqs, list) else []):
+                if not isinstance(x, dict):
+                    continue
+                if x.get("profile_code") != profile_code:
+                    continue
+                rid = str(x.get("request_id", x.get("id", "")))
+                if rid in seen_ids:
+                    continue
+                seen_ids.add(rid)
+                normalized.append({
+                    "id":           rid,
+                    "request_id":   rid,
+                    "doctor_code":  x.get("doctor_code", ""),
+                    "doctor_name":  x.get("doctor_name", x.get("doctor_code", "Doctor")),
+                    "status":       x.get("status", "pending"),
+                    "requested_at": x.get("timestamp", x.get("requested_at", "")),
+                })
+        except Exception as e:
+            app.logger.debug("patient_requests flat-file source: %s", e)
+
+        # ── Source 3: Direct PostgreSQL query (most reliable) ────────────────
+        if _HAS_PSYCOPG2:
+            try:
+                conn = psycopg2.connect(DB_URL)
+                cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                # Get patient UUID from profile_code
+                cur.execute(
+                    "SELECT id FROM users WHERE profile_code=%s AND role='patient' LIMIT 1",
+                    (profile_code,)
+                )
+                pt = cur.fetchone()
+                if pt:
+                    cur.execute("""
+                        SELECT a.id, a.status, a.created_at, a.doctor_id, a.doctor_email,
+                               u.doctor_code, u.name AS doctor_name, u.username AS doctor_username
+                        FROM access_db a
+                        LEFT JOIN users u ON a.doctor_id = u.id
+                        WHERE a.patient_id = %s
+                        ORDER BY a.created_at DESC
+                    """, (str(pt["id"]),))
+                    rows = cur.fetchall()
+                    for x in rows:
+                        rid = str(x["id"])
+                        if rid in seen_ids:
+                            continue
+                        seen_ids.add(rid)
+                        doc_display = (x.get("doctor_name") or x.get("doctor_username") or
+                                       x.get("doctor_email") or "Doctor")
+                        doc_code    = (x.get("doctor_code") or x.get("doctor_email") or
+                                       str(x.get("doctor_id", "")))
+                        normalized.append({
+                            "id":           rid,
+                            "request_id":   rid,
+                            "doctor_code":  doc_code,
+                            "doctor_name":  doc_display,
+                            "status":       x.get("status", "pending"),
+                            "requested_at": x["created_at"].isoformat() if hasattr(x.get("created_at"), "isoformat") else str(x.get("created_at", "")),
+                        })
+                cur.close(); conn.close()
+            except Exception as e:
+                app.logger.debug("patient_requests psycopg2 source: %s", e)
+
         return jsonify({"requests": normalized})
+
     except Exception as e:
         return jsonify({"error": str(e)}), 502
+
 
 
 # ── Approve access request ────────────────────────────────────────────────────
