@@ -676,29 +676,7 @@ def patient_requests():
             except Exception as e:
                 app.logger.debug("patient_requests JWT source: %s", e)
 
-        # ── Source 2: Legacy flat file /active_requests ───────────────────────
-        try:
-            r2 = http.get(f"{BACKEND}/active_requests", headers=_headers(), timeout=8)
-            all_reqs = r2.json() if r2.ok else []
-            for x in (all_reqs if isinstance(all_reqs, list) else []):
-                if not isinstance(x, dict):
-                    continue
-                if x.get("profile_code") != profile_code:
-                    continue
-                rid = str(x.get("request_id", x.get("id", "")))
-                if rid in seen_ids:
-                    continue
-                seen_ids.add(rid)
-                normalized.append({
-                    "id":           rid,
-                    "request_id":   rid,
-                    "doctor_code":  x.get("doctor_code", ""),
-                    "doctor_name":  x.get("doctor_name", x.get("doctor_code", "Doctor")),
-                    "status":       x.get("status", "pending"),
-                    "requested_at": x.get("timestamp", x.get("requested_at", "")),
-                })
-        except Exception as e:
-            app.logger.debug("patient_requests flat-file source: %s", e)
+        # (Legacy flat-file /active_requests removed — PostgreSQL is the source of truth)
 
         # ── Source 3: Direct PostgreSQL query (most reliable) ────────────────
         if _HAS_PSYCOPG2:
@@ -856,13 +834,39 @@ def patient_deny():
     err = _patient_session_check()
     if err: return err
     try:
-        d = request.get_json(force=True) or {}
-        resp = http.post(f"{BACKEND}/deny_access",
-                         json={"request_id": d.get("request_id",""),
-                               "patient_code": session.get("profile_code",""),
-                               "doctor_code": d.get("doctor_code","")},
-                         headers=_headers(), timeout=8)
-        return jsonify(resp.json()), resp.status_code
+        d       = request.get_json(force=True) or {}
+        jwt_tok = session.get("jwt_token", "")
+        request_id = d.get("request_id", "")
+        if not request_id:
+            return jsonify({"error": "Request ID required"}), 400
+
+        # ── Use JWT /access/respond (PostgreSQL) ──────────────────────────────
+        if jwt_tok:
+            hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
+            try:
+                rb = http.post(f"{BACKEND}/access/respond",
+                               json={"request_id": request_id, "action": "deny"},
+                               headers=hdrs, timeout=8)
+                try:
+                    data = rb.json()
+                except Exception:
+                    data = {"status": "denied"} if rb.ok else {"error": f"Backend {rb.status_code}"}
+                return jsonify(data), rb.status_code
+            except Exception as e:
+                app.logger.debug("patient_deny JWT path: %s", e)
+
+        # ── Fallback: direct psycopg2 update ─────────────────────────────────
+        if _HAS_PSYCOPG2:
+            try:
+                conn = psycopg2.connect(DB_URL)
+                cur  = conn.cursor()
+                cur.execute("UPDATE access_db SET status='denied' WHERE id=%s", (request_id,))
+                conn.commit(); cur.close(); conn.close()
+                return jsonify({"status": "denied"}), 200
+            except Exception as e:
+                app.logger.debug("patient_deny psycopg2: %s", e)
+
+        return jsonify({"error": "Could not deny request"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
@@ -1063,69 +1067,30 @@ def portal_audit_log():
 # ── Patient: list all registered doctors ─────────────────────────────────────
 @app.route("/patient/doctors", methods=["GET"])
 def patient_list_doctors():
-    """Return all registered doctors with name, specialization, hospital, username.
-    No authentication required — this is a public directory listing."""
+    """Return all registered doctors from PostgreSQL users table."""
     doctors = []
-
-    # ── Build a map: doctor_code → {username, email, name} from users_db ──
-    users_db = {}
-    try:
-        users_db_path = os.path.join(ROOT, "server", "users_db.json")
-        users_db = json.load(open(users_db_path, encoding="utf-8"))
-    except Exception:
-        pass
-
-    code_to_user = {}
-    for _email, _u in users_db.items():
-        if isinstance(_u, dict) and _u.get("role") == "doctor":
-            dc = _u.get("doctor_code") or _u.get("profile_code", "")
-            if dc:
-                code_to_user[dc] = {
-                    "username": _u.get("username", ""),
-                    "email":    _email,
-                    "name":     _u.get("name", ""),
-                }
-
-    # ── Read specialization & hospital from doctor_data.json files ─────────
-    seen_codes = set()
-    for folder in os.listdir(DOCTORS_DIR):
-        meta_path = os.path.join(DOCTORS_DIR, folder, "doctor_data.json")
-        if not os.path.exists(meta_path):
-            continue
+    if _HAS_PSYCOPG2:
         try:
-            m = json.load(open(meta_path, encoding="utf-8"))
-        except Exception:
-            continue
-
-        dc   = m.get("doctor_code", "")
-        if not dc or dc in seen_codes:
-            continue
-        seen_codes.add(dc)
-
-        user_info = code_to_user.get(dc, {})
-        doctors.append({
-            "doctor_code":    dc,
-            "name":           user_info.get("name") or m.get("name", ""),
-            "username":       user_info.get("username") or "",
-            "email":          user_info.get("email", ""),
-            "specialization": m.get("specialization", ""),
-            "hospital":       m.get("hospital", ""),
-        })
-
-    # ── Also include doctors in users_db that have no doctor_data.json ─────
-    for dc, info in code_to_user.items():
-        if dc not in seen_codes:
-            doctors.append({
-                "doctor_code":    dc,
-                "name":           info.get("name", ""),
-                "username":       info.get("username", ""),
-                "email":          info.get("email", ""),
-                "specialization": "",
-                "hospital":       "",
-            })
-
-    # Sort by name
-    doctors.sort(key=lambda d: d["name"].lower())
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("""
+                SELECT id, username, email, name, doctor_code,
+                       specialization, hospital
+                FROM users WHERE role='doctor'
+                ORDER BY LOWER(COALESCE(name, username, email))
+            """)
+            for row in cur.fetchall():
+                doctors.append({
+                    "doctor_code":    row.get("doctor_code") or str(row["id"]),
+                    "name":           row.get("name") or row.get("username") or "",
+                    "username":       row.get("username") or "",
+                    "email":          row.get("email") or "",
+                    "specialization": row.get("specialization") or "",
+                    "hospital":       row.get("hospital") or "",
+                })
+            cur.close(); conn.close()
+        except Exception as e:
+            app.logger.debug("patient_list_doctors psycopg2: %s", e)
     return jsonify({"doctors": doctors}), 200
 
 
@@ -1141,66 +1106,24 @@ def _doctor_session_check():
     return None
 
 def _resolve_patient_code(username_or_code: str) -> str:
-    """Resolve a patient username to their profile_code.
-    Tries in order:
-      1. Local users_db.json (fastest)
-      2. Server /api/resolve_username/<username> (HTTP + API key)
-      3. Scan client/Users/* user_data.json folders
-      4. Direct PostgreSQL query (most reliable)
+    """Resolve a patient username OR profile_code to a valid profile_code.
+    Source of truth: PostgreSQL users table.
     Falls back to returning the raw value so raw profile_codes still work.
     """
     if not username_or_code:
         return username_or_code
     raw = username_or_code.strip()
 
-    # ── 1. Local users_db.json ─────────────────────────────────────
-    users_db_path = os.path.join(ROOT, "server", "users_db.json")
-    try:
-        users = json.load(open(users_db_path, encoding="utf-8"))
-        for entry in users.values():
-            uname = entry.get("username", "") or entry.get("email", "")
-            if uname.lower() == raw.lower() and entry.get("role") == "patient":
-                pc = entry.get("profile_code", "")
-                if pc:
-                    return pc
-    except Exception as e:
-        app.logger.debug("_resolve_patient_code users_db: %s", e)
-
-    # ── 2. PostgreSQL via /api/resolve_username/<username> ─────────
-    try:
-        r = http.get(f"{BACKEND}/api/resolve_username/{raw}",
-                     headers=_headers(), timeout=5)
-        if r.ok:
-            data = r.json()
-            pc = data.get("profile_code") or data.get("patient_code") or ""
-            if pc:
-                return pc
-    except Exception as e:
-        app.logger.debug("_resolve_patient_code backend: %s", e)
-
-    # ── 3. Scan local client/Users folders ────────────────────────
-    try:
-        for folder in os.listdir(USERS_DIR):
-            ud_path = os.path.join(USERS_DIR, folder, "user_data.json")
-            if not os.path.exists(ud_path):
-                continue
-            ud = json.load(open(ud_path, encoding="utf-8"))
-            uname = ud.get("username", "") or ud.get("email", "")
-            if uname.lower() == raw.lower():
-                pc = ud.get("profile_code", folder)
-                if pc:
-                    return pc
-    except Exception as e:
-        app.logger.debug("_resolve_patient_code scan: %s", e)
-
-    # ── 4. Direct PostgreSQL query ────────────────────────────
+    # ── 1. Direct PostgreSQL query (primary) ─────────────────────
     if _HAS_PSYCOPG2:
         try:
             conn = psycopg2.connect(DB_URL)
             cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cur.execute(
-                "SELECT profile_code FROM users WHERE LOWER(username)=LOWER(%s) AND role='patient' LIMIT 1",
-                (raw,)
+                """SELECT profile_code FROM users
+                   WHERE (LOWER(username)=LOWER(%s) OR LOWER(email)=LOWER(%s))
+                   AND role='patient' LIMIT 1""",
+                (raw, raw)
             )
             row = cur.fetchone()
             cur.close(); conn.close()
@@ -1208,6 +1131,17 @@ def _resolve_patient_code(username_or_code: str) -> str:
                 return row["profile_code"]
         except Exception as e:
             app.logger.debug("_resolve_patient_code psycopg2: %s", e)
+
+    # ── 2. Backend HTTP resolve (fallback) ───────────────────────
+    try:
+        r = http.get(f"{BACKEND}/api/resolve_username/{raw}",
+                     headers=_headers(), timeout=5)
+        if r.ok:
+            pc = r.json().get("profile_code") or r.json().get("patient_code") or ""
+            if pc:
+                return pc
+    except Exception as e:
+        app.logger.debug("_resolve_patient_code backend: %s", e)
 
     # Fallback: treat as raw profile_code
     return raw
@@ -1632,92 +1566,89 @@ def doctor_patient_notes(patient_code):
 # ── Doctor: list all patients this doctor has (or had) access to ─────────────
 @app.route("/doctor/my_patients", methods=["GET"])
 def doctor_my_patients():
-    """Return all patients the logged-in doctor has ever had access to,
-    with active/expired status and timeline counts per patient."""
+    """Return all patients the doctor has access to, sourced from PostgreSQL."""
     err = _doctor_session_check()
     if err: return err
 
-    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    from datetime import datetime as _dt, timezone as _tz
 
-    doc_code   = session.get("doctor_code", "")
-    SERVER_DIR = os.path.join(ROOT, "server")
-    PATIENTS_DIR = os.path.join(SERVER_DIR, "Patients")
-
-    # ── Load users_db so we can look up username → name ──────────────────
-    users_db = {}
-    try:
-        users_db = json.load(open(os.path.join(SERVER_DIR, "users_db.json"), encoding="utf-8"))
-    except Exception:
-        pass
-
-    # Build profile_code → {username, name} map
-    code_to_info = {}
-    for _email, _u in users_db.items():
-        if isinstance(_u, dict) and _u.get("profile_code"):
-            code_to_info[_u["profile_code"]] = {
-                "username": _u.get("username", ""),
-                "name":     _u.get("name", ""),
-                "email":    _email,
-            }
-
-    # ── Scan active_requests for all entries for this doctor ──────────────
-    requests_path = os.path.join(SERVER_DIR, "active_requests.json")
-    all_requests = _load_json_safe(requests_path) if os.path.exists(requests_path) else []
-    if not isinstance(all_requests, list):
-        all_requests = []
-
-    seen_codes = set()
+    doc_code = session.get("doctor_code", "")
+    jwt_tok  = session.get("jwt_token", "")
     patients = []
 
-    for req in all_requests:
-        if req.get("doctor_code") != doc_code:
-            continue
-        pat_code = req.get("profile_code", "")
-        if not pat_code or pat_code in seen_codes:
-            continue
-        seen_codes.add(pat_code)
+    if _HAS_PSYCOPG2:
+        try:
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        info = code_to_info.get(pat_code, {})
-        username = info.get("username") or pat_code
-        name     = info.get("name", "")
-
-        # ── Resolve expiry from wrapped_keys dir ──────────────────────────
-        expires_at = None
-        approved_at = req.get("approved_at") or req.get("timestamp", "")
-        wk_dir = os.path.join(PATIENTS_DIR, pat_code, "wrapped_keys")
-        if os.path.isdir(wk_dir):
-            for fn in os.listdir(wk_dir):
-                if not fn.lower().endswith(".json"):
-                    continue
-                try:
-                    wk = json.load(open(os.path.join(wk_dir, fn), encoding="utf-8"))
-                    if wk.get("doctor_code", os.path.splitext(fn)[0]) != doc_code:
-                        continue
-                    expires_at = wk.get("temp_key_expires_at")
-                    if not expires_at:
-                        ua_str = wk.get("uploaded_at", "")
-                        if ua_str:
-                            ua = _dt.fromisoformat(ua_str)
-                            expires_at = (ua + _td(hours=24)).isoformat()
-                    break
-                except Exception:
-                    continue
-
-        # ── Determine active/expired ──────────────────────────────────────
-        now = _dt.now(_tz.utc)
-        is_active = False
-        if expires_at:
-            try:
-                exp = _dt.fromisoformat(expires_at)
-                if exp.tzinfo is None:
-                    exp = exp.replace(tzinfo=_tz.utc)
-                is_active = exp > now
-            except Exception:
+            # Get doctor's UUID
+            cur.execute(
+                "SELECT id FROM users WHERE doctor_code=%s OR LOWER(username)=LOWER(%s) LIMIT 1",
+                (doc_code, doc_code)
+            )
+            doc_row = cur.fetchone()
+            if not doc_row and jwt_tok:
+                # fallback: get uid from JWT payload
                 pass
 
-        # ── Count EMR records ─────────────────────────────────────────────
-        all_rx   = _read_emr_file("emr_prescriptions.json")
-        all_labs = _read_emr_file("emr_lab_reports.json")
+            if doc_row:
+                cur.execute("""
+                    SELECT a.id as req_id, a.status, a.created_at,
+                           p.profile_code, p.username, p.name, p.email
+                    FROM access_db a
+                    JOIN users p ON a.patient_id = p.id
+                    WHERE a.doctor_id = %s
+                    ORDER BY a.created_at DESC
+                """, (str(doc_row["id"]),))
+                seen = set()
+                for row in cur.fetchall():
+                    pc = row.get("profile_code", "")
+                    if pc in seen:
+                        continue
+                    seen.add(pc)
+                    ca = row.get("created_at")
+                    patients.append({
+                        "profile_code": pc,
+                        "username":     row.get("username") or pc,
+                        "name":         row.get("name") or "",
+                        "email":        row.get("email") or "",
+                        "status":       row.get("status", "pending"),
+                        "approved_at":  ca.isoformat() if ca else "",
+                        "is_active":    row.get("status") == "approved",
+                        "expires_at":   "",
+                        "rx_count":     0,
+                        "lab_count":    0,
+                    })
+            cur.close(); conn.close()
+        except Exception as e:
+            app.logger.debug("doctor_my_patients psycopg2: %s", e)
+
+    # If psycopg2 unavailable, try JWT endpoint
+    if not patients and jwt_tok:
+        try:
+            hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
+            r = http.get(f"{BACKEND}/access/doctor_patients", headers=hdrs, timeout=8)
+            if r.ok:
+                for p in (r.json() if isinstance(r.json(), list) else []):
+                    patients.append({
+                        "profile_code": p.get("profile_code", ""),
+                        "username":     p.get("username", ""),
+                        "name":         p.get("name", ""),
+                        "email":        p.get("email", ""),
+                        "status":       p.get("status", "approved"),
+                        "approved_at":  p.get("approved_at", ""),
+                        "is_active":    True,
+                        "expires_at":   "",
+                        "rx_count":     0,
+                        "lab_count":    0,
+                    })
+        except Exception as e:
+            app.logger.debug("doctor_my_patients JWT: %s", e)
+
+    # Dummy EMR counts (kept for API compat)
+    PATIENTS_DIR = os.path.join(ROOT, "server", "Patients")
+    all_rx   = _read_emr_file("emr_prescriptions.json")
+    all_labs = _read_emr_file("emr_lab_reports.json")
         rx_count  = sum(1 for r in all_rx   if r.get("patient_id") == pat_code)
         lab_count = sum(1 for r in all_labs if r.get("patient_id") == pat_code)
 
