@@ -1645,40 +1645,10 @@ def doctor_my_patients():
         except Exception as e:
             app.logger.debug("doctor_my_patients JWT: %s", e)
 
-    # Dummy EMR counts (kept for API compat)
-    PATIENTS_DIR = os.path.join(ROOT, "server", "Patients")
-    all_rx   = _read_emr_file("emr_prescriptions.json")
-    all_labs = _read_emr_file("emr_lab_reports.json")
-        rx_count  = sum(1 for r in all_rx   if r.get("patient_id") == pat_code)
-        lab_count = sum(1 for r in all_labs if r.get("patient_id") == pat_code)
-
-        # Notes — quick count from backend
-        note_count = 0
-        try:
-            rn = http.get(f"{BACKEND}/doctor_notes/patient/{pat_code}",
-                          headers=_headers(), timeout=5)
-            if rn.ok:
-                nd = rn.json()
-                nl = nd.get("notes", nd) if isinstance(nd, dict) else nd
-                note_count = len(nl) if isinstance(nl, list) else 0
-        except Exception:
-            pass
-
-        patients.append({
-            "patient_code": pat_code,
-            "username":     username,
-            "name":         name,
-            "status":       "active" if is_active else "expired",
-            "expires_at":   expires_at,
-            "approved_at":  approved_at,
-            "rx_count":     rx_count,
-            "lab_count":    lab_count,
-            "note_count":   note_count,
-        })
-
-    # Sort: active first, then by approved_at descending
-    patients.sort(key=lambda p: (0 if p["status"] == "active" else 1, -(p.get("approved_at") or "").__len__()))
+    # Sort: approved first, then by created_at descending
+    patients.sort(key=lambda p: (0 if p.get("is_active") else 1, p.get("approved_at", "") or ""))
     return jsonify({"patients": patients}), 200
+
 
 
 # ── Doctor access expiry: return how long this doctor's key is valid ────────
