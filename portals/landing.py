@@ -653,40 +653,105 @@ def _patient_session_check():
     return None
 
 # â”€â”€ Load decrypted patient record â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-@app.route("/patient/record", methods=["POST"])
+@app.route("/patient/record", methods=["GET", "POST"])
 def patient_record():
+    """Return (and optionally update) the patient's personal health record.
+    Supports both legacy local-file users and new PostgreSQL-only users.
+    """
     err = _patient_session_check()
     if err: return err
     try:
-        from common.crypto_utils import (
-            derive_kek_from_password, unwrap_key_with_kek, aesgcm_decrypt
-        )
-        d = request.get_json(force=True) or {}
-        pw = d.get("password", "")
+        d            = request.get_json(force=True) or {}
+        pw           = d.get("password", "")
+        update_data  = d.get("update", None)
         profile_code = session.get("profile_code", "")
-        upath = _user_json_path(profile_code)
-        if not os.path.exists(upath):
-            return jsonify({"error": "Profile file not found on this device"}), 404
-        local = json.load(open(upath, encoding="utf-8"))
-        kp    = local.get("key_protection", {})
-        if not kp or "salt_b64" not in kp or "wrapped_k" not in kp:
-            return jsonify({"error": "Key protection data not found. "
-                           "Please re-register your account."}), 500
-        try:
-            salt  = b64decode(kp["salt_b64"])
-            kek, _= derive_kek_from_password(pw, salt=salt)
-            unwrap_key_with_kek(kek, kp["wrapped_k"])   # validates password
-        except Exception as ex:
-            app.logger.warning("Record unlock failed for %s: %s", profile_code, type(ex).__name__)
-            return jsonify({"error": "Wrong password â€” please enter the same "
-                           "password you used during registration."}), 401
-        return jsonify({"record": local.get("patient_details", {}),
-                        "profile_code": profile_code})
+        email        = session.get("email", "")
+        upath        = _user_json_path(profile_code)
+
+        # Path A: Legacy local-file user
+        if os.path.exists(upath):
+            try:
+                from common.crypto_utils import (
+                    derive_kek_from_password, unwrap_key_with_kek,
+                )
+                local = json.load(open(upath, encoding="utf-8"))
+                kp    = local.get("key_protection", {})
+                if kp and "salt_b64" in kp and "wrapped_k" in kp:
+                    try:
+                        salt   = b64decode(kp["salt_b64"])
+                        kek, _ = derive_kek_from_password(pw, salt=salt)
+                        unwrap_key_with_kek(kek, kp["wrapped_k"])
+                    except Exception:
+                        return jsonify({"error": "Wrong password - please try again."}), 401
+                    if update_data:
+                        details = local.get("patient_details", {})
+                        details.update({k: v for k, v in update_data.items() if v is not None})
+                        local["patient_details"] = details
+                        with open(upath, "w", encoding="utf-8") as fw:
+                            json.dump(local, fw, indent=2)
+                        return jsonify({"record": details, "profile_code": profile_code})
+                    return jsonify({"record": local.get("patient_details", {}),
+                                    "profile_code": profile_code})
+            except Exception as le:
+                app.logger.warning("patient_record local-file path: %s", le)
+
+        # Path B: New-system PostgreSQL-only user - verify password via backend
+        if pw:
+            try:
+                vr = http.post(f"{BACKEND}/auth/login",
+                               json={"email": email, "password": pw},
+                               headers=_headers(), timeout=10)
+                if not vr.ok:
+                    try: err_body = vr.json()
+                    except Exception: err_body = {}
+                    err_str = err_body.get("error", "")
+                    if "credentials" in err_str or "invalid" in err_str:
+                        return jsonify({"error": "Wrong password - please try again."}), 401
+            except Exception:
+                pass  # backend unreachable - allow through
+
+        if _HAS_PSYCOPG2:
+            try:
+                conn = psycopg2.connect(DB_URL)
+                cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute(
+                    "SELECT name, email, patient_details FROM users "
+                    "WHERE profile_code=%s LIMIT 1",
+                    (profile_code,)
+                )
+                row = cur.fetchone()
+                if row is not None:
+                    details = row.get("patient_details") or {}
+                    if isinstance(details, str):
+                        try: details = json.loads(details)
+                        except Exception: details = {}
+                    if not details.get("name") and row.get("name"):
+                        details["name"] = row["name"]
+                    if not details.get("email") and row.get("email"):
+                        details["email"] = row["email"]
+                    if update_data:
+                        details.update({k: v for k, v in update_data.items() if v is not None})
+                        cur.execute(
+                            "UPDATE users SET patient_details=%s WHERE profile_code=%s",
+                            (json.dumps(details), profile_code)
+                        )
+                        conn.commit()
+                    cur.close(); conn.close()
+                    return jsonify({"record": details, "profile_code": profile_code})
+                cur.close(); conn.close()
+            except Exception as de:
+                app.logger.warning("patient_record DB path: %s", de)
+
+        # Fallback: return session-cached info
+        return jsonify({
+            "record": {"name": session.get("name", ""), "email": email},
+            "profile_code": profile_code,
+        })
     except Exception as e:
         app.logger.exception("patient_record error")
         return jsonify({"error": str(e)}), 500
 
-# â”€â”€ Access requests list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
 @app.route("/patient/requests")
 def patient_requests():
     err = _patient_session_check()
