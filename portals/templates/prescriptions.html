@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block title %}Prescriptions{% endblock %}
+{% block topbar_title %}Prescriptions{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <span class="page-eyebrow">Clinical Records</span>
+    <h1 class="type-h1">Prescriptions</h1>
+    <p class="type-label" style="color:var(--tx3); margin-top:var(--sp-1);">Your medication prescriptions from doctors.</p>
+  </div>
+  <button class="btn-secondary" id="refresh-btn" type="button">
+    <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+    Refresh
+  </button>
+</div>
+
+<div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
+
+<div id="rx-loading" class="grid-3">
+  <div class="skeleton" style="height:160px;"></div>
+  <div class="skeleton" style="height:160px;"></div>
+  <div class="skeleton" style="height:160px;"></div>
+</div>
+
+<div id="rx-grid" class="grid-3 hidden"></div>
+
+<div id="rx-empty" class="empty-state hidden">
+  <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="var(--tx4)" stroke-width="1.2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+  <div class="empty-state-title">No prescriptions yet</div>
+  <div class="empty-state-desc">Prescriptions added by your doctor will appear here.</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  function fmt(s) {
+    if (!s) return '—';
+    try { return new Date(s).toLocaleString('en-IN',{dateStyle:'medium'}); } catch(e){ return s; }
+  }
+
+  function load() {
+    document.getElementById('rx-loading').classList.remove('hidden');
+    document.getElementById('rx-grid').classList.add('hidden');
+    document.getElementById('rx-empty').classList.add('hidden');
+
+    fetch('/api/patient/prescriptions-direct')
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      document.getElementById('rx-loading').classList.add('hidden');
+      var rxs = Array.isArray(d) ? d : (d.prescriptions || []);
+      if (!rxs.length) { document.getElementById('rx-empty').classList.remove('hidden'); return; }
+
+      var grid = document.getElementById('rx-grid');
+      grid.innerHTML = rxs.map(function(rx) {
+        var meds = Array.isArray(rx.medications) ? rx.medications : [];
+        var medsHtml = meds.length
+          ? '<ul style="margin:var(--sp-3) 0 0; padding-left:var(--sp-5); font-size:var(--t-sm); color:var(--tx2);">' +
+            meds.map(function(m) {
+              return '<li style="margin-bottom:var(--sp-1);">' +
+                '<strong>' + (m.name||m) + '</strong>' +
+                (m.dose ? ' — ' + m.dose : '') +
+                (m.frequency ? ' · ' + m.frequency : '') +
+              '</li>';
+            }).join('') + '</ul>'
+          : '<div style="font-size:var(--t-sm); color:var(--tx3); margin-top:var(--sp-3);">' + (rx.note||'No details') + '</div>';
+
+        return '<div class="card" style="display:flex;flex-direction:column;gap:var(--sp-2);">' +
+          '<div class="section-header" style="margin-bottom:0;">' +
+            '<span class="badge badge-gold">Rx</span>' +
+            '<span style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(rx.created_at||rx.date) + '</span>' +
+          '</div>' +
+          '<div style="font-weight:600; color:var(--tx1); font-size:var(--t-sm);">' + (rx.doctor_name||'Dr. —') + '</div>' +
+          '<div style="font-size:var(--t-xs); color:var(--tx3);">Diagnosis: ' + (rx.diagnosis||'—') + '</div>' +
+          medsHtml +
+          (rx.instructions ? '<div style="margin-top:var(--sp-3); font-size:var(--t-xs); color:var(--tx3); border-top:1px solid var(--b1); padding-top:var(--sp-3);">📝 ' + rx.instructions + '</div>' : '') +
+        '</div>';
+      }).join('');
+      grid.classList.remove('hidden');
+    })
+    .catch(function() {
+      document.getElementById('rx-loading').classList.add('hidden');
+      var a = document.getElementById('page-alert');
+      a.className = 'alert alert-error'; a.textContent = 'Failed to load prescriptions.'; a.style.display = 'flex';
+    });
+  }
+
+  document.getElementById('refresh-btn').addEventListener('click', load);
+  load();
+})();
+</script>
+{% endblock %}

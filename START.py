@@ -1,91 +1,113 @@
 #!/usr/bin/env python3
 """
 MedVault — START.py
-Run this one file to launch the entire system.
+Run this one file to launch the entire system in the background.
+A browser window opens automatically at http://127.0.0.1:5003
 
   Backend API     → http://127.0.0.1:5000
   Landing Page    → http://127.0.0.1:5003  ← entry point (login / sign up)
-  Patient Portal  → http://127.0.0.1:5001  ← served after auth
-  Doctor Portal   → http://127.0.0.1:5002  ← served after auth
+  Patient Portal  → http://127.0.0.1:5001
+  Doctor Portal   → http://127.0.0.1:5002
+
+All services run as background processes — closing this terminal does NOT
+stop them.  Run STOP.py (or kill the PIDs in medvault_pids.txt) to stop.
 """
-import subprocess, sys, os, time, webbrowser, signal
+import subprocess, sys, os, time, webbrowser, json, signal, socket
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-PY   = sys.executable
-procs  = []
-labels = []
+ROOT   = os.path.dirname(os.path.abspath(__file__))
+PY     = sys.executable
+PIDFILE = os.path.join(ROOT, "medvault_pids.json")
 
-def start(label, script, port):
-    # Letting output flow directly to the terminal avoids deadlocks.
-    p = subprocess.Popen([PY, script], cwd=ROOT)
-    procs.append(p)
-    labels.append(label)
+# ── Helper: start a service detached from this terminal ──────────────────────
+def start_background(label, script, port):
+    if sys.platform == "win32":
+        # DETACHED_PROCESS: child runs independently of the parent terminal
+        DETACHED = 0x00000008
+        CREATE_NEW_PROCESS_GROUP = 0x00000200
+        p = subprocess.Popen(
+            [PY, script],
+            cwd=ROOT,
+            creationflags=DETACHED | CREATE_NEW_PROCESS_GROUP,
+            stdout=open(os.path.join(ROOT, f"logs_{label.replace(' ','_')}.log"), "w"),
+            stderr=subprocess.STDOUT,
+        )
+    else:
+        p = subprocess.Popen(
+            [PY, script],
+            cwd=ROOT,
+            stdout=open(os.path.join(ROOT, f"logs_{label.replace(' ','_')}.log"), "w"),
+            stderr=subprocess.STDOUT,
+            start_new_session=True,   # detach on Unix
+        )
     return p
 
+
 def wait_for(port, timeout=20):
-    import socket
     t0 = time.time()
     while time.time() - t0 < timeout:
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=1):
                 return True
         except OSError:
-            time.sleep(0.5)
+            time.sleep(0.4)
     return False
 
-def cleanup(sig=None, frame=None):
-    print("\n  🛑  Shutting down MedVault...", flush=True)
-    for p in procs:
-        try: p.terminate()
-        except: pass
-    sys.exit(0)
 
-signal.signal(signal.SIGINT, cleanup)
-if hasattr(signal, 'SIGTERM'):
-    signal.signal(signal.SIGTERM, cleanup)
+def already_running(port):
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
 
 print("""
 ╔══════════════════════════════════════════════════════╗
 ║        🏥  MedVault — Zero-Trust Health Portal       ║
-║                 Starting all services...             ║
+║              Launching background services…          ║
 ╚══════════════════════════════════════════════════════╝
 """, flush=True)
 
-# 1. Backend API (must be first — portals depend on it)
-print("  ▶  Backend API       → http://127.0.0.1:5000", flush=True)
-start("Backend API", os.path.join(ROOT, "server", "server.py"), 5000)
-if not wait_for(5000, 15):
-    print("  ⚠  Backend slow to start — continuing anyway", flush=True)
-else:
-    print("  ✅  Backend ready", flush=True)
+pids = {}
+services = [
+    ("Backend API",   os.path.join(ROOT, "server",  "server.py"),          5000),
+    ("Patient Portal",os.path.join(ROOT, "portals", "patient_portal.py"),  5001),
+    ("Doctor Portal", os.path.join(ROOT, "portals", "doctor_portal.py"),   5002),
+    ("Landing Page",  os.path.join(ROOT, "portals", "landing.py"),         5003),
+]
 
-# 2. Patient Portal (API handler — not opened in browser directly)
-print("  ▶  Patient Portal    → http://127.0.0.1:5001", flush=True)
-start("Patient Portal", os.path.join(ROOT, "portals", "patient_portal.py"), 5001)
-if not wait_for(5001, 12):
-    print("  ⚠  Patient portal slow to start", flush=True)
-else:
-    print("  ✅  Patient portal ready", flush=True)
+for label, script, port in services:
+    if already_running(port):
+        print(f"  ✅  {label:<16} already running on :{port}", flush=True)
+        pids[label] = None
+        continue
+    print(f"  ▶  {label:<16} → http://127.0.0.1:{port}", flush=True)
+    p = start_background(label, script, port)
+    pids[label] = p.pid
 
-# 3. Doctor Portal (API handler — not opened in browser directly)
-print("  ▶  Doctor Portal     → http://127.0.0.1:5002", flush=True)
-start("Doctor Portal", os.path.join(ROOT, "portals", "doctor_portal.py"), 5002)
-if not wait_for(5002, 12):
-    print("  ⚠  Doctor portal slow to start", flush=True)
-else:
-    print("  ✅  Doctor portal ready", flush=True)
+    # Backend must be ready before portals start
+    if port == 5000:
+        if wait_for(5000, 20):
+            print(f"  ✅  {label} ready", flush=True)
+        else:
+            print(f"  ⚠  {label} slow to start — continuing anyway", flush=True)
 
-# 4. Landing Page (entry point — users log in / sign up here)
-print("  ▶  Landing Page      → http://127.0.0.1:5003", flush=True)
-start("Landing Page", os.path.join(ROOT, "portals", "landing.py"), 5003)
-if not wait_for(5003, 12):
-    print("  ⚠  Landing page slow to start", flush=True)
+# Save PIDs so STOP.py can clean up
+try:
+    with open(PIDFILE, "w") as f:
+        json.dump(pids, f, indent=2)
+except Exception:
+    pass
+
+# Wait for landing page to be reachable
+if wait_for(5003, 25):
+    print("\n  ✅  All services launched!", flush=True)
 else:
-    print("  ✅  Landing page ready", flush=True)
+    print("\n  ⚠  Landing page slow — opening browser anyway", flush=True)
 
 print("""
 ╔══════════════════════════════════════════════════════╗
-║  ✅  MedVault is running!                            ║
+║  ✅  MedVault is running in the background!          ║
 ║                                                      ║
 ║  🌐  Entry Point     →  http://127.0.0.1:5003        ║
 ║      (Login / Sign Up — start here)                  ║
@@ -94,24 +116,13 @@ print("""
 ║  🩺  Doctor Portal   →  http://127.0.0.1:5002        ║
 ║  ⚙️  Backend API     →  http://127.0.0.1:5000        ║
 ║                                                      ║
-║  Press Ctrl+C to stop all services                   ║
+║  Logs: logs_*.log in project root                    ║
+║  To stop:  python STOP.py                            ║
 ╚══════════════════════════════════════════════════════╝
 """, flush=True)
 
-time.sleep(1)
-# Open only the landing page — users authenticate there first
+time.sleep(0.5)
 webbrowser.open("http://127.0.0.1:5003")
 
-# Monitor all processes and exit if any crashes
-try:
-    while True:
-        time.sleep(1)
-        for p, label in zip(procs, labels):
-            code = p.poll()
-            if code is not None:
-                print(f"\n  ❌  '{label}' has exited unexpectedly (exit code: {code}).", flush=True)
-                print("  ℹ️   Check the terminal output above for error details.", flush=True)
-                print("  🛑  Shutting down remaining services...", flush=True)
-                cleanup()
-except KeyboardInterrupt:
-    cleanup()
+# This process exits — services keep running in background
+print("  ℹ️   This launcher has exited. Services continue running.", flush=True)

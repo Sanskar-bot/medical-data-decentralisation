@@ -1,0 +1,212 @@
+{% extends 'base.html' %}
+{% block title %}EMR Profile{% endblock %}
+{% block topbar_title %}EMR Profile{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <span class="page-eyebrow">Electronic Medical Record</span>
+    <h1 class="type-h1">EMR Profile</h1>
+    <p class="type-label" style="color:var(--tx3); margin-top:var(--sp-1);">Your vitals and medical history on record.</p>
+  </div>
+  <button class="btn-primary" id="edit-btn" type="button">Edit profile</button>
+</div>
+
+<div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
+
+<div class="grid-sidebar" style="align-items:start;">
+  <div class="stack-5">
+
+    <!-- Vitals -->
+    <div class="card" id="vitals-card">
+      <h2 class="type-h3" style="margin-bottom:var(--sp-5);">Vitals</h2>
+      <div id="vitals-loading">
+        <div class="skeleton" style="height:16px; width:60%; margin-bottom:var(--sp-3);"></div>
+        <div class="skeleton" style="height:16px; width:40%; margin-bottom:var(--sp-3);"></div>
+        <div class="skeleton" style="height:16px; width:50%;"></div>
+      </div>
+      <div id="vitals-content" style="display:none;"></div>
+    </div>
+
+    <!-- Medical history -->
+    <div class="card">
+      <h2 class="type-h3" style="margin-bottom:var(--sp-5);">Medical History</h2>
+      <div id="history-loading">
+        <div class="skeleton" style="height:16px; width:70%; margin-bottom:var(--sp-3);"></div>
+        <div class="skeleton" style="height:16px; width:55%;"></div>
+      </div>
+      <div id="history-content" style="display:none;"></div>
+    </div>
+
+  </div>
+
+  <div class="stack-4">
+    <!-- Edit form (hidden by default) -->
+    <div class="card" id="edit-form" style="display:none;">
+      <h3 class="type-h3" style="margin-bottom:var(--sp-5);">Update EMR</h3>
+      <div id="edit-alert" style="display:none;"></div>
+      <div class="grid-2">
+        <div class="input-group">
+          <label class="input-label" for="emr-blood">Blood Group</label>
+          <select class="input-field" id="emr-blood">
+            <option value="">—</option>
+            <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+            <option>O+</option><option>O-</option><option>AB+</option><option>AB-</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label class="input-label" for="emr-height">Height (cm)</label>
+          <input class="input-field" type="number" id="emr-height" placeholder="170">
+        </div>
+        <div class="input-group">
+          <label class="input-label" for="emr-weight">Weight (kg)</label>
+          <input class="input-field" type="number" id="emr-weight" placeholder="70">
+        </div>
+        <div class="input-group">
+          <label class="input-label" for="emr-bp">Blood Pressure</label>
+          <input class="input-field" type="text" id="emr-bp" placeholder="120/80">
+        </div>
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="emr-allergies">Allergies</label>
+        <input class="input-field" type="text" id="emr-allergies" placeholder="Penicillin, dust, etc.">
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="emr-conditions">Chronic Conditions</label>
+        <input class="input-field" type="text" id="emr-conditions" placeholder="Diabetes, hypertension…">
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="emr-notes">Additional Notes</label>
+        <textarea class="input-field" id="emr-notes" rows="3" placeholder="Any other medical information…"></textarea>
+      </div>
+      <div class="cluster-3">
+        <button class="btn-primary" id="save-btn" type="button">Save</button>
+        <button class="btn-secondary" id="cancel-btn" type="button">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Info card -->
+    <div class="card">
+      <div class="type-label" style="font-weight:600; margin-bottom:var(--sp-4);">About EMR</div>
+      <div class="stack-3">
+        <div style="font-size:var(--t-sm); color:var(--tx3);">Your EMR profile stores non-encrypted supplementary information like vitals and medical history. Sensitive records remain end-to-end encrypted separately.</div>
+        <div class="field-row" style="padding-top:var(--sp-3);"><div class="field-label">Data location</div><div class="field-value">Local + Server</div></div>
+        <div class="field-row"><div class="field-label">Encryption</div><div class="field-value">Transit-only (TLS)</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var profile = {};
+
+  function showAlert(el, msg, type) {
+    el.className = 'alert alert-' + (type||'error');
+    el.textContent = msg; el.style.display = 'flex';
+    setTimeout(function(){ el.style.display = 'none'; }, 4000);
+  }
+
+  function renderVitals(p) {
+    var fields = [
+      ['Blood Group', p.blood_group],
+      ['Height',      p.height ? p.height + ' cm' : null],
+      ['Weight',      p.weight ? p.weight + ' kg' : null],
+      ['Blood Pressure', p.blood_pressure],
+      ['BMI',         (p.height && p.weight) ? (p.weight / ((p.height/100)**2)).toFixed(1) : null],
+    ];
+    return fields.filter(function(f){ return f[1]; }).map(function(f) {
+      return '<div class="field-row" style="padding-top:0; ' + (fields.indexOf(f) > 0 ? '' : '') + '">' +
+        '<div class="field-label">' + f[0] + '</div>' +
+        '<div class="field-value">' + f[1] + '</div>' +
+      '</div>';
+    }).join('') || '<div style="color:var(--tx3); font-size:var(--t-sm);">No vitals recorded yet. Click "Edit profile" to add.</div>';
+  }
+
+  function renderHistory(p) {
+    var parts = [];
+    if (p.allergies) parts.push({label:'Allergies', val: p.allergies});
+    if (p.conditions) parts.push({label:'Conditions', val: p.conditions});
+    if (p.notes) parts.push({label:'Notes', val: p.notes});
+    if (!parts.length) return '<div style="color:var(--tx3); font-size:var(--t-sm);">No medical history recorded yet.</div>';
+    return parts.map(function(it) {
+      return '<div class="field-row" style="padding-top:0;">' +
+        '<div class="field-label">' + it.label + '</div>' +
+        '<div class="field-value">' + it.val + '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function load() {
+    fetch('/api/patient/emr-profile-direct')
+    .then(function(r){ return r.json(); })
+    .then(function(p) {
+      profile = p;
+      document.getElementById('vitals-loading').style.display = 'none';
+      document.getElementById('history-loading').style.display = 'none';
+      var vc = document.getElementById('vitals-content');
+      var hc = document.getElementById('history-content');
+      vc.innerHTML = renderVitals(p);
+      hc.innerHTML = renderHistory(p);
+      vc.style.display = ''; hc.style.display = '';
+    })
+    .catch(function() {
+      var a = document.getElementById('page-alert');
+      a.className='alert alert-error'; a.textContent='Failed to load EMR profile.'; a.style.display='flex';
+    });
+  }
+
+  // Edit / Save
+  document.getElementById('edit-btn').addEventListener('click', function() {
+    var form = document.getElementById('edit-form');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    if (form.style.display === 'block') {
+      document.getElementById('emr-blood').value      = profile.blood_group || '';
+      document.getElementById('emr-height').value     = profile.height || '';
+      document.getElementById('emr-weight').value     = profile.weight || '';
+      document.getElementById('emr-bp').value         = profile.blood_pressure || '';
+      document.getElementById('emr-allergies').value  = profile.allergies || '';
+      document.getElementById('emr-conditions').value = profile.conditions || '';
+      document.getElementById('emr-notes').value      = profile.notes || '';
+    }
+  });
+  document.getElementById('cancel-btn').addEventListener('click', function() {
+    document.getElementById('edit-form').style.display = 'none';
+  });
+  document.getElementById('save-btn').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true; btn.textContent = 'Saving…';
+    fetch('/api/patient/emr-profile-direct', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        blood_group:    document.getElementById('emr-blood').value,
+        height:         document.getElementById('emr-height').value,
+        weight:         document.getElementById('emr-weight').value,
+        blood_pressure: document.getElementById('emr-bp').value,
+        allergies:      document.getElementById('emr-allergies').value,
+        conditions:     document.getElementById('emr-conditions').value,
+        notes:          document.getElementById('emr-notes').value,
+      })
+    })
+    .then(function(r){ return r.json(); })
+    .then(function() {
+      btn.disabled = false; btn.textContent = 'Save';
+      document.getElementById('edit-form').style.display = 'none';
+      var a = document.getElementById('page-alert');
+      a.className='alert alert-success'; a.textContent='EMR profile updated.'; a.style.display='flex';
+      setTimeout(function(){ a.style.display='none'; }, 3000);
+      load();
+    })
+    .catch(function() {
+      btn.disabled = false; btn.textContent = 'Save';
+      showAlert(document.getElementById('edit-alert'), 'Failed to save.', 'error');
+    });
+  });
+
+  load();
+})();
+</script>
+{% endblock %}

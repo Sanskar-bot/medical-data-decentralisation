@@ -1,0 +1,241 @@
+{% extends 'base.html' %}
+{% block title %}Patient Detail{% endblock %}
+{% block topbar_title %}Patient Detail{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <span class="page-eyebrow">
+      <a href="/my-patients" style="color:var(--tx3); text-decoration:none;">My Patients</a>
+      <span style="margin:0 var(--sp-2);">›</span>
+      <span class="type-mono" style="font-size:inherit;">{{ patient_code or '—' }}</span>
+    </span>
+    <h1 class="type-h1">Patient Record</h1>
+  </div>
+  <div class="topbar-actions">
+    <button class="btn-primary" id="fetch-record-btn" type="button">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+      Fetch encrypted record
+    </button>
+  </div>
+</div>
+
+<div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
+
+<!-- Fetch record panel -->
+<div class="card" id="fetch-panel" style="max-width:480px; margin-bottom:var(--sp-6); display:none;">
+  <h3 class="type-h3" style="margin-bottom:var(--sp-5);">Decrypt Patient Record</h3>
+  <p style="font-size:var(--t-sm); color:var(--tx3); margin-bottom:var(--sp-4);">Enter your doctor password to request and decrypt the patient's health record. The patient must have approved your access.</p>
+  <div id="fetch-alert" style="display:none;"></div>
+  <div class="input-group">
+    <label class="input-label" for="doctor-pw">Your password</label>
+    <input class="input-field" type="password" id="doctor-pw" placeholder="Doctor account password" autocomplete="current-password">
+  </div>
+  <button class="btn-primary" id="fetch-submit-btn" type="button">Decrypt record</button>
+</div>
+
+<!-- Record display -->
+<div id="record-display" style="display:none; margin-bottom:var(--sp-6);"></div>
+
+<div class="grid-sidebar" style="align-items:start;">
+
+  <!-- Timeline / Notes -->
+  <div class="stack-5">
+    <div>
+      <div class="section-header" style="margin-bottom:var(--sp-4);">
+        <h2 class="type-h3">Doctor Notes</h2>
+        <button class="btn-secondary btn-sm" id="refresh-notes-btn" type="button">Refresh</button>
+      </div>
+      <div id="notes-loading">
+        <div class="skeleton" style="height:120px; margin-bottom:var(--sp-3);"></div>
+        <div class="skeleton" style="height:120px;"></div>
+      </div>
+      <div id="notes-list" style="display:none;"></div>
+    </div>
+  </div>
+
+  <!-- Sidebar: Add note -->
+  <div class="stack-4">
+    <div class="card">
+      <h3 class="type-h3" style="margin-bottom:var(--sp-5);">Add Note</h3>
+      <div id="note-alert" style="display:none;"></div>
+      <div class="input-group">
+        <label class="input-label" for="note-type">Note type</label>
+        <select class="input-field" id="note-type">
+          <option value="General">General</option>
+          <option value="Diagnosis">Diagnosis</option>
+          <option value="Prescription">Prescription</option>
+          <option value="Lab Result">Lab Result</option>
+          <option value="Follow-up">Follow-up</option>
+          <option value="Referral">Referral</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="note-visit-date">Visit date</label>
+        <input class="input-field" type="date" id="note-visit-date">
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="note-text">Clinical note</label>
+        <textarea class="input-field" id="note-text" rows="5" placeholder="Observations, diagnosis, plan…"></textarea>
+      </div>
+      <button class="btn-primary w-full" id="add-note-btn" type="button" style="justify-content:center;">
+        <span id="note-btn-text">Add note</span>
+        <span id="note-spinner" class="spinner" style="display:none;"></span>
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var PATIENT_CODE = {{ patient_code | tojson }};
+  var JWT = {{ session.get('jwt_token','') | tojson }};
+
+  function showAlert(el, msg, type) {
+    if(!el) return;
+    el.className = 'alert alert-' + (type||'error'); el.textContent = msg; el.style.display = 'flex';
+    setTimeout(function(){ el.style.display = 'none'; }, 5000);
+  }
+  function fmt(s) {
+    if (!s) return '—';
+    try{ return new Date(s).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}); } catch(e){ return s; }
+  }
+  function noteTypeColor(t) {
+    var m = {General:'badge-patient', Diagnosis:'badge-approved', Prescription:'badge-gold',
+              'Lab Result':'badge-encrypted', 'Follow-up':'badge-doctor', Referral:'badge-pending'};
+    return m[t]||'badge-patient';
+  }
+
+  // ── Toggle fetch panel ─────────────────────────────────────────
+  document.getElementById('fetch-record-btn').addEventListener('click', function() {
+    var panel = document.getElementById('fetch-panel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  });
+
+  document.getElementById('fetch-submit-btn').addEventListener('click', function() {
+    var pw = document.getElementById('doctor-pw').value;
+    var alertEl = document.getElementById('fetch-alert');
+    if (!pw) { showAlert(alertEl, 'Password required.', 'error'); return; }
+    this.disabled = true; this.textContent = 'Fetching…';
+    var self = this;
+    fetch('/doctor/fetch_record', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({profile_code: PATIENT_CODE, password: pw})
+    })
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
+    .then(function(res) {
+      self.disabled = false; self.textContent = 'Decrypt record';
+      if (!res.ok || res.data.error) {
+        showAlert(alertEl, res.data.error||'Failed to fetch record.', 'error'); return;
+      }
+      var rec = res.data.record || {};
+      document.getElementById('fetch-panel').style.display = 'none';
+      var disp = document.getElementById('record-display');
+      disp.style.display = '';
+      disp.innerHTML =
+        '<div class="card">' +
+          '<div class="section-header" style="margin-bottom:var(--sp-5);">' +
+            '<h2 class="type-h3">Health Record</h2>' +
+            '<span class="badge badge-approved">Decrypted</span>' +
+          '</div>' +
+          '<div class="grid-2">' +
+            '<div class="field-row" style="padding-top:0;"><div class="field-label">Name</div><div class="field-value">' + (rec.name||'—') + '</div></div>' +
+            '<div class="field-row" style="padding-top:0;"><div class="field-label">Age</div><div class="field-value">' + (rec.age||'—') + '</div></div>' +
+            '<div class="field-row"><div class="field-label">Email</div><div class="field-value">' + (rec.email||'—') + '</div></div>' +
+          '</div>' +
+          (rec.notes ? '<div class="field-row"><div class="field-label">Notes</div><div class="field-value">' + rec.notes + '</div></div>' : '') +
+        '</div>';
+    })
+    .catch(function() {
+      self.disabled = false; self.textContent = 'Decrypt record';
+      showAlert(alertEl, 'Network error.', 'error');
+    });
+  });
+
+  // ── Load notes ────────────────────────────────────────────────
+  function loadNotes() {
+    document.getElementById('notes-loading').style.display = '';
+    document.getElementById('notes-list').style.display = 'none';
+    fetch('/doctor/patient_notes/' + encodeURIComponent(PATIENT_CODE), {
+      headers: {'Authorization':'Bearer '+JWT}
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      document.getElementById('notes-loading').style.display = 'none';
+      var nl = document.getElementById('notes-list');
+      nl.style.display = '';
+      var notes = d.notes || [];
+      if (!notes.length) {
+        nl.innerHTML = '<div class="empty-state"><div class="empty-state-title">No notes for this patient yet</div></div>';
+        return;
+      }
+      nl.innerHTML = '<div class="stack-4">' + notes.map(function(n) {
+        return '<div class="note-card">' +
+          '<div class="note-card-header">' +
+            '<span class="badge ' + noteTypeColor(n.note_type) + '">' + (n.note_type||'General') + '</span>' +
+            '<span class="type-caption">Visit: ' + (n.visit_date||'—') + '</span>' +
+          '</div>' +
+          '<div class="note-body">' + (n.note_text||n.content||'—') + '</div>' +
+          '<div class="note-footer">Added ' + fmt(n.created_at) + '</div>' +
+        '</div>';
+      }).join('') + '</div>';
+    })
+    .catch(function() {
+      document.getElementById('notes-loading').style.display = 'none';
+    });
+  }
+
+  // ── Add note ──────────────────────────────────────────────────
+  document.getElementById('add-note-btn').addEventListener('click', function() {
+    var noteText = (document.getElementById('note-text').value||'').trim();
+    var alertEl  = document.getElementById('note-alert');
+    if (!noteText) { showAlert(alertEl, 'Note text is required.', 'error'); return; }
+    this.disabled = true;
+    document.getElementById('note-btn-text').textContent = 'Adding…';
+    document.getElementById('note-spinner').style.display = 'inline-block';
+    var self = this;
+    fetch('/doctor/add_note', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        profile_code: PATIENT_CODE,
+        note_type:    document.getElementById('note-type').value,
+        visit_date:   document.getElementById('note-visit-date').value,
+        note_text:    noteText,
+      })
+    })
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
+    .then(function(res) {
+      self.disabled = false;
+      document.getElementById('note-btn-text').textContent = 'Add note';
+      document.getElementById('note-spinner').style.display = 'none';
+      if (res.ok) {
+        showAlert(document.getElementById('page-alert'), 'Note added. Patient will receive it on next sync.', 'success');
+        document.getElementById('note-text').value = '';
+        document.getElementById('note-visit-date').value = '';
+        loadNotes();
+      } else {
+        showAlert(alertEl, res.data.error||'Failed.', 'error');
+      }
+    })
+    .catch(function() {
+      self.disabled = false;
+      document.getElementById('note-btn-text').textContent = 'Add note';
+      document.getElementById('note-spinner').style.display = 'none';
+      showAlert(document.getElementById('note-alert'), 'Network error.', 'error');
+    });
+  });
+
+  document.getElementById('refresh-notes-btn').addEventListener('click', loadNotes);
+
+  if (PATIENT_CODE) { loadNotes(); }
+  else {
+    var a = document.getElementById('page-alert');
+    a.className='alert alert-error'; a.textContent='No patient code provided.'; a.style.display='flex';
+  }
+})();
+</script>
+{% endblock %}

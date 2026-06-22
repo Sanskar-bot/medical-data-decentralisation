@@ -260,7 +260,6 @@
     </div>
   </div>
 
-  <!-- Request access form -->
   <div class="section" id="request">
     <div class="section-header">
       <h2 class="type-h3">Request Patient Access</h2>
@@ -268,13 +267,14 @@
     <div class="card" style="max-width:560px;">
       <div id="request-alert" style="display:none;"></div>
       <div class="input-group">
-        <label class="input-label" for="patient-code-input">Patient profile code</label>
-        <input class="input-field" type="text" id="patient-code-input" placeholder="e.g. AB3X7K2PQ1" autocomplete="off">
-        <span class="input-hint">Ask the patient for their 10-character profile code</span>
+        <label class="input-label" for="patient-code-input">Patient username <span style="color:var(--tx3); font-weight:400;">or profile code</span></label>
+        <input class="input-field" type="text" id="patient-code-input" placeholder="e.g. sanskarphougat  or  AB3X7K2PQ1" autocomplete="off">
+        <span class="input-hint">Enter the patient's username or their 10-character profile code</span>
       </div>
       <button class="btn-primary" id="send-request-btn" type="button">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
-        Send access request
+        <span id="req-btn-text">Send access request</span>
+        <span id="req-spinner" class="spinner" style="display:none;"></span>
       </button>
     </div>
   </div>
@@ -310,8 +310,9 @@
       <div id="note-alert" style="display:none;"></div>
       <div class="grid-2">
         <div class="input-group">
-          <label class="input-label" for="note-patient-code">Patient profile code</label>
-          <input class="input-field" type="text" id="note-patient-code" placeholder="AB3X7K2PQ1">
+          <label class="input-label" for="note-patient-code">Patient username <span style="color:var(--tx3); font-weight:400;">or profile code</span></label>
+          <input class="input-field" type="text" id="note-patient-code" placeholder="username or AB3X7K2PQ1">
+          <span class="input-hint" id="note-patient-hint"></span>
         </div>
         <div class="input-group">
           <label class="input-label" for="note-type">Note type</label>
@@ -587,48 +588,98 @@
     var sendBtn = document.getElementById('send-request-btn');
     var reqAlertEl = document.getElementById('request-alert');
     if (sendBtn) sendBtn.addEventListener('click', function() {
-      var code = (document.getElementById('patient-code-input').value||'').trim().toUpperCase();
-      if (!code) { showAlert(reqAlertEl, 'Enter a patient profile code.', 'error'); return; }
+      var raw = (document.getElementById('patient-code-input').value||'').trim();
+      if (!raw) { showAlert(reqAlertEl, 'Enter a username or profile code.', 'error'); return; }
       sendBtn.disabled = true;
-      fetch('/doctor/request_access', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({profile_code: code})
+      document.getElementById('req-btn-text').textContent = 'Resolving…';
+      document.getElementById('req-spinner').style.display = 'inline-block';
+
+      // Resolve username → profile_code, then request access
+      resolvePatient(raw)
+      .then(function(code) {
+        document.getElementById('req-btn-text').textContent = 'Sending…';
+        return fetch('/doctor/request_access', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({profile_code: code})
+        }).then(function(r) { return r.json().then(function(d){ return {ok:r.ok, data:d}; }); });
       })
-      .then(function(r) { return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
       .then(function(res) {
         sendBtn.disabled = false;
-        if (res.ok) { showAlert(reqAlertEl, 'Access request sent to patient.', 'success'); loadDoctorRequests(); }
-        else { showAlert(reqAlertEl, res.data.error||'Request failed.', 'error'); }
+        document.getElementById('req-btn-text').textContent = 'Send access request';
+        document.getElementById('req-spinner').style.display = 'none';
+        if (res.ok) {
+          showAlert(reqAlertEl, 'Access request sent. Patient will be notified.', 'success');
+          document.getElementById('patient-code-input').value = '';
+          loadDoctorRequests();
+        } else {
+          showAlert(reqAlertEl, res.data.error || 'Request failed.', 'error');
+        }
       })
-      .catch(function() { sendBtn.disabled = false; showAlert(reqAlertEl, 'Network error.', 'error'); });
+      .catch(function(err) {
+        sendBtn.disabled = false;
+        document.getElementById('req-btn-text').textContent = 'Send access request';
+        document.getElementById('req-spinner').style.display = 'none';
+        showAlert(reqAlertEl, err.message || 'Network error.', 'error');
+      });
     });
 
     var addNoteBtn = document.getElementById('add-note-btn');
     var noteAlertEl = document.getElementById('note-alert');
     if (addNoteBtn) addNoteBtn.addEventListener('click', function() {
-      var code     = (document.getElementById('note-patient-code').value||'').trim().toUpperCase();
+      var raw      = (document.getElementById('note-patient-code').value||'').trim();
       var noteType = document.getElementById('note-type').value;
       var visitDate= document.getElementById('note-visit-date').value;
       var noteText = (document.getElementById('note-text').value||'').trim();
-      if (!code || !noteText) { showAlert(noteAlertEl, 'Patient code and note text are required.', 'error'); return; }
+      if (!raw || !noteText) { showAlert(noteAlertEl, 'Patient identifier and note text are required.', 'error'); return; }
       addNoteBtn.disabled = true;
-      fetch('/doctor/add_note', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({profile_code: code, note_type: noteType, visit_date: visitDate, note_text: noteText})
+      var hintEl = document.getElementById('note-patient-hint');
+      if (hintEl) hintEl.textContent = 'Resolving…';
+
+      resolvePatient(raw)
+      .then(function(code) {
+        if (hintEl) hintEl.textContent = 'Resolved: ' + code;
+        return fetch('/doctor/add_note', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({profile_code: code, note_type: noteType, visit_date: visitDate, note_text: noteText})
+        }).then(function(r) { return r.json().then(function(d){ return {ok:r.ok,data:d}; }); });
       })
-      .then(function(r) { return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
       .then(function(res) {
         addNoteBtn.disabled = false;
+        if (hintEl) hintEl.textContent = '';
         if (res.ok) {
           showAlert(noteAlertEl, 'Note added successfully.', 'success');
           document.getElementById('note-text').value = '';
           document.getElementById('note-patient-code').value = '';
         } else { showAlert(noteAlertEl, res.data.error||'Failed to add note.', 'error'); }
       })
-      .catch(function() { addNoteBtn.disabled = false; showAlert(noteAlertEl, 'Network error.', 'error'); });
+      .catch(function(err) {
+        addNoteBtn.disabled = false;
+        if (hintEl) hintEl.textContent = '';
+        showAlert(noteAlertEl, err.message || 'Network error.', 'error');
+      });
     });
+
+    // ── Resolve username or profile_code → confirmed profile_code ──
+    function resolvePatient(raw) {
+      // If it looks like a profile code (10 chars, all alphanumeric upper) skip resolve
+      if (/^[A-Z0-9]{8,12}$/.test(raw.toUpperCase()) && raw.length >= 8) {
+        return Promise.resolve(raw.toUpperCase());
+      }
+      return fetch('/api/resolve_patient', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({username: raw})
+      })
+      .then(function(r) { return r.json().then(function(d) { return {ok:r.ok, data:d}; }); })
+      .then(function(res) {
+        if (!res.ok || !res.data.profile_code) {
+          throw new Error(res.data.error || ('Patient "' + raw + '" not found.'));
+        }
+        return res.data.profile_code;
+      });
+    }
 
     function loadDoctorRequests() {
       fetch('/doctor/my_requests', {headers: authHeaders()})

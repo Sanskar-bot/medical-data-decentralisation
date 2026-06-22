@@ -1021,25 +1021,59 @@ def _doctor_session_check():
     return None
 
 def _resolve_patient_code(username_or_code: str) -> str:
-    """Resolve a patient username (e.g. 'sanskar_phougat') to the internal
-    profile_code (e.g. 'B22YF773XL') by looking up users_db.json.
-    If no username match is found the value is returned unchanged — that
-    allows doctors who already know the profile_code to use it directly."""
+    """Resolve a patient username to their profile_code.
+    Tries in order:
+      1. Local users_db.json (fastest)
+      2. Server /api/resolve_username/<username> (PostgreSQL)
+      3. Scan client/Users/* user_data.json folders
+    Falls back to returning the raw value so raw profile_codes still work.
+    """
     if not username_or_code:
         return username_or_code
+    raw = username_or_code.strip()
+
+    # ── 1. Local users_db.json ─────────────────────────────────────
     users_db_path = os.path.join(ROOT, "server", "users_db.json")
     try:
         users = json.load(open(users_db_path, encoding="utf-8"))
         for entry in users.values():
-            if (entry.get("username", "").lower() == username_or_code.lower()
-                    and entry.get("role") == "patient"):
+            uname = entry.get("username", "") or entry.get("email", "")
+            if uname.lower() == raw.lower() and entry.get("role") == "patient":
                 pc = entry.get("profile_code", "")
                 if pc:
                     return pc
     except Exception as e:
-        app.logger.warning("_resolve_patient_code: could not read users_db: %s", e)
+        app.logger.debug("_resolve_patient_code users_db: %s", e)
+
+    # ── 2. PostgreSQL via /api/resolve_username/<username> ─────────
+    try:
+        r = http.get(f"{BACKEND}/api/resolve_username/{raw}",
+                     headers=_headers(), timeout=5)
+        if r.ok:
+            data = r.json()
+            pc = data.get("profile_code") or data.get("patient_code") or ""
+            if pc:
+                return pc
+    except Exception as e:
+        app.logger.debug("_resolve_patient_code backend: %s", e)
+
+    # ── 3. Scan local client/Users folders ────────────────────────
+    try:
+        for folder in os.listdir(USERS_DIR):
+            ud_path = os.path.join(USERS_DIR, folder, "user_data.json")
+            if not os.path.exists(ud_path):
+                continue
+            ud = json.load(open(ud_path, encoding="utf-8"))
+            uname = ud.get("username", "") or ud.get("email", "")
+            if uname.lower() == raw.lower():
+                pc = ud.get("profile_code", folder)
+                if pc:
+                    return pc
+    except Exception as e:
+        app.logger.debug("_resolve_patient_code scan: %s", e)
+
     # Fallback: treat as raw profile_code
-    return username_or_code
+    return raw
 
 def _fwd_headers():
     """Build headers that carry the Flask session cookie to doctor_portal."""
@@ -1990,7 +2024,123 @@ def doctor_appt_respond(req_id):
     return jsonify({"message": "updated"}), 200
 
 
+
 # ── Run ───────────────────────────────────────────────────────────────────────
+
+# ── Missing page routes ───────────────────────────────────────────────────────
+@app.route("/prescriptions")
+def page_prescriptions():
+    if not session.get("logged_in"): return redirect("/")
+    ctx = _page_context()
+    return render_template("prescriptions.html", **ctx)
+
+@app.route("/lab-reports")
+def page_lab_reports():
+    if not session.get("logged_in"): return redirect("/")
+    ctx = _page_context()
+    return render_template("lab_reports.html", **ctx)
+
+@app.route("/emr")
+def page_emr():
+    if not session.get("logged_in"): return redirect("/")
+    ctx = _page_context()
+    return render_template("emr.html", **ctx)
+
+@app.route("/my-patients")
+def page_my_patients():
+    if not session.get("logged_in"): return redirect("/")
+    ctx = _page_context()
+    return render_template("my_patients.html", **ctx)
+
+@app.route("/patient-detail")
+def page_patient_detail():
+    if not session.get("logged_in"): return redirect("/")
+    code = request.args.get("code", "")
+    ctx  = _page_context()
+    ctx["patient_code"] = code
+    return render_template("patient_detail.html", **ctx)
+
+
+# ── Patient QR code proxy ─────────────────────────────────────────────────────
+@app.route("/api/patient/qr")
+def proxy_patient_qr():
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    # Generate QR data: profile_code + username in JSON
+    pid      = session.get("profile_code", "")
+    username = session.get("username", "")
+    name     = session.get("name", "")
+    return jsonify({
+        "profile_code": pid,
+        "username":     username,
+        "name":         name,
+        "qr_data":      json.dumps({"profile_code": pid, "username": username, "name": name}),
+    })
+
+
+# ── Patient search (doctor only) ─────────────────────────────────────────────
+@app.route("/api/users/search")
+def proxy_users_search():
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    if session.get("role") != "doctor":
+        return jsonify({"error": "forbidden"}), 403
+    q = request.args.get("q", "")
+    try:
+        r = http.get(f"{BACKEND}/users/search",
+                     params={"q": q, "role": "patient"},
+                     headers=_jwt_headers(), timeout=8)
+        if r.ok:
+            return jsonify(r.json()), 200
+        return jsonify({"users": []}), 200
+    except Exception as e:
+        return jsonify({"error": str(e), "users": []}), 200
+
+
+# ── Patient: revoke an approved access grant ──────────────────────────────────
+@app.route("/patient/revoke", methods=["POST"])
+def patient_revoke():
+    err = _patient_session_check()
+    if err: return err
+    try:
+        d = request.get_json(force=True) or {}
+        # Use the access/respond endpoint with action=revoke
+        r = http.post(
+            f"{BACKEND}/access/respond",
+            json={"request_id": d.get("request_id"), "action": "revoke"},
+            headers=_jwt_headers(), timeout=10,
+        )
+        if r.ok:
+            return jsonify({"message": "revoked"}), 200
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+# ── Doctor: my patients list (approved + pending) ─────────────────────────────
+@app.route("/doctor/my_requests", methods=["GET"])
+def doctor_my_requests():
+    err = _doctor_session_check()
+    if err: return err
+    try:
+        r = http.get(f"{BACKEND}/access/doctor_patients",
+                     headers=_jwt_headers(), timeout=8)
+        if r.ok:
+            data = r.json()
+            reqs = data if isinstance(data, list) else data.get("requests", data.get("patients", []))
+            return jsonify({"requests": reqs}), 200
+        # Fallback: read local access_requests.json
+        ar_path = os.path.join(ROOT, "server", "access_requests.json")
+        if os.path.exists(ar_path):
+            all_reqs = json.load(open(ar_path, encoding="utf-8"))
+            doc_code = session.get("doctor_code", "")
+            mine = [req for req in all_reqs if req.get("doctor_code") == doc_code]
+            return jsonify({"requests": mine}), 200
+        return jsonify({"requests": []}), 200
+    except Exception as e:
+        return jsonify({"error": str(e), "requests": []}), 200
+
+
 if __name__ == "__main__":
     print("  🌐  Landing Page → http://127.0.0.1:5003")
     app.run(host="127.0.0.1", port=5003, debug=True, threaded=True)

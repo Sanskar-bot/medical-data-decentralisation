@@ -102,6 +102,10 @@
       actions =
         '<button class="btn-primary btn-sm" id="approve-btn-' + r.request_id + '" type="button">Approve</button>' +
         '<button class="btn-danger btn-sm" id="deny-btn-' + r.request_id + '" type="button">Deny</button>';
+    } else if (status === 'approved') {
+      actions =
+        '<span class="badge badge-approved">Approved</span>' +
+        '<button class="btn-danger btn-sm" id="revoke-btn-' + r.request_id + '" type="button" style="margin-left:var(--sp-2);">Revoke</button>';
     } else {
       actions = '<span class="badge badge-' + status + '">' + status.charAt(0).toUpperCase() + status.slice(1) + '</span>';
     }
@@ -144,8 +148,10 @@
         list.forEach(function(r) {
           var ab = document.getElementById('approve-btn-' + r.request_id);
           var db = document.getElementById('deny-btn-'   + r.request_id);
+          var rb = document.getElementById('revoke-btn-' + r.request_id);
           if (ab) ab.addEventListener('click', function() { openApproveModal(r); });
           if (db) db.addEventListener('click', function() { deny(r); });
+          if (rb) rb.addEventListener('click', function() { revoke(r); });
         });
       }
 
@@ -208,6 +214,23 @@
   document.getElementById('approve-pw').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') document.getElementById('approve-confirm-btn').click();
   });
+
+  // ── Revoke ─────────────────────────────────────────────────────
+  function revoke(r) {
+    if (!confirm('Revoke access for ' + (r.doctor_name || r.doctor_code) + '? They will no longer be able to view your record.')) return;
+    fetch('/patient/revoke', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({request_id: r.request_id, doctor_code: r.doctor_code})
+    })
+    .then(function() {
+      showAlert(document.getElementById('page-alert'), 'Access revoked.', 'info');
+      load();
+    })
+    .catch(function() {
+      showAlert(document.getElementById('page-alert'), 'Could not revoke access.', 'error');
+    });
+  }
 
   // ── Deny ──────────────────────────────────────────────────────
   function deny(r) {

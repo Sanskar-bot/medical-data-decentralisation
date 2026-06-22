@@ -1,0 +1,162 @@
+{% extends 'base.html' %}
+{% block title %}My Patients{% endblock %}
+{% block topbar_title %}My Patients{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <span class="page-eyebrow">Doctor Dashboard</span>
+    <h1 class="type-h1">My Patients</h1>
+    <p class="type-label" style="color:var(--tx3); margin-top:var(--sp-1);">Patients who have granted you access to their health records.</p>
+  </div>
+  <div class="topbar-actions">
+    <div style="position:relative;">
+      <input class="input-field" type="search" id="search-input" placeholder="Search by username or code…"
+             style="width:260px; padding-left:var(--sp-10);" autocomplete="off">
+      <svg style="position:absolute; left:var(--sp-3); top:50%; transform:translateY(-50%); pointer-events:none;" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="var(--tx3)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+    </div>
+    <button class="btn-secondary" id="refresh-btn" type="button">
+      <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      Refresh
+    </button>
+  </div>
+</div>
+
+<div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
+
+<!-- Stats row -->
+<div class="grid-3 section" id="stats-row" style="display:none;">
+  <div class="stat-card">
+    <div class="stat-card-label">Approved</div>
+    <div class="stat-card-value stat-card-teal" id="stat-approved">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-label">Pending</div>
+    <div class="stat-card-value stat-card-accent" id="stat-pending">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-label">Total</div>
+    <div class="stat-card-value" id="stat-total">0</div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs" role="tablist" data-tab-group="patients">
+  <button class="tab-item active" role="tab" data-tab="approved" type="button">Approved <span class="tab-count" id="tab-approved">0</span></button>
+  <button class="tab-item" role="tab" data-tab="pending" type="button">Pending <span class="tab-count" id="tab-pending">0</span></button>
+  <button class="tab-item" role="tab" data-tab="denied" type="button">Denied <span class="tab-count" id="tab-denied">0</span></button>
+</div>
+
+<div data-tab-panel="approved">
+  <div class="card" style="padding:0; overflow:hidden;">
+    <table class="data-table" id="table-approved" aria-label="Approved patients">
+      <thead><tr><th>Patient Code</th><th>Requested</th><th>Expires</th><th>Actions</th></tr></thead>
+      <tbody id="body-approved"><tr><td colspan="4" style="text-align:center;padding:var(--sp-8);color:var(--tx3);">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+<div data-tab-panel="pending" class="hidden">
+  <div class="card" style="padding:0; overflow:hidden;">
+    <table class="data-table" id="table-pending" aria-label="Pending patients">
+      <thead><tr><th>Patient Code</th><th>Requested</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody id="body-pending"><tr><td colspan="4" style="text-align:center;padding:var(--sp-8);color:var(--tx3);">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+<div data-tab-panel="denied" class="hidden">
+  <div class="card" style="padding:0; overflow:hidden;">
+    <table class="data-table">
+      <thead><tr><th>Patient Code</th><th>Requested</th><th>Status</th></tr></thead>
+      <tbody id="body-denied"><tr><td colspan="3" style="text-align:center;padding:var(--sp-8);color:var(--tx3);">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var JWT = {{ session.get('jwt_token','') | tojson }};
+  var ALL = [];
+
+  function fmt(s) {
+    if (!s) return '—';
+    try { return new Date(s).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}); } catch(e){ return s; }
+  }
+  function badge(s) {
+    var map = {approved:'badge-approved', pending:'badge-pending', denied:'badge-denied'};
+    return '<span class="badge ' + (map[s]||'badge-pending') + '">' + s + '</span>';
+  }
+
+  function render(reqs) {
+    var q = (document.getElementById('search-input').value||'').toLowerCase();
+    var filtered = q ? reqs.filter(function(r) {
+      return (r.profile_code||r.patient_code||'').toLowerCase().includes(q) ||
+             (r.patient_username||'').toLowerCase().includes(q) ||
+             (r.patient_name||'').toLowerCase().includes(q);
+    }) : reqs;
+
+    var approved = filtered.filter(function(r){ return r.status === 'approved'; });
+    var pending  = filtered.filter(function(r){ return r.status === 'pending'; });
+    var denied   = filtered.filter(function(r){ return r.status === 'denied' || r.status === 'rejected'; });
+
+    document.getElementById('stat-approved').textContent = approved.length;
+    document.getElementById('stat-pending').textContent  = pending.length;
+    document.getElementById('stat-total').textContent    = filtered.length;
+    document.getElementById('tab-approved').textContent  = approved.length;
+    document.getElementById('tab-pending').textContent   = pending.length;
+    document.getElementById('tab-denied').textContent    = denied.length;
+    document.getElementById('stats-row').style.display   = '';
+
+    function fillBody(id, rows, cols) {
+      var el = document.getElementById(id);
+      if (!rows.length) {
+        el.innerHTML = '<tr><td colspan="' + cols + '"><div class="empty-state"><div class="empty-state-title">None found</div></div></td></tr>';
+        return;
+      }
+      el.innerHTML = rows.map(function(r) {
+        var code = r.profile_code || r.patient_code || '—';
+        var viewBtn = '<button class="btn-secondary btn-sm" onclick="viewPat(\'' + code + '\')" type="button">View</button>';
+        var noteBtn = '<button class="btn-ghost btn-sm" onclick="window.location.href=\'/notes?patient=' + code + '\'" type="button">+ Note</button>';
+        return '<tr>' +
+          '<td><span class="type-mono" style="font-size:var(--t-xs);">' + code + '</span>' +
+            (r.patient_name ? '<div style="font-size:var(--t-xs);color:var(--tx3);">' + r.patient_name + '</div>' : '') +
+          '</td>' +
+          '<td style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(r.requested_at||r.timestamp) + '</td>' +
+          (r.status === 'approved'
+            ? '<td style="font-size:var(--t-xs); color:var(--tx3);">' + (r.expires_at ? fmt(r.expires_at) : '24 h from approval') + '</td>'
+            : '<td>' + badge(r.status) + '</td>'
+          ) +
+          '<td class="cluster-2">' + viewBtn + (r.status === 'approved' ? ' ' + noteBtn : '') + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    fillBody('body-approved', approved, 4);
+    fillBody('body-pending',  pending,  4);
+    fillBody('body-denied',   denied,   3);
+  }
+
+  function load() {
+    fetch('/doctor/my_requests', {headers:{'Authorization':'Bearer '+JWT}})
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      ALL = d.requests || [];
+      render(ALL);
+    })
+    .catch(function() {
+      var a = document.getElementById('page-alert');
+      a.className='alert alert-error'; a.textContent='Failed to load patients.'; a.style.display='flex';
+    });
+  }
+
+  window.viewPat = function(code) {
+    window.location.href = '/patient-detail?code=' + encodeURIComponent(code);
+  };
+
+  document.getElementById('search-input').addEventListener('input', function() { render(ALL); });
+  document.getElementById('refresh-btn').addEventListener('click', load);
+  load();
+})();
+</script>
+{% endblock %}
