@@ -11,6 +11,12 @@ Serves:
   GET  /logout        → Clear session, redirect to /
 """
 import os, sys, json, secrets, string, hashlib
+try:
+    import psycopg2
+    import psycopg2.extras
+    _HAS_PSYCOPG2 = True
+except ImportError:
+    _HAS_PSYCOPG2 = False
 from base64 import b64encode, b64decode
 import requests as http
 
@@ -59,6 +65,8 @@ def _inject_now():
 BACKEND     = os.environ.get("SERVER_BASE", "http://127.0.0.1:5000")
 USERS_DIR   = os.path.join(ROOT, "client", "Users")
 DOCTORS_DIR = os.path.join(ROOT, "doctor", "Doctors")
+DB_URL      = os.environ.get("DATABASE_URL",
+    "postgresql://medvault_user:StrongPassword123!@localhost:5432/medvault")
 os.makedirs(USERS_DIR,   exist_ok=True)
 os.makedirs(DOCTORS_DIR, exist_ok=True)
 
@@ -1024,8 +1032,9 @@ def _resolve_patient_code(username_or_code: str) -> str:
     """Resolve a patient username to their profile_code.
     Tries in order:
       1. Local users_db.json (fastest)
-      2. Server /api/resolve_username/<username> (PostgreSQL)
+      2. Server /api/resolve_username/<username> (HTTP + API key)
       3. Scan client/Users/* user_data.json folders
+      4. Direct PostgreSQL query (most reliable)
     Falls back to returning the raw value so raw profile_codes still work.
     """
     if not username_or_code:
@@ -1071,6 +1080,22 @@ def _resolve_patient_code(username_or_code: str) -> str:
                     return pc
     except Exception as e:
         app.logger.debug("_resolve_patient_code scan: %s", e)
+
+    # ── 4. Direct PostgreSQL query ────────────────────────────
+    if _HAS_PSYCOPG2:
+        try:
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                "SELECT profile_code FROM users WHERE LOWER(username)=LOWER(%s) AND role='patient' LIMIT 1",
+                (raw,)
+            )
+            row = cur.fetchone()
+            cur.close(); conn.close()
+            if row and row.get("profile_code"):
+                return row["profile_code"]
+        except Exception as e:
+            app.logger.debug("_resolve_patient_code psycopg2: %s", e)
 
     # Fallback: treat as raw profile_code
     return raw
@@ -1403,14 +1428,24 @@ def api_resolve_patient():
         return jsonify({"error": "username required"}), 400
     resolved = _resolve_patient_code(raw)
     if resolved == raw:
-        # Try to verify it actually exists as a patient profile_code on backend
-        try:
-            r = http.get(f"{BACKEND}/get_patient_public/{resolved}",
-                         headers=_headers(), timeout=5)
-            if not r.ok:
-                return jsonify({"error": f"Patient '{raw}' not found"}), 404
-        except Exception as e:
-            return jsonify({"error": f"Backend error: {e}"}), 502
+        import re as _re
+        looks_like_code = bool(_re.match(r'^[A-Za-z0-9]{8,12}$', resolved)) and not resolved.islower()
+        if looks_like_code:
+            # Treat as a profile code — verify it exists on backend
+            try:
+                r = http.get(f"{BACKEND}/get_patient_public/{resolved.upper()}",
+                             headers=_headers(), timeout=5)
+                if not r.ok:
+                    return jsonify({"error": f"No patient found with code '{raw}'"}), 404
+                resolved = resolved.upper()
+            except Exception as e:
+                return jsonify({"error": f"Backend error: {e}"}), 502
+        else:
+            # Username lookup failed across all 4 strategies
+            return jsonify({
+                "error": f"No patient with username \'{raw}\' was found. "
+                         "Please check the spelling or ask the patient for their 10-character profile code."
+            }), 404
     return jsonify({"profile_code": resolved})
 
 
