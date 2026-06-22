@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% block title %}Prescriptions{% endblock %}
 {% block topbar_title %}Prescriptions{% endblock %}
 
@@ -82,7 +82,7 @@
             meds.map(function(m, i) {
               var name = m.name || (typeof m === 'string' ? m : '—');
               return '<tr style="' + (i % 2 === 1 ? 'background:rgba(255,255,255,.02);' : '') + '">' +
-                '<td style="font-weight:600; color:var(--tx1);">💊 ' + esc(name) + '</td>' +
+                '<td style="font-weight:600; color:var(--tx1);">' + esc(name) + '</td>' +
                 '<td style="color:var(--tx2);">' + esc(m.dosage || m.dose || '—') + '</td>' +
                 '<td style="color:var(--t5);">' + esc(m.frequency || '—') + '</td>' +
                 '<td style="color:var(--tx3);">' + esc(m.duration || '—') + '</td>' +
@@ -159,3 +159,4 @@
 })();
 </script>
 {% endblock %}
+

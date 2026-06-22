@@ -676,8 +676,52 @@ def _db_get_all_wrapped_keys(profile_code: str) -> dict:
 
 
 def _doctor_has_active_access(patient_code: str, doctor_code: str) -> bool:
-    """Return True iff the doctor has a non-expired wrapped key for this patient."""
-    return _db_get_wrapped_key(patient_code, doctor_code) is not None
+    """Return True iff the doctor has an active access relationship with this patient.
+    Checks (in order):
+      1. wrapped_keys table (legacy crypto-based access)
+      2. access_db table — approved status (new JWT-based flow)
+      3. emr_prescriptions / emr_lab_reports — if doctor wrote clinical data they implicitly had access
+    """
+    # 1. Wrapped key (legacy)
+    if _db_get_wrapped_key(patient_code, doctor_code) is not None:
+        return True
+    # 2. access_db — look up by doctor_code, accept 'approved' status
+    try:
+        with db_cursor(commit=False) as cur:
+            # Resolve doctor UUID from doctor_code
+            cur.execute("SELECT id FROM users WHERE doctor_code=%s LIMIT 1", (doctor_code,))
+            doc_row = cur.fetchone()
+            if doc_row:
+                doc_uuid = str(doc_row["id"])
+                # Resolve patient UUID from profile_code
+                cur.execute("SELECT id FROM users WHERE profile_code=%s LIMIT 1", (patient_code,))
+                pat_row = cur.fetchone()
+                if pat_row:
+                    pat_uuid = str(pat_row["id"])
+                    cur.execute("""
+                        SELECT 1 FROM access_db
+                        WHERE doctor_id=%s AND patient_id=%s AND status='approved'
+                        LIMIT 1
+                    """, (doc_uuid, pat_uuid))
+                    if cur.fetchone():
+                        return True
+            # 3. Implicit access — doctor already has EMR data for this patient
+            cur.execute("""
+                SELECT 1 FROM emr_prescriptions
+                WHERE patient_id=%s AND doctor_id=%s LIMIT 1
+            """, (patient_code, doctor_code))
+            if cur.fetchone():
+                return True
+            cur.execute("""
+                SELECT 1 FROM emr_lab_reports
+                WHERE patient_id=%s AND doctor_id=%s LIMIT 1
+            """, (patient_code, doctor_code))
+            if cur.fetchone():
+                return True
+    except Exception as _e:
+        print(f"[access_check] DB error: {_e}")
+    return False
+
 
 
 # ════════════════════════════════════════════════════════════════════════════

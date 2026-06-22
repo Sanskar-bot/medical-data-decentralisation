@@ -50,7 +50,7 @@
 <div data-tab-panel="approved">
   <div class="card" style="padding:0; overflow:hidden;">
     <table class="data-table" id="table-approved" aria-label="Approved patients">
-      <thead><tr><th>Patient Code</th><th>Requested</th><th>Expires</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Patient</th><th>Requested</th><th>Expires</th><th>Actions</th></tr></thead>
       <tbody id="body-approved"><tr><td colspan="4" style="text-align:center;padding:var(--sp-8);color:var(--tx3);">Loading…</td></tr></tbody>
     </table>
   </div>
@@ -58,7 +58,7 @@
 <div data-tab-panel="pending" class="hidden">
   <div class="card" style="padding:0; overflow:hidden;">
     <table class="data-table" id="table-pending" aria-label="Pending patients">
-      <thead><tr><th>Patient Code</th><th>Requested</th><th>Status</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Patient</th><th>Requested</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody id="body-pending"><tr><td colspan="4" style="text-align:center;padding:var(--sp-8);color:var(--tx3);">Loading…</td></tr></tbody>
     </table>
   </div>
@@ -66,7 +66,7 @@
 <div data-tab-panel="denied" class="hidden">
   <div class="card" style="padding:0; overflow:hidden;">
     <table class="data-table">
-      <thead><tr><th>Patient Code</th><th>Requested</th><th>Status</th></tr></thead>
+      <thead><tr><th>Patient</th><th>Requested</th><th>Status</th></tr></thead>
       <tbody id="body-denied"><tr><td colspan="3" style="text-align:center;padding:var(--sp-8);color:var(--tx3);">Loading…</td></tr></tbody>
     </table>
   </div>
@@ -116,11 +116,15 @@
       }
       el.innerHTML = rows.map(function(r) {
         var code = r.profile_code || r.patient_code || '—';
-        var viewBtn = '<button class="btn-secondary btn-sm" onclick="viewPat(\'' + code + '\')" type="button">View</button>';
-        var noteBtn = '<button class="btn-ghost btn-sm" onclick="window.location.href=\'/notes?patient=' + code + '\'" type="button">+ Note</button>';
+        var patName = r.name || r.patient_name || r.username || '';
+        var viewBtn = '<a href="/doctor/view_patient?code=' + encodeURIComponent(code) + '" class="btn-secondary btn-sm">View</a>';
+        var noteBtn = '<a href="/doctor/view_patient?code=' + encodeURIComponent(code) + '" class="btn-ghost btn-sm">Notes</a>';
         return '<tr>' +
-          '<td><span class="type-mono" style="font-size:var(--t-xs);">' + code + '</span>' +
-            (r.patient_name ? '<div style="font-size:var(--t-xs);color:var(--tx3);">' + r.patient_name + '</div>' : '') +
+          '<td>' +
+            (patName
+              ? '<div style="font-weight:600; color:var(--tx1); font-size:var(--t-sm); margin-bottom:2px;">' + patName + '</div>'
+              : '') +
+            '<span class="type-mono" style="font-size:var(--t-xs); color:var(--tx3);">' + code + '</span>' +
           '</td>' +
           '<td style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(r.requested_at||r.timestamp) + '</td>' +
           (r.status === 'approved'
@@ -151,7 +155,7 @@
   }
 
   window.viewPat = function(code) {
-    window.location.href = '/patient-detail?code=' + encodeURIComponent(code);
+    window.location.href = '/doctor/view_patient?code=' + encodeURIComponent(code);
   };
 
   document.getElementById('search-input').addEventListener('input', function() { render(ALL); });

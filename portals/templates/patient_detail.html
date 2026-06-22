@@ -117,9 +117,9 @@
 
 <!-- Tab Navigation -->
 <div style="display:flex; gap:0; border-bottom:1px solid var(--b1); margin-bottom:var(--sp-6);">
-  <button class="tab-btn active" data-tab="notes" type="button">🩺 Doctor Notes</button>
-  <button class="tab-btn" data-tab="prescriptions" type="button">💊 Prescriptions</button>
-  <button class="tab-btn" data-tab="lab-reports" type="button">🔬 Lab Reports</button>
+  <button class="tab-btn active" data-tab="notes" type="button">Doctor Notes</button>
+  <button class="tab-btn" data-tab="prescriptions" type="button">Prescriptions</button>
+  <button class="tab-btn" data-tab="lab-reports" type="button">Lab Reports</button>
 </div>
 
 <style>
@@ -357,14 +357,14 @@
           ? '<div style="margin-top:var(--sp-3); overflow:hidden; border-radius:var(--r-sm); border:1px solid var(--b1);">' +
             '<table class="data-table" style="width:100%;"><thead><tr><th>Medication</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr></thead><tbody>' +
             meds.map(function(m) {
-              return '<tr><td><strong>💊 ' + esc(m.name||m) + '</strong></td><td>' + esc(m.dosage||m.dose||'—') + '</td><td style="color:var(--t5);">' + esc(m.frequency||'—') + '</td><td>' + esc(m.duration||'—') + '</td></tr>';
+              return '<tr><td><strong>' + esc(m.name||m) + '</strong></td><td>' + esc(m.dosage||m.dose||'—') + '</td><td style="color:var(--t5);">' + esc(m.frequency||'—') + '</td><td>' + esc(m.duration||'—') + '</td></tr>';
             }).join('') + '</tbody></table></div>' : '';
         return '<div class="card">' +
           '<div class="section-header" style="margin-bottom:var(--sp-3);">' +
             '<div><span class="badge badge-gold" style="margin-right:var(--sp-2);">Rx</span><strong>' + esc(rx.diagnosis||'—') + '</strong></div>' +
             '<span style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(rx.created_at) + '</span>' +
           '</div>' + medsHtml +
-          (rx.notes ? '<div style="margin-top:var(--sp-3); font-size:var(--t-sm); color:var(--tx3); border-top:1px solid var(--b1); padding-top:var(--sp-3);">📝 ' + esc(rx.notes) + '</div>' : '') +
+          (rx.notes ? '<div style="margin-top:var(--sp-3); font-size:var(--t-sm); color:var(--tx3); border-top:1px solid var(--b1); padding-top:var(--sp-3);">Notes: ' + esc(rx.notes) + '</div>' : '') +
         '</div>';
       }).join('') + '</div>';
     })
@@ -393,7 +393,7 @@
             '<div><span class="badge badge-encrypted" style="margin-right:var(--sp-2);">Lab</span><strong>' + esc(lr.report_type||lr.test_name||'Lab Report') + '</strong></div>' +
             '<span style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(lr.created_at) + '</span>' +
           '</div>' +
-          (lr.notes ? '<div style="font-size:var(--t-sm); color:var(--tx2); margin-top:var(--sp-2);">📋 ' + esc(lr.notes) + '</div>' : '') +
+          (lr.notes ? '<div style="font-size:var(--t-sm); color:var(--tx2); margin-top:var(--sp-2);">Notes: ' + esc(lr.notes) + '</div>' : '') +
         '</div>';
       }).join('') + '</div>';
     })
