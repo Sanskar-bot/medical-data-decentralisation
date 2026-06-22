@@ -17,13 +17,12 @@
 
 <div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
 
-<div id="rx-loading" class="grid-3">
-  <div class="skeleton" style="height:160px;"></div>
-  <div class="skeleton" style="height:160px;"></div>
-  <div class="skeleton" style="height:160px;"></div>
+<div id="rx-loading" class="stack-4">
+  <div class="skeleton" style="height:200px;"></div>
+  <div class="skeleton" style="height:200px;"></div>
 </div>
 
-<div id="rx-grid" class="grid-3 hidden"></div>
+<div id="rx-list" class="stack-4 hidden"></div>
 
 <div id="rx-empty" class="empty-state hidden">
   <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="var(--tx4)" stroke-width="1.2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
@@ -37,12 +36,15 @@
 (function() {
   function fmt(s) {
     if (!s) return '—';
-    try { return new Date(s).toLocaleString('en-IN',{dateStyle:'medium'}); } catch(e){ return s; }
+    try { return new Date(s).toLocaleString('en-IN',{dateStyle:'medium', timeStyle:'short'}); } catch(e){ return s; }
+  }
+  function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
   function load() {
     document.getElementById('rx-loading').classList.remove('hidden');
-    document.getElementById('rx-grid').classList.add('hidden');
+    document.getElementById('rx-list').classList.add('hidden');
     document.getElementById('rx-empty').classList.add('hidden');
 
     fetch('/api/patient/prescriptions-direct')
@@ -52,41 +54,98 @@
       var rxs = Array.isArray(d) ? d : (d.prescriptions || []);
       if (!rxs.length) { document.getElementById('rx-empty').classList.remove('hidden'); return; }
 
-      var grid = document.getElementById('rx-grid');
-      grid.innerHTML = rxs.map(function(rx) {
+      var list = document.getElementById('rx-list');
+      list.innerHTML = rxs.map(function(rx) {
         var meds = Array.isArray(rx.medications) ? rx.medications : [];
-        var medsHtml = meds.length
-          ? '<ul style="margin:var(--sp-3) 0 0; padding-left:var(--sp-5); font-size:var(--t-sm); color:var(--tx2);">' +
-            meds.map(function(m) {
-              var medStr = '<strong>' + (m.name || m) + '</strong>';
-              if (m.dosage || m.dose)  medStr += ' <span style="color:var(--tx3);">– ' + (m.dosage || m.dose) + '</span>';
-              if (m.frequency)         medStr += ' <span style="color:var(--t5);">· ' + m.frequency + '</span>';
-              if (m.duration)          medStr += ' <span style="color:var(--tx3); font-size:var(--t-xs);">' + m.duration + '</span>';
-              return '<li style="margin-bottom:var(--sp-2);">' + medStr + '</li>';
-            }).join('') + '</ul>'
-          : '<div style="font-size:var(--t-sm); color:var(--tx3); margin-top:var(--sp-3);">' + (rx.notes || rx.note || 'No medication details') + '</div>';
 
-        // Resolve best available doctor name
+        // Resolve doctor name
         var drName = rx.doctor_name || rx.doctor_email || rx.doctor_id || '';
-        // Prefix "Dr." only if not already present and it's a real name (not a code/email)
         if (drName && !drName.startsWith('Dr.') && !drName.includes('@') && !drName.match(/^[A-Z0-9]{8,}$/)) {
           drName = 'Dr. ' + drName;
+        } else if (drName.includes('@')) {
+          drName = 'Dr. ' + drName.split('@')[0];
         } else if (!drName) {
-          drName = 'Dr. —';
+          drName = 'Unknown Doctor';
         }
 
-        return '<div class="card" style="display:flex;flex-direction:column;gap:var(--sp-2);">' +
-          '<div class="section-header" style="margin-bottom:0;">' +
-            '<span class="badge badge-gold">Rx</span>' +
-            '<span style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(rx.created_at || rx.date) + '</span>' +
+        // Medications table
+        var medsHtml = meds.length
+          ? '<div style="margin-top:var(--sp-4); overflow:hidden; border-radius:var(--r-sm); border:1px solid var(--b1);">' +
+            '<table class="data-table" style="width:100%;">' +
+            '<thead><tr>' +
+              '<th>Medication</th>' +
+              '<th>Dosage</th>' +
+              '<th>Frequency</th>' +
+              '<th>Duration</th>' +
+            '</tr></thead>' +
+            '<tbody>' +
+            meds.map(function(m, i) {
+              var name = m.name || (typeof m === 'string' ? m : '—');
+              return '<tr style="' + (i % 2 === 1 ? 'background:rgba(255,255,255,.02);' : '') + '">' +
+                '<td style="font-weight:600; color:var(--tx1);">💊 ' + esc(name) + '</td>' +
+                '<td style="color:var(--tx2);">' + esc(m.dosage || m.dose || '—') + '</td>' +
+                '<td style="color:var(--t5);">' + esc(m.frequency || '—') + '</td>' +
+                '<td style="color:var(--tx3);">' + esc(m.duration || '—') + '</td>' +
+              '</tr>';
+            }).join('') +
+            '</tbody></table></div>'
+          : '<div style="display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-4) 0;color:var(--tx3);font-size:var(--t-sm);">' +
+            '<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>' +
+            'No medications listed.' +
+          '</div>';
+
+        return '<div class="card" style="padding:var(--sp-6);">' +
+
+          // Header
+          '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:var(--sp-4); margin-bottom:var(--sp-5);">' +
+            '<div style="flex:1;">' +
+              '<div style="display:flex; align-items:center; gap:var(--sp-2); margin-bottom:var(--sp-2);">' +
+                '<span class="badge badge-gold" style="font-size:var(--t-xs);">Rx</span>' +
+                '<span style="font-size:var(--t-xs); color:var(--tx4);">Prescription</span>' +
+              '</div>' +
+              '<h3 style="font-size:var(--t-lg); font-weight:700; color:var(--tx1); margin:0 0 var(--sp-2);">' +
+                esc(rx.diagnosis || 'Diagnosis not specified') +
+              '</h3>' +
+              '<div style="font-size:var(--t-xs); color:var(--tx3); display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap;">' +
+                '<span style="display:inline-flex; align-items:center; gap:4px;">' +
+                  '<svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>' +
+                  '<strong style="color:var(--tx2);">' + esc(drName) + '</strong>' +
+                '</span>' +
+                '<span style="color:var(--b3);">·</span>' +
+                '<span style="display:inline-flex; align-items:center; gap:4px;">' +
+                  '<svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>' +
+                  fmt(rx.created_at || rx.date) +
+                '</span>' +
+                (meds.length ? '<span style="color:var(--b3);">·</span><span style="color:var(--t5);">' + meds.length + ' medication' + (meds.length > 1 ? 's' : '') + '</span>' : '') +
+              '</div>' +
+            '</div>' +
           '</div>' +
-          '<div style="font-weight:600; color:var(--tx1); font-size:var(--t-sm);">' + drName + '</div>' +
-          '<div style="font-size:var(--t-xs); color:var(--tx3); margin-bottom:var(--sp-1);">Diagnosis: ' + (rx.diagnosis || '—') + '</div>' +
+
+          // Divider
+          '<div style="height:1px; background:var(--b1); margin-bottom:var(--sp-5);"></div>' +
+
+          // Section: Medications
+          '<div style="font-size:var(--t-xs); font-weight:600; color:var(--tx3); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:var(--sp-3);">Medications Prescribed</div>' +
           medsHtml +
-          (rx.notes && meds.length ? '<div style="margin-top:var(--sp-3); font-size:var(--t-xs); color:var(--tx3); border-top:1px solid var(--b1); padding-top:var(--sp-3);">📝 ' + rx.notes + '</div>' : '') +
+
+          // Section: Doctor's Notes
+          (rx.notes ? '<div style="margin-top:var(--sp-5); padding:var(--sp-4); background:var(--surface2); border-radius:var(--r-sm); border-left:3px solid var(--t5);">' +
+            '<div style="font-size:var(--t-xs); font-weight:600; color:var(--tx3); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:var(--sp-2);">Doctor\'s Notes</div>' +
+            '<div style="font-size:var(--t-sm); color:var(--tx2); line-height:1.6;">' + esc(rx.notes) + '</div>' +
+          '</div>' : '') +
+
+          // Footer
+          '<div style="margin-top:var(--sp-5); padding-top:var(--sp-4); border-top:1px solid var(--b1); display:flex; justify-content:space-between; align-items:center;">' +
+            '<span style="font-size:var(--t-xs); color:var(--tx4); font-family:monospace;">ID: ' + esc((rx.id||'').slice(0,18)) + '…</span>' +
+            '<span style="font-size:var(--t-xs); color:var(--tx4); display:flex; align-items:center; gap:4px;">' +
+              '<svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>' +
+              'Encrypted &amp; verified' +
+            '</span>' +
+          '</div>' +
+
         '</div>';
       }).join('');
-      grid.classList.remove('hidden');
+      list.classList.remove('hidden');
     })
     .catch(function() {
       document.getElementById('rx-loading').classList.add('hidden');

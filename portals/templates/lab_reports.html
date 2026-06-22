@@ -7,7 +7,7 @@
   <div class="page-header-text">
     <span class="page-eyebrow">Clinical Records</span>
     <h1 class="type-h1">Lab Reports</h1>
-    <p class="type-label" style="color:var(--tx3); margin-top:var(--sp-1);">Laboratory results and diagnostic reports.</p>
+    <p class="type-label" style="color:var(--tx3); margin-top:var(--sp-1);">Laboratory results and diagnostic reports ordered by your doctor.</p>
   </div>
   <button class="btn-secondary" id="refresh-btn" type="button">
     <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -17,10 +17,9 @@
 
 <div id="page-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
 
-<div id="lr-loading">
-  <div class="skeleton" style="height:80px; margin-bottom:var(--sp-3);"></div>
-  <div class="skeleton" style="height:80px; margin-bottom:var(--sp-3);"></div>
-  <div class="skeleton" style="height:80px;"></div>
+<div id="lr-loading" class="stack-4">
+  <div class="skeleton" style="height:160px;"></div>
+  <div class="skeleton" style="height:160px;"></div>
 </div>
 
 <div id="lr-list" class="stack-4 hidden"></div>
@@ -37,7 +36,25 @@
 (function() {
   function fmt(s) {
     if (!s) return '—';
-    try { return new Date(s).toLocaleString('en-IN',{dateStyle:'medium'}); } catch(e){ return s; }
+    try { return new Date(s).toLocaleString('en-IN',{dateStyle:'medium', timeStyle:'short'}); } catch(e){ return s; }
+  }
+
+  function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function statusBadge(value, ref) {
+    if (!value || !ref) return '';
+    var n = parseFloat(value);
+    if (isNaN(n)) return '';
+    var parts = String(ref).split('-');
+    if (parts.length === 2) {
+      var lo = parseFloat(parts[0]), hi = parseFloat(parts[1]);
+      if (n < lo) return '<span style="background:var(--r2);color:var(--r6);padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:4px;">LOW</span>';
+      if (n > hi) return '<span style="background:var(--r2);color:var(--r6);padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:4px;">HIGH</span>';
+      return '<span style="background:rgba(52,211,153,.12);color:#34d399;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:4px;">OK</span>';
+    }
+    return '';
   }
 
   function statusColor(v, ref) {
@@ -53,6 +70,36 @@
     return 'var(--tx2)';
   }
 
+  function renderResults(results) {
+    if (!results || typeof results !== 'object') return '';
+    var keys = Object.keys(results);
+    if (!keys.length) return '';
+
+    // If results is array of {name, value, unit, reference_range} objects
+    var arr = Array.isArray(results) ? results : keys.map(function(k) {
+      var v = results[k];
+      return typeof v === 'object' ? Object.assign({name: k}, v) : {name: k, value: v};
+    });
+
+    if (!arr.length) return '';
+    return '<div style="margin-top:var(--sp-4); overflow:hidden; border-radius:var(--r-sm); border:1px solid var(--b1);">' +
+      '<table class="data-table" style="width:100%;">' +
+      '<thead><tr><th>Parameter</th><th>Result</th><th>Reference Range</th><th>Unit</th><th>Status</th></tr></thead>' +
+      '<tbody>' +
+      arr.map(function(t) {
+        var col = statusColor(t.value, t.reference_range || t.ref);
+        var badge = statusBadge(t.value, t.reference_range || t.ref);
+        return '<tr>' +
+          '<td style="font-weight:500;">' + esc(t.name || '—') + '</td>' +
+          '<td style="color:' + col + '; font-weight:600; font-variant-numeric:tabular-nums;">' + esc(t.value || '—') + '</td>' +
+          '<td style="color:var(--tx3); font-size:var(--t-xs);">' + esc(t.reference_range || t.ref || '—') + '</td>' +
+          '<td style="color:var(--tx3); font-size:var(--t-xs);">' + esc(t.unit || '—') + '</td>' +
+          '<td>' + badge + '</td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+
   function load() {
     document.getElementById('lr-loading').classList.remove('hidden');
     document.getElementById('lr-list').classList.add('hidden');
@@ -62,39 +109,89 @@
     .then(function(r){ return r.json(); })
     .then(function(d) {
       document.getElementById('lr-loading').classList.add('hidden');
-      var lrs = Array.isArray(d) ? d : (d.reports || []);
+      var lrs = Array.isArray(d) ? d : (d.reports || d.lab_reports || []);
       if (!lrs.length) { document.getElementById('lr-empty').classList.remove('hidden'); return; }
 
       var list = document.getElementById('lr-list');
       list.innerHTML = lrs.map(function(lr) {
-        var tests = Array.isArray(lr.tests) ? lr.tests : [];
-        var testsHtml = tests.length
-          ? '<div style="margin-top:var(--sp-4); overflow:hidden; border-radius:var(--r-sm); border:1px solid var(--b1);">' +
-            '<table class="data-table">' +
-            '<thead><tr><th>Test</th><th>Result</th><th>Reference</th><th>Unit</th></tr></thead>' +
-            '<tbody>' +
-            tests.map(function(t) {
-              var col = statusColor(t.value, t.reference_range);
-              return '<tr>' +
-                '<td>' + (t.name||'—') + '</td>' +
-                '<td style="color:' + col + '; font-weight:600;">' + (t.value||'—') + '</td>' +
-                '<td style="color:var(--tx3);">' + (t.reference_range||'—') + '</td>' +
-                '<td style="color:var(--tx3);">' + (t.unit||'—') + '</td>' +
-              '</tr>';
-            }).join('') +
-            '</tbody></table></div>'
-          : '';
+        // Resolve doctor name
+        var drName = lr.doctor_name || lr.doctor_email || lr.doctor_id || '';
+        if (drName && !drName.startsWith('Dr.') && !drName.includes('@') && !drName.match(/^[A-Z0-9]{8,}$/)) {
+          drName = 'Dr. ' + drName;
+        } else if (drName.includes('@')) {
+          drName = 'Dr. ' + drName.split('@')[0];
+        } else if (!drName) {
+          drName = 'Unknown Doctor';
+        }
 
-        return '<div class="card">' +
-          '<div class="section-header" style="margin-bottom:var(--sp-3);">' +
-            '<div>' +
-              '<div style="font-weight:600; color:var(--tx1);">' + (lr.test_name||lr.report_name||'Lab Report') + '</div>' +
-              '<div style="font-size:var(--t-xs); color:var(--tx3); margin-top:2px;">Ordered by ' + (lr.doctor_name||'Dr. —') + ' · ' + fmt(lr.created_at||lr.date) + '</div>' +
+        // Report type / name
+        var reportType = lr.report_type || lr.test_name || lr.report_name || 'Lab Report';
+
+        // Results section
+        var resultsHtml = renderResults(lr.results);
+
+        // Tests array (legacy format)
+        if (!resultsHtml && Array.isArray(lr.tests) && lr.tests.length) {
+          resultsHtml = renderResults(lr.tests);
+        }
+
+        // Status indicator
+        var statusDot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--t5);margin-right:6px;flex-shrink:0;"></span>';
+
+        return '<div class="card" style="padding:var(--sp-6);">' +
+
+          // Header row
+          '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:var(--sp-4); margin-bottom:var(--sp-5);">' +
+            '<div style="flex:1; min-width:0;">' +
+              '<div style="display:flex; align-items:center; gap:var(--sp-2); margin-bottom:var(--sp-2);">' +
+                statusDot +
+                '<span class="badge badge-encrypted" style="font-size:var(--t-xs);">Lab</span>' +
+              '</div>' +
+              '<h3 style="font-size:var(--t-lg); font-weight:700; color:var(--tx1); margin:0 0 var(--sp-1);">' + esc(reportType) + '</h3>' +
+              '<div style="font-size:var(--t-xs); color:var(--tx3);">' +
+                '<span style="display:inline-flex; align-items:center; gap:4px;">' +
+                  '<svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>' +
+                  esc(drName) +
+                '</span>' +
+                '<span style="margin:0 var(--sp-2); color:var(--b3);">·</span>' +
+                '<span style="display:inline-flex; align-items:center; gap:4px;">' +
+                  '<svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>' +
+                  fmt(lr.created_at || lr.date) +
+                '</span>' +
+              '</div>' +
             '</div>' +
-            '<span class="badge badge-encrypted">Lab</span>' +
           '</div>' +
-          (lr.summary ? '<div style="font-size:var(--t-sm); color:var(--tx2); margin-bottom:var(--sp-2);">' + lr.summary + '</div>' : '') +
-          testsHtml +
+
+          // Divider
+          '<div style="height:1px; background:var(--b1); margin-bottom:var(--sp-5);"></div>' +
+
+          // Results table
+          (resultsHtml || '<div style="display:flex; align-items:center; gap:var(--sp-3); padding:var(--sp-4) 0; color:var(--tx3); font-size:var(--t-sm);">' +
+            '<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>' +
+            'No numerical results recorded for this report.' +
+          '</div>') +
+
+          // Notes section
+          (lr.notes ? '<div style="margin-top:var(--sp-5); padding:var(--sp-4); background:var(--surface2); border-radius:var(--r-sm); border-left:3px solid var(--t5);">' +
+            '<div style="font-size:var(--t-xs); font-weight:600; color:var(--tx3); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:var(--sp-2);">Doctor\'s Notes</div>' +
+            '<div style="font-size:var(--t-sm); color:var(--tx2); line-height:1.6;">' + esc(lr.notes) + '</div>' +
+          '</div>' : '') +
+
+          // Summary / interpretation
+          (lr.summary || lr.interpretation ? '<div style="margin-top:var(--sp-4); padding:var(--sp-4); background:rgba(139,92,246,.08); border-radius:var(--r-sm);">' +
+            '<div style="font-size:var(--t-xs); font-weight:600; color:var(--t5); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:var(--sp-2);">Interpretation</div>' +
+            '<div style="font-size:var(--t-sm); color:var(--tx2);">' + esc(lr.summary || lr.interpretation) + '</div>' +
+          '</div>' : '') +
+
+          // Footer: report ID
+          '<div style="margin-top:var(--sp-5); padding-top:var(--sp-4); border-top:1px solid var(--b1); display:flex; justify-content:space-between; align-items:center;">' +
+            '<span style="font-size:var(--t-xs); color:var(--tx4); font-family:monospace;">ID: ' + esc((lr.id||'').slice(0,18)) + '…</span>' +
+            (lr.file_hash ? '<span style="font-size:var(--t-xs); color:var(--tx4); display:flex; align-items:center; gap:4px;">' +
+              '<svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>' +
+              'Hash verified' +
+            '</span>' : '') +
+          '</div>' +
+
         '</div>';
       }).join('');
       list.classList.remove('hidden');
