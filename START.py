@@ -24,20 +24,28 @@ def start_background(label, script, port):
         # DETACHED_PROCESS: child runs independently of the parent terminal
         DETACHED = 0x00000008
         CREATE_NEW_PROCESS_GROUP = 0x00000200
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["FLASK_ENV"]        = "development"
         p = subprocess.Popen(
             [PY, script],
             cwd=ROOT,
+            env=env,
             creationflags=DETACHED | CREATE_NEW_PROCESS_GROUP,
             stdout=open(os.path.join(ROOT, f"logs_{label.replace(' ','_')}.log"), "w"),
             stderr=subprocess.STDOUT,
         )
     else:
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["FLASK_ENV"]        = "development"
         p = subprocess.Popen(
             [PY, script],
             cwd=ROOT,
+            env=env,
             stdout=open(os.path.join(ROOT, f"logs_{label.replace(' ','_')}.log"), "w"),
             stderr=subprocess.STDOUT,
-            start_new_session=True,   # detach on Unix
+            start_new_session=True,
         )
     return p
 

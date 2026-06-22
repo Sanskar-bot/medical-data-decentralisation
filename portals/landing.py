@@ -2289,6 +2289,6 @@ def doctor_my_requests():
 
 if __name__ == "__main__":
     print("  🌐  Landing Page → http://127.0.0.1:5003")
-    app.run(host="127.0.0.1", port=5003, debug=True, threaded=True)
+    app.run(host="127.0.0.1", port=5003, debug=True, use_reloader=False, threaded=True)
 
 
