@@ -1140,39 +1140,36 @@ def doctor_load_profile():
 # ── Request patient access ─────────────────────────────────────────────────
 @app.route("/doctor/request_access", methods=["POST"])
 def doctor_request_access():
+    """Send an access request to a patient — no password required.
+    The patient's password is only needed when they APPROVE the request
+    (to cryptographically share their key). Sending is just a notification.
+    """
     err = _doctor_session_check()
     if err: return err
     try:
         d = request.get_json(force=True) or {}
-        # Accept either key — JS dashboard sends 'profile_code', older callers send 'patient_code'
+        # Accept either key — JS sends 'profile_code', legacy callers send 'patient_code'
         raw_code = d.get("profile_code") or d.get("patient_code") or ""
         pat_code = _resolve_patient_code(raw_code.strip())
         if not pat_code:
             return jsonify({"error": "Patient identifier is required"}), 400
-        try:
-            r = http.post(
-                f"{DOCTOR_PORTAL}/api/request_access",
-                json={
-                    "doctor_code": session.get("doctor_code", ""),
-                    "patient_code": pat_code,
-                    "password": d.get("password", ""),
-                },
-                cookies={"session": request.cookies.get("session", "")},
-                headers=_fwd_headers(), timeout=10,
-            )
-            return jsonify(r.json()), r.status_code
-        except (http.exceptions.ConnectionError, http.exceptions.Timeout):
-            # Fallback: call backend request-access endpoint directly
-            hdrs = {**_headers()}
-            jwt = session.get("jwt_token", "")
-            if jwt: hdrs["Authorization"] = f"Bearer {jwt}"
-            rb = http.post(f"{BACKEND}/request_access",
-                json={"doctor_code": session.get("doctor_code", ""),
-                      "patient_code": pat_code},
-                headers=hdrs, timeout=10)
-            return jsonify(rb.json()), rb.status_code
+
+        doc_code = session.get("doctor_code", "")
+        jwt      = session.get("jwt_token", "")
+        hdrs     = {**_headers()}
+        if jwt:
+            hdrs["Authorization"] = f"Bearer {jwt}"
+
+        # Go straight to backend — no password needed to send a request
+        rb = http.post(
+            f"{BACKEND}/request_access",
+            json={"doctor_code": doc_code, "patient_code": pat_code},
+            headers=hdrs, timeout=10,
+        )
+        return jsonify(rb.json()), rb.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 502
+
 
 
 # ── Fetch & decrypt patient record ─────────────────────────────────────────
