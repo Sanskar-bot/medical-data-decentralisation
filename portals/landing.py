@@ -819,8 +819,28 @@ def patient_approve():
                     return jsonify(resp.json()), resp.status_code
                 except Exception:
                     return jsonify({"status": "approved"}), 200
-        except Exception as e:
-            app.logger.debug("patient_approve legacy path: %s", e)
+        # ── Path 3: Direct psycopg2 UPDATE (fallback when JWT uid mismatch) ──
+        if _HAS_PSYCOPG2:
+            try:
+                conn = psycopg2.connect(DB_URL)
+                cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                # Verify ownership via profile_code (session-proven identity)
+                cur.execute("""
+                    UPDATE access_db a SET status='approved',
+                        responded_at=NOW()
+                    FROM users p
+                    WHERE a.patient_id = p.id
+                      AND p.profile_code = %s
+                      AND a.id = %s
+                    RETURNING a.id, a.status
+                """, (profile_code, request_id))
+                updated = cur.fetchone()
+                conn.commit(); cur.close(); conn.close()
+                if updated:
+                    return jsonify({"status": "approved", "message": "Access granted"}), 200
+                return jsonify({"error": "Access request not found or not yours"}), 404
+            except Exception as e:
+                app.logger.debug("patient_approve psycopg2 fallback: %s", e)
 
         return jsonify({"status": "approved", "message": "Access granted"}), 200
     except Exception as e:
@@ -839,6 +859,7 @@ def patient_deny():
         request_id = d.get("request_id", "")
         if not request_id:
             return jsonify({"error": "Request ID required"}), 400
+        profile_code = session.get("profile_code", "")
 
         # ── Use JWT /access/respond (PostgreSQL) ──────────────────────────────
         if jwt_tok:
@@ -847,22 +868,38 @@ def patient_deny():
                 rb = http.post(f"{BACKEND}/access/respond",
                                json={"request_id": request_id, "action": "deny"},
                                headers=hdrs, timeout=8)
-                try:
-                    data = rb.json()
-                except Exception:
-                    data = {"status": "denied"} if rb.ok else {"error": f"Backend {rb.status_code}"}
-                return jsonify(data), rb.status_code
+                if rb.ok:
+                    try:
+                        return jsonify(rb.json()), 200
+                    except Exception:
+                        return jsonify({"status": "denied"}), 200
+                # 404 → fall through to psycopg2 fallback
+                if rb.status_code != 404:
+                    try:
+                        return jsonify(rb.json()), rb.status_code
+                    except Exception:
+                        return jsonify({"error": f"Backend {rb.status_code}"}), rb.status_code
             except Exception as e:
                 app.logger.debug("patient_deny JWT path: %s", e)
 
-        # ── Fallback: direct psycopg2 update ─────────────────────────────────
+        # ── Fallback: direct psycopg2 update (with ownership check) ──────────
         if _HAS_PSYCOPG2:
             try:
                 conn = psycopg2.connect(DB_URL)
-                cur  = conn.cursor()
-                cur.execute("UPDATE access_db SET status='denied' WHERE id=%s", (request_id,))
+                cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute("""
+                    UPDATE access_db a SET status='denied', responded_at=NOW()
+                    FROM users p
+                    WHERE a.patient_id = p.id
+                      AND p.profile_code = %s
+                      AND a.id = %s
+                    RETURNING a.id, a.status
+                """, (profile_code, request_id))
+                updated = cur.fetchone()
                 conn.commit(); cur.close(); conn.close()
-                return jsonify({"status": "denied"}), 200
+                if updated:
+                    return jsonify({"status": "denied"}), 200
+                return jsonify({"error": "Access request not found or not yours"}), 404
             except Exception as e:
                 app.logger.debug("patient_deny psycopg2: %s", e)
 
