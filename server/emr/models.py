@@ -363,3 +363,79 @@ def new_lab_report(data: dict) -> dict:
         "notes":       (data.get("notes") or "").strip(),
         "created_at":  _now_iso(),
     }
+
+
+# ── Condition (Problem List) ──────────────────────────────────────────────────
+
+CONDITION_STATUSES = {"active", "resolved", "inactive"}
+
+def validate_condition(data: dict) -> list[str]:
+    """Return list of validation error strings (empty = valid)."""
+    errors = _require(data, ["patient_id", "description", "recorded_by"])
+    status = (data.get("status") or "active").lower()
+    if status not in CONDITION_STATUSES:
+        errors.append(f"invalid status: {status!r}; must be one of {sorted(CONDITION_STATUSES)}")
+    for date_field in ("onset_date", "resolved_date"):
+        val = data.get(date_field)
+        if val and str(val).strip():
+            try:
+                datetime.fromisoformat(str(val).strip())
+            except ValueError:
+                errors.append(f"{date_field} must be an ISO date string (e.g. 2024-01-15)")
+    return errors
+
+
+def new_condition(data: dict) -> dict:
+    """Create a normalised condition dict."""
+    return {
+        "id":            str(uuid.uuid4()),
+        "patient_id":    data["patient_id"],
+        "description":   (data.get("description") or "").strip(),
+        "icd10_code":    (data.get("icd10_code") or "").strip(),
+        "status":        (data.get("status") or "active").lower(),
+        "onset_date":    (data.get("onset_date") or "").strip() or None,
+        "resolved_date": (data.get("resolved_date") or "").strip() or None,
+        "recorded_by":   (data.get("recorded_by") or "").strip(),
+        "encounter_id":  data.get("encounter_id") or None,
+        "notes":         (data.get("notes") or "").strip(),
+        "created_at":    _now_iso(),
+        "updated_at":    _now_iso(),
+    }
+
+
+# ── Encounter ─────────────────────────────────────────────────────────────────
+
+ENCOUNTER_STATUSES   = {"in_progress", "completed", "cancelled"}
+APPOINTMENT_SOURCES  = {"", "legacy", "emr"}
+
+def validate_encounter(data: dict) -> list[str]:
+    """Return list of validation error strings (empty = valid)."""
+    errors = _require(data, ["patient_id", "doctor_id"])
+    status = (data.get("status") or "in_progress").lower()
+    if status not in ENCOUNTER_STATUSES:
+        errors.append(f"invalid status: {status!r}; must be one of {sorted(ENCOUNTER_STATUSES)}")
+    appt_src = (data.get("appointment_source") or "").lower()
+    if appt_src not in APPOINTMENT_SOURCES:
+        errors.append(
+            f"invalid appointment_source: {appt_src!r}; "
+            f"must be one of {sorted(APPOINTMENT_SOURCES)}"
+        )
+    return errors
+
+
+def new_encounter(data: dict) -> dict:
+    """Create a normalised encounter dict."""
+    return {
+        "id":                 str(uuid.uuid4()),
+        "patient_id":         data["patient_id"],
+        "doctor_id":          data["doctor_id"],
+        "appointment_id":     data.get("appointment_id") or None,
+        "appointment_source": (data.get("appointment_source") or "").lower(),
+        "status":             (data.get("status") or "in_progress").lower(),
+        "reason":             (data.get("reason") or "").strip(),
+        "summary":            (data.get("summary") or "").strip(),
+        "started_at":         _now_iso(),
+        "completed_at":       data.get("completed_at") or None,
+        "created_at":         _now_iso(),
+        "updated_at":         _now_iso(),
+    }

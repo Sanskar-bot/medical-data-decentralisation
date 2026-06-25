@@ -289,7 +289,23 @@ def create_prescription():
         )
     # ── End safety check ──────────────────────────────────────────────────────
 
+    # ── Optional condition_id validation ──────────────────────────────────────
+    condition_id = body.get("condition_id") or None
+    if condition_id:
+        cond = store.get_condition(condition_id)
+        if not cond or cond["patient_id"] != body["patient_id"]:
+            return jsonify({"error": "condition_not_found_for_patient"}), 400
+
+    # ── Optional encounter_id validation ──────────────────────────────────────
+    encounter_id = body.get("encounter_id") or None
+    if encounter_id:
+        enc = store.get_encounter(encounter_id)
+        if not enc or enc["patient_id"] != body["patient_id"]:
+            return jsonify({"error": "encounter_patient_mismatch"}), 400
+
     rx = models.new_prescription(body)
+    rx["encounter_id"] = encounter_id
+    rx["condition_id"] = condition_id
     store.add_prescription(rx)
     _audit("prescription_created", actor=jwt_p.get("sub", ""),
            target=body["patient_id"], detail=f"id={rx['id']}")
@@ -345,7 +361,22 @@ def create_lab_report():
     if errors:
         return jsonify({"error": "validation_failed", "details": errors}), 400
 
+    # ── Optional encounter_id validation ──────────────────────────────────────
+    encounter_id = body.get("encounter_id") or None
+    if encounter_id:
+        enc = store.get_encounter(encounter_id)
+        if not enc or enc["patient_id"] != body["patient_id"]:
+            return jsonify({"error": "encounter_patient_mismatch"}), 400
+
+    condition_id = body.get("condition_id") or None
+    if condition_id:
+        cond = store.get_condition(condition_id)
+        if not cond or cond["patient_id"] != body["patient_id"]:
+            return jsonify({"error": "condition_not_found_for_patient"}), 400
+
     report = models.new_lab_report(body)
+    report["encounter_id"] = encounter_id
+    report["condition_id"] = condition_id
     store.add_lab_report(report)
     _audit("lab_report_created", actor=jwt_p.get("sub", ""),
            target=body["patient_id"], detail=f"id={report['id']}")
@@ -461,3 +492,219 @@ def admin_stats():
         "total_prescriptions":len(prescriptions),
         "total_lab_reports":  len(lab_reports),
     }), 200
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#   CONDITIONS (PROBLEM LIST) ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@emr_bp.route("/conditions", methods=["POST"])
+@_require_jwt_deco(roles=["doctor", "admin"])
+@_rate_limited(max_calls=20, window=60)
+def create_condition():
+    body  = request.get_json(force=True) or {}
+    jwt_p = request.jwt_payload
+
+    # Auto-fill recorded_by from JWT, matching how create_prescription fills doctor_id
+    if not body.get("recorded_by"):
+        body["recorded_by"] = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
+    if not body.get("patient_id"):
+        return jsonify({"error": "patient_id is required"}), 400
+
+    errors = models.validate_condition(body)
+    if errors:
+        return jsonify({"error": "validation_failed", "details": errors}), 400
+
+    # If an encounter_id is given, verify it belongs to the same patient
+    encounter_id = body.get("encounter_id") or None
+    if encounter_id:
+        enc = store.get_encounter(encounter_id)
+        if not enc or enc["patient_id"] != body["patient_id"]:
+            return jsonify({"error": "encounter_patient_mismatch"}), 400
+
+    cond = models.new_condition(body)
+    store.add_condition(cond)
+    _audit("condition_created", actor=jwt_p.get("sub", ""),
+           target=body["patient_id"], detail=f"id={cond['id']}")
+    return jsonify(cond), 201
+
+
+@emr_bp.route("/conditions/patient/<patient_id>", methods=["GET"])
+@_require_jwt_deco()
+def list_patient_conditions(patient_id):
+    p = request.jwt_payload
+    patient_code = p.get("profile_code") or p.get("uid", "")
+    if p.get("role") == "patient" and patient_code != patient_id:
+        return jsonify({"error": "forbidden"}), 403
+    status_filter = request.args.get("status") or None
+    conds = store.conditions_for_patient(patient_id, status=status_filter)
+    return jsonify(conds), 200
+
+
+@emr_bp.route("/conditions/<condition_id>", methods=["PUT"])
+@_require_jwt_deco(roles=["doctor", "admin"])
+def update_condition(condition_id):
+    body  = request.get_json(force=True) or {}
+    jwt_p = request.jwt_payload
+
+    existing = store.get_condition(condition_id)
+    if not existing:
+        return jsonify({"error": "condition_not_found"}), 404
+
+    # Only the recording doctor or admin can update
+    if jwt_p.get("role") == "doctor":
+        recorder = existing["recorded_by"]
+        doctor_id = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
+        if recorder != doctor_id:
+            return jsonify({"error": "forbidden"}), 403
+
+    allowed = {"status", "resolved_date", "notes"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+
+    if "status" in updates:
+        s = updates["status"].lower()
+        if s not in models.CONDITION_STATUSES:
+            return jsonify({"error": f"invalid status: {s}"}), 400
+        updates["status"] = s
+        # Auto-set resolved_date when resolving
+        if s == "resolved" and not updates.get("resolved_date") and not existing.get("resolved_date"):
+            from datetime import date
+            updates["resolved_date"] = date.today().isoformat()
+
+    updates["updated_at"] = models._now_iso()
+    result = store.update_condition(condition_id, updates)
+    _audit("condition_updated", actor=jwt_p.get("sub", ""),
+           target=existing["patient_id"], detail=f"id={condition_id}")
+    return jsonify(result), 200
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#   ENCOUNTER ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@emr_bp.route("/encounters", methods=["POST"])
+@_require_jwt_deco(roles=["doctor", "admin"])
+@_rate_limited(max_calls=20, window=60)
+def create_encounter():
+    body  = request.get_json(force=True) or {}
+    jwt_p = request.jwt_payload
+
+    # Auto-fill doctor_id from JWT
+    if not body.get("doctor_id"):
+        body["doctor_id"] = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
+
+    errors = models.validate_encounter(body)
+    if errors:
+        return jsonify({"error": "validation_failed", "details": errors}), 400
+
+    # If appointment_id given, verify it exists in the correct table
+    appt_id  = body.get("appointment_id") or None
+    appt_src = (body.get("appointment_source") or "").lower()
+    if appt_id:
+        if appt_src == "legacy":
+            existing_appt = store.get_appointment(appt_id)  # won't find legacy rows
+            # For legacy table, fall back to a direct lookup
+            from db import db_cursor
+            with db_cursor(commit=False) as cur:
+                cur.execute("SELECT id FROM appointments WHERE id = %s", (appt_id,))
+                if not cur.fetchone():
+                    return jsonify({"error": "appointment_not_found"}), 400
+        else:
+            # Default: check emr_appointments
+            if not store.get_appointment(appt_id):
+                return jsonify({"error": "appointment_not_found"}), 400
+
+    enc = models.new_encounter(body)
+    store.add_encounter(enc)
+    _audit("encounter_created", actor=jwt_p.get("sub", ""),
+           target=body["patient_id"], detail=f"id={enc['id']}")
+    return jsonify(enc), 201
+
+
+@emr_bp.route("/encounters/patient/<patient_id>", methods=["GET"])
+@_require_jwt_deco()
+def list_patient_encounters(patient_id):
+    p = request.jwt_payload
+    patient_code = p.get("profile_code") or p.get("uid", "")
+    if p.get("role") == "patient" and patient_code != patient_id:
+        return jsonify({"error": "forbidden"}), 403
+    encs = store.encounters_for_patient(patient_id)
+    return jsonify(encs), 200
+
+
+@emr_bp.route("/encounters/doctor/<doctor_id>", methods=["GET"])
+@_require_jwt_deco(roles=["doctor", "admin"])
+def list_doctor_encounters(doctor_id):
+    p = request.jwt_payload
+    if p.get("role") == "doctor" and (p.get("doctor_code") or p.get("uid", "")) != doctor_id:
+        return jsonify({"error": "forbidden"}), 403
+    encs = store.encounters_for_doctor(doctor_id)
+    return jsonify(encs), 200
+
+
+@emr_bp.route("/encounters/<encounter_id>", methods=["GET"])
+@_require_jwt_deco()
+def get_encounter(encounter_id):
+    p   = request.jwt_payload
+    enc = store.get_encounter(encounter_id)
+    if not enc:
+        return jsonify({"error": "encounter_not_found"}), 404
+    patient_code = p.get("profile_code") or p.get("uid", "")
+    doctor_id    = p.get("doctor_code") or p.get("uid", "")
+    if p.get("role") == "patient" and patient_code != enc["patient_id"]:
+        return jsonify({"error": "forbidden"}), 403
+    if p.get("role") == "doctor" and doctor_id != enc["doctor_id"]:
+        return jsonify({"error": "forbidden"}), 403
+    return jsonify(enc), 200
+
+
+@emr_bp.route("/encounters/<encounter_id>/bundle", methods=["GET"])
+@_require_jwt_deco()
+def get_encounter_bundle(encounter_id):
+    p   = request.jwt_payload
+    enc = store.get_encounter(encounter_id)
+    if not enc:
+        return jsonify({"error": "encounter_not_found"}), 404
+    patient_code = p.get("profile_code") or p.get("uid", "")
+    doctor_id    = p.get("doctor_code") or p.get("uid", "")
+    if p.get("role") == "patient" and patient_code != enc["patient_id"]:
+        return jsonify({"error": "forbidden"}), 403
+    if p.get("role") == "doctor" and doctor_id != enc["doctor_id"]:
+        return jsonify({"error": "forbidden"}), 403
+    bundle = store.get_encounter_bundle(encounter_id)
+    return jsonify(bundle), 200
+
+
+@emr_bp.route("/encounters/<encounter_id>", methods=["PUT"])
+@_require_jwt_deco(roles=["doctor", "admin"])
+def update_encounter(encounter_id):
+    body  = request.get_json(force=True) or {}
+    jwt_p = request.jwt_payload
+
+    existing = store.get_encounter(encounter_id)
+    if not existing:
+        return jsonify({"error": "encounter_not_found"}), 404
+
+    # Only the encounter's doctor or admin can update
+    if jwt_p.get("role") == "doctor":
+        doctor_id = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
+        if existing["doctor_id"] != doctor_id:
+            return jsonify({"error": "forbidden"}), 403
+
+    allowed = {"status", "summary", "completed_at"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+
+    if "status" in updates:
+        s = updates["status"].lower()
+        if s not in models.ENCOUNTER_STATUSES:
+            return jsonify({"error": f"invalid status: {s}"}), 400
+        updates["status"] = s
+        # Auto-set completed_at when completing without explicit value
+        if s == "completed" and not updates.get("completed_at") and not existing.get("completed_at"):
+            updates["completed_at"] = models._now_iso()
+
+    updates["updated_at"] = models._now_iso()
+    result = store.update_encounter(encounter_id, updates)
+    _audit("encounter_updated", actor=jwt_p.get("sub", ""),
+           target=existing["patient_id"], detail=f"id={encounter_id}")
+    return jsonify(result), 200

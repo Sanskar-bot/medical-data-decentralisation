@@ -834,13 +834,14 @@ def _db_add_note(note: dict) -> str:
     visit_date = note.get("visit_date") or None
     if visit_date == "":
         visit_date = None
+    encounter_id = note.get("encounter_id") or None
     with db_cursor() as cur:
         cur.execute("""
             INSERT INTO doctor_notes
                 (note_id, patient_code, doctor_code, doctor_name,
                  doctor_specialization, doctor_hospital, note_type,
-                 note_text, visit_date)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 note_text, visit_date, encounter_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING note_id
         """, (
             note_id,
@@ -852,6 +853,7 @@ def _db_add_note(note: dict) -> str:
             note.get("note_type", "General"),
             note["note_text"],
             visit_date,
+            encounter_id,
         ))
         return str(cur.fetchone()["note_id"])
 
@@ -2713,6 +2715,12 @@ def doctor_notes_add():
     note_type    = (body.get("note_type")     or "General").strip()
     note_text    = (body.get("note_text") or body.get("note") or "").strip()
     visit_date   = (body.get("visit_date")    or "").strip()
+    # Optional encounter linkage — accept encounter_id from the caller.
+    # When present, validate that the encounter exists and belongs to the same
+    # patient.  Consistent with the _db_* helper style in this file; we do a
+    # direct DB lookup rather than importing from emr.store to avoid
+    # circular-import risk in the monolithic server.py module.
+    encounter_id = (body.get("encounter_id") or "").strip() or None
 
     if not patient_code or not note_text:
         return jsonify({"error": "missing_fields",
@@ -2752,7 +2760,23 @@ def doctor_notes_add():
         "note_type":             note_type,
         "note_text":             note_text,
         "visit_date":            visit_date,
+        "encounter_id":          encounter_id,
     }
+
+    # Validate encounter_id belongs to this patient before saving
+    if encounter_id:
+        try:
+            with db_cursor(commit=False) as _enc_cur:
+                _enc_cur.execute(
+                    "SELECT patient_id FROM encounters WHERE id = %s", (encounter_id,)
+                )
+                _enc_row = _enc_cur.fetchone()
+            if not _enc_row or _enc_row["patient_id"] != patient_code:
+                return jsonify({"error": "encounter_patient_mismatch",
+                                "detail": "encounter_id does not belong to this patient"}), 400
+        except Exception:
+            # Table may not exist in older deployments; silently clear encounter_id
+            note["encounter_id"] = None
 
     try:
         _db_add_note(note)

@@ -1,0 +1,273 @@
+{% extends 'base.html' %}
+{% block title %}Encounter Detail{% endblock %}
+{% block topbar_title %}Encounter Detail{% endblock %}
+
+{% block content %}
+{% set enc  = bundle.encounter or {} %}
+{% set appt = bundle.appointment %}
+{% set notes        = bundle.notes or [] %}
+{% set prescriptions = bundle.prescriptions or [] %}
+{% set lab_reports  = bundle.lab_reports or [] %}
+
+<div class="page-header">
+  <div class="page-header-text">
+    <span class="page-eyebrow">Clinical Record</span>
+    <h1 class="type-h1">Encounter</h1>
+    {% if enc.reason %}
+      <p class="type-label" style="color:var(--tx3); margin-top:var(--sp-1);">{{ enc.reason }}</p>
+    {% endif %}
+  </div>
+  <div class="cluster-3">
+    {% if enc.status == 'completed' %}
+      <span class="badge badge-completed">Completed</span>
+    {% elif enc.status == 'cancelled' %}
+      <span class="badge badge-cancelled">Cancelled</span>
+    {% else %}
+      <span class="badge badge-scheduled">In Progress</span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid-sidebar" style="align-items:start;">
+
+  <!-- ── Main column ──────────────────────────────────────────────────── -->
+  <div class="stack-6">
+
+    <!-- Appointment card (shown only when linked) -->
+    {% if appt %}
+    <div class="card">
+      <div class="section-header" style="margin-bottom:var(--sp-5);">
+        <h2 class="type-h3">Linked Appointment</h2>
+        {% if appt.status %}
+          <span class="badge badge-{{ 'completed' if appt.status == 'completed' else 'scheduled' if appt.status in ('scheduled','accepted','pending') else 'cancelled' }}">
+            {{ appt.status | capitalize }}
+          </span>
+        {% endif %}
+      </div>
+      <div class="field-row" style="padding-top:0;">
+        <div class="field-label">Date / Time</div>
+        <div class="field-value">{{ appt.date_time or ((appt.date or '') + ' ' + (appt.time or '')) }}</div>
+      </div>
+      {% if appt.reason %}
+      <div class="field-row">
+        <div class="field-label">Reason</div>
+        <div class="field-value">{{ appt.reason }}</div>
+      </div>
+      {% endif %}
+      {% if appt.doctor_username %}
+      <div class="field-row">
+        <div class="field-label">Doctor</div>
+        <div class="field-value">{{ appt.doctor_username }}</div>
+      </div>
+      {% endif %}
+      {% if appt.notes %}
+      <div class="field-row">
+        <div class="field-label">Notes</div>
+        <div class="field-value">{{ appt.notes }}</div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Doctor Notes -->
+    <div class="card">
+      <div class="section-header" style="margin-bottom:var(--sp-5);">
+        <h2 class="type-h3">Clinical Notes</h2>
+        <span class="type-label" style="color:var(--tx3);">{{ notes | length }} note{{ 's' if notes | length != 1 }}</span>
+      </div>
+      {% if notes %}
+        <div class="stack-5">
+          {% for note in notes %}
+          <div style="border-left:2px solid var(--p4); padding-left:var(--sp-4);">
+            <div class="cluster-3" style="margin-bottom:var(--sp-2);">
+              <span class="type-label" style="font-weight:600; color:var(--tx1);">
+                {{ note.doctor_name or note.doctor_code or 'Doctor' }}
+              </span>
+              {% if note.doctor_specialization %}
+                <span class="badge" style="background:var(--ba); color:var(--tx2); font-size:var(--t-xs);">
+                  {{ note.doctor_specialization }}
+                </span>
+              {% endif %}
+              <span class="type-label" style="color:var(--tx3);">
+                {{ note.note_type or 'General' }}
+              </span>
+            </div>
+            {% if note.visit_date %}
+            <div class="field-row" style="padding-top:0; padding-bottom:var(--sp-2);">
+              <div class="field-label">Visit date</div>
+              <div class="field-value">{{ note.visit_date }}</div>
+            </div>
+            {% endif %}
+            <div style="font-size:var(--t-sm); color:var(--tx2); line-height:1.7; white-space:pre-wrap;">{{ note.note_text }}</div>
+            <div style="font-size:var(--t-xs); color:var(--tx3); margin-top:var(--sp-2);">{{ note.created_at or '' }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state" style="padding:var(--sp-6) 0;">
+          <div class="empty-state-title">No clinical notes for this encounter</div>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- Prescriptions -->
+    <div class="card">
+      <div class="section-header" style="margin-bottom:var(--sp-5);">
+        <h2 class="type-h3">Prescriptions</h2>
+        <span class="type-label" style="color:var(--tx3);">{{ prescriptions | length }} prescription{{ 's' if prescriptions | length != 1 }}</span>
+      </div>
+      {% if prescriptions %}
+        <div class="stack-5">
+          {% for rx in prescriptions %}
+          <div class="card-elevated" style="padding:var(--sp-4) var(--sp-5);">
+            <div class="section-header" style="margin-bottom:var(--sp-3);">
+              <div>
+                <div class="type-label" style="font-weight:600; color:var(--tx1);">
+                  {{ rx.diagnosis or 'Prescription' }}
+                </div>
+                <div style="font-size:var(--t-xs); color:var(--tx3);">{{ rx.created_at or '' }}</div>
+              </div>
+              {% if rx.doctor_id %}
+              <span class="type-label" style="color:var(--tx3); font-size:var(--t-xs);">
+                Dr. {{ rx.doctor_id }}
+              </span>
+              {% endif %}
+            </div>
+            {% if rx.medications %}
+            <table style="width:100%; border-collapse:collapse; font-size:var(--t-sm);">
+              <thead>
+                <tr style="border-bottom:1px solid var(--b2);">
+                  <th style="text-align:left; padding:var(--sp-2) 0; color:var(--tx3); font-weight:500;">Medication</th>
+                  <th style="text-align:left; padding:var(--sp-2) 0; color:var(--tx3); font-weight:500;">Dosage</th>
+                  <th style="text-align:left; padding:var(--sp-2) 0; color:var(--tx3); font-weight:500;">Frequency</th>
+                  <th style="text-align:left; padding:var(--sp-2) 0; color:var(--tx3); font-weight:500;">Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for med in rx.medications %}
+                <tr style="border-bottom:1px solid var(--b1);">
+                  <td style="padding:var(--sp-2) 0; color:var(--tx1);">{{ med.name }}</td>
+                  <td style="padding:var(--sp-2) 0; color:var(--tx2);">{{ med.dosage or '—' }}</td>
+                  <td style="padding:var(--sp-2) 0; color:var(--tx2);">{{ med.frequency or '—' }}</td>
+                  <td style="padding:var(--sp-2) 0; color:var(--tx2);">{{ med.duration or '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% endif %}
+            {% if rx.notes %}
+            <div style="margin-top:var(--sp-3); font-size:var(--t-xs); color:var(--tx3);">Note: {{ rx.notes }}</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state" style="padding:var(--sp-6) 0;">
+          <div class="empty-state-title">No prescriptions for this encounter</div>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- Lab Reports -->
+    <div class="card">
+      <div class="section-header" style="margin-bottom:var(--sp-5);">
+        <h2 class="type-h3">Lab Reports</h2>
+        <span class="type-label" style="color:var(--tx3);">{{ lab_reports | length }} report{{ 's' if lab_reports | length != 1 }}</span>
+      </div>
+      {% if lab_reports %}
+        <div class="stack-4">
+          {% for lr in lab_reports %}
+          <div class="card-elevated" style="padding:var(--sp-4) var(--sp-5);">
+            <div class="section-header" style="margin-bottom:var(--sp-3);">
+              <div>
+                <div class="type-label" style="font-weight:600; color:var(--tx1);">{{ lr.report_type }}</div>
+                <div style="font-size:var(--t-xs); color:var(--tx3);">{{ lr.created_at or '' }}</div>
+              </div>
+            </div>
+            {% if lr.results and lr.results != '{}' %}
+            <div class="stack-2" style="margin-bottom:var(--sp-3);">
+              {% for key, value in lr.results.items() %}
+              <div class="field-row" style="padding-top:var(--sp-1); padding-bottom:var(--sp-1);">
+                <div class="field-label" style="text-transform:capitalize;">{{ key | replace('_', ' ') }}</div>
+                <div class="field-value">{{ value }}</div>
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if lr.notes %}
+            <div style="font-size:var(--t-xs); color:var(--tx3);">Note: {{ lr.notes }}</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state" style="padding:var(--sp-6) 0;">
+          <div class="empty-state-title">No lab reports for this encounter</div>
+        </div>
+      {% endif %}
+    </div>
+
+  </div><!-- end main column -->
+
+  <!-- ── Right sidebar ─────────────────────────────────────────────────── -->
+  <div class="stack-4">
+
+    <div class="card">
+      <div class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-4);">Encounter Details</div>
+      <div class="field-row" style="padding-top:0;">
+        <div class="field-label">Encounter ID</div>
+        <div class="field-value type-mono" style="font-size:var(--t-xs); word-break:break-all;">{{ enc.id or '—' }}</div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Status</div>
+        <div class="field-value">{{ (enc.status or 'unknown') | capitalize | replace('_', ' ') }}</div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Patient</div>
+        <div class="field-value type-mono">{{ enc.patient_id or '—' }}</div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Doctor</div>
+        <div class="field-value type-mono">{{ enc.doctor_id or '—' }}</div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Started</div>
+        <div class="field-value">{{ enc.started_at or enc.created_at or '—' }}</div>
+      </div>
+      {% if enc.completed_at %}
+      <div class="field-row">
+        <div class="field-label">Completed</div>
+        <div class="field-value">{{ enc.completed_at }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if enc.summary %}
+    <div class="card">
+      <div class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-3);">Visit Summary</div>
+      <div style="font-size:var(--t-sm); color:var(--tx2); line-height:1.7; white-space:pre-wrap;">{{ enc.summary }}</div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="type-label" style="font-weight:600; color:var(--tx1); margin-bottom:var(--sp-4);">Contents</div>
+      <div class="stack-2">
+        <div class="field-row" style="padding-top:0;">
+          <div class="field-label">Notes</div>
+          <div class="field-value">{{ notes | length }}</div>
+        </div>
+        <div class="field-row">
+          <div class="field-label">Prescriptions</div>
+          <div class="field-value">{{ prescriptions | length }}</div>
+        </div>
+        <div class="field-row">
+          <div class="field-label">Lab reports</div>
+          <div class="field-value">{{ lab_reports | length }}</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end sidebar -->
+
+</div><!-- end grid-sidebar -->
+{% endblock %}

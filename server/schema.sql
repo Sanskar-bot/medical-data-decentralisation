@@ -268,4 +268,76 @@ CREATE TABLE IF NOT EXISTS rate_limits (
 CREATE INDEX IF NOT EXISTS idx_rate_limits_ip_endpoint
     ON rate_limits(ip, endpoint, hit_at DESC);
 
+-- ── Conditions (Problem List) ─────────────────────────────────────────────────
+-- Tracks chronic and acute conditions for a patient.  Linked to an encounter
+-- when the condition is first recorded during a visit (nullable — a condition
+-- can be entered outside any single visit).
+CREATE TABLE IF NOT EXISTS conditions (
+    id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    patient_id      TEXT NOT NULL,
+    description     TEXT NOT NULL,       -- free-text, e.g. "Type 2 Diabetes"
+    icd10_code      TEXT DEFAULT '',     -- empty until a coding step exists
+    status          TEXT NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('active', 'resolved', 'inactive')),
+    onset_date      DATE,
+    resolved_date   DATE,
+    recorded_by     TEXT NOT NULL,       -- doctor_id / doctor_code
+    encounter_id    TEXT,                -- nullable FK-by-convention to encounters.id
+    notes           TEXT DEFAULT '',
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_conditions_patient
+    ON conditions(patient_id);
+CREATE INDEX IF NOT EXISTS idx_conditions_status
+    ON conditions(patient_id, status);
+
+-- ── Encounters ────────────────────────────────────────────────────────────────
+-- A single clinical visit.  Ties together appointment + notes + prescriptions
+-- + lab orders for one encounter.  appointment_source disambiguates which of
+-- the two appointment tables (legacy `appointments` or `emr_appointments`) the
+-- appointment_id refers to — this project currently has two parallel systems.
+CREATE TABLE IF NOT EXISTS encounters (
+    id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    patient_id          TEXT NOT NULL,
+    doctor_id           TEXT NOT NULL,
+    appointment_id      TEXT,            -- nullable: walk-in visits have none
+    appointment_source  TEXT DEFAULT ''
+                        CHECK (appointment_source IN ('', 'legacy', 'emr')),
+    status              TEXT NOT NULL DEFAULT 'in_progress'
+                        CHECK (status IN ('in_progress', 'completed', 'cancelled')),
+    reason              TEXT DEFAULT '',
+    summary             TEXT DEFAULT '', -- free-text visit summary on completion
+    started_at          TIMESTAMPTZ DEFAULT now(),
+    completed_at        TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ DEFAULT now(),
+    updated_at          TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_encounters_patient
+    ON encounters(patient_id);
+CREATE INDEX IF NOT EXISTS idx_encounters_doctor
+    ON encounters(doctor_id);
+CREATE INDEX IF NOT EXISTS idx_encounters_appt
+    ON encounters(appointment_id);
+
+-- ── Cross-table linkage columns (idempotent ALTERs) ──────────────────────────
+-- These link existing visit-artifact rows to the encounters and conditions
+-- tables.  All nullable — records created outside any tracked encounter/
+-- condition context must continue to work unchanged.
+
+ALTER TABLE emr_prescriptions ADD COLUMN IF NOT EXISTS encounter_id  TEXT;
+ALTER TABLE emr_prescriptions ADD COLUMN IF NOT EXISTS condition_id  TEXT;
+ALTER TABLE emr_lab_reports   ADD COLUMN IF NOT EXISTS encounter_id  TEXT;
+ALTER TABLE emr_lab_reports   ADD COLUMN IF NOT EXISTS condition_id  TEXT;
+ALTER TABLE doctor_notes      ADD COLUMN IF NOT EXISTS encounter_id  TEXT;
+ALTER TABLE emr_appointments  ADD COLUMN IF NOT EXISTS encounter_id  TEXT;
+ALTER TABLE appointments      ADD COLUMN IF NOT EXISTS encounter_id  TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_emr_rx_encounter
+    ON emr_prescriptions(encounter_id);
+CREATE INDEX IF NOT EXISTS idx_emr_lab_encounter
+    ON emr_lab_reports(encounter_id);
+CREATE INDEX IF NOT EXISTS idx_notes_encounter
+    ON doctor_notes(encounter_id);
+
 COMMIT;

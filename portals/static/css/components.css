@@ -492,8 +492,6 @@ textarea.input-field { resize: vertical; min-height: 120px; line-height: 1.6; }
   display: flex;
   align-items: center;
   gap: var(--sp-6);
-  flex: 1;
-  justify-content: center;
 }
 .landing-nav-links a {
   font-size: var(--t-sm);
@@ -502,7 +500,8 @@ textarea.input-field { resize: vertical; min-height: 120px; line-height: 1.6; }
   transition: color var(--dur-fast) var(--ease);
 }
 .landing-nav-links a:hover { color: var(--tx1); }
-.landing-nav-actions { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; }
+.landing-nav-actions { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; margin-left: auto; }
+
 
 /* ── HERO ────────────────────────────────────────────────────────── */
 .hero {

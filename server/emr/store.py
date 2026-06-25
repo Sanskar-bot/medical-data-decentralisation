@@ -142,6 +142,8 @@ _TABLE_MAP = {
     "prescriptions": "emr_prescriptions",
     "lab_reports":   "emr_lab_reports",
     "profiles":      "emr_profiles",
+    "conditions":    "conditions",
+    "encounters":    "encounters",
 }
 
 
@@ -246,8 +248,9 @@ def add_prescription(rx: dict):
     with db_cursor() as cur:
         cur.execute("""
             INSERT INTO emr_prescriptions
-                (id, patient_id, doctor_id, doctor_email, diagnosis, medications, notes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (id, patient_id, doctor_id, doctor_email, diagnosis,
+                 medications, notes, encounter_id, condition_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             rx.get("id", str(__import__("uuid").uuid4())),
             rx["patient_id"],
@@ -256,6 +259,8 @@ def add_prescription(rx: dict):
             rx.get("diagnosis", ""),
             json.dumps(medications) if isinstance(medications, list) else medications,
             rx.get("notes", ""),
+            rx.get("encounter_id") or None,
+            rx.get("condition_id") or None,
         ))
 
 
@@ -323,8 +328,8 @@ def add_lab_report(report: dict):
         cur.execute("""
             INSERT INTO emr_lab_reports
                 (id, patient_id, doctor_id, doctor_email, report_type,
-                 results, file_hash, notes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                 results, file_hash, notes, encounter_id, condition_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             report.get("id", str(__import__("uuid").uuid4())),
             report["patient_id"],
@@ -334,6 +339,8 @@ def add_lab_report(report: dict):
             json.dumps(results) if isinstance(results, dict) else results,
             report.get("file_hash", ""),
             report.get("notes", ""),
+            report.get("encounter_id") or None,
+            report.get("condition_id") or None,
         ))
 
 
@@ -371,3 +378,242 @@ def lab_reports_for_patient(pid: str) -> list[dict]:
                     d["results"] = {}
             result.append(d)
         return result
+
+
+# ── Conditions (Problem List) ─────────────────────────────────────────────────
+
+def add_condition(cond: dict):
+    with db_cursor() as cur:
+        cur.execute("""
+            INSERT INTO conditions
+                (id, patient_id, description, icd10_code, status,
+                 onset_date, resolved_date, recorded_by,
+                 encounter_id, notes, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            cond.get("id", str(__import__("uuid").uuid4())),
+            cond["patient_id"],
+            cond["description"],
+            cond.get("icd10_code", ""),
+            cond.get("status", "active"),
+            cond.get("onset_date") or None,
+            cond.get("resolved_date") or None,
+            cond["recorded_by"],
+            cond.get("encounter_id") or None,
+            cond.get("notes", ""),
+            cond.get("created_at"),
+            cond.get("updated_at"),
+        ))
+
+
+def get_condition(condition_id: str) -> dict | None:
+    with db_cursor(commit=False) as cur:
+        cur.execute("SELECT * FROM conditions WHERE id = %s", (condition_id,))
+        row = cur.fetchone()
+        return _serial(dict(row)) if row else None
+
+
+def update_condition(condition_id: str, updates: dict) -> dict | None:
+    """Allowed update fields mirror update_appointment's ALLOWED-set pattern."""
+    ALLOWED = {"status", "resolved_date", "notes", "updated_at"}
+    set_parts = []
+    params = []
+    for field, value in updates.items():
+        if field not in ALLOWED:
+            continue
+        set_parts.append(f"{field} = %s")
+        params.append(value)
+    if not set_parts:
+        return get_condition(condition_id)
+    if "updated_at" not in [p.split(" ")[0] for p in set_parts]:
+        set_parts.append("updated_at = now()")
+    params.append(condition_id)
+    with db_cursor() as cur:
+        cur.execute(
+            f"UPDATE conditions SET {', '.join(set_parts)} WHERE id = %s RETURNING *",
+            params,
+        )
+        row = cur.fetchone()
+        return _serial(dict(row)) if row else None
+
+
+def conditions_for_patient(patient_id: str, status: str | None = None) -> list[dict]:
+    """Return all conditions for a patient, optionally filtered by status."""
+    with db_cursor(commit=False) as cur:
+        if status:
+            cur.execute(
+                "SELECT * FROM conditions WHERE patient_id = %s AND status = %s "
+                "ORDER BY onset_date DESC NULLS LAST, created_at DESC",
+                (patient_id, status),
+            )
+        else:
+            cur.execute(
+                "SELECT * FROM conditions WHERE patient_id = %s "
+                "ORDER BY onset_date DESC NULLS LAST, created_at DESC",
+                (patient_id,),
+            )
+        return [_serial(dict(r)) for r in cur.fetchall()]
+
+
+# ── Encounters ────────────────────────────────────────────────────────────────
+
+def add_encounter(enc: dict):
+    with db_cursor() as cur:
+        cur.execute("""
+            INSERT INTO encounters
+                (id, patient_id, doctor_id, appointment_id,
+                 appointment_source, status, reason, summary,
+                 started_at, completed_at, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            enc.get("id", str(__import__("uuid").uuid4())),
+            enc["patient_id"],
+            enc["doctor_id"],
+            enc.get("appointment_id") or None,
+            enc.get("appointment_source", ""),
+            enc.get("status", "in_progress"),
+            enc.get("reason", ""),
+            enc.get("summary", ""),
+            enc.get("started_at"),
+            enc.get("completed_at") or None,
+            enc.get("created_at"),
+            enc.get("updated_at"),
+        ))
+
+
+def get_encounter(encounter_id: str) -> dict | None:
+    with db_cursor(commit=False) as cur:
+        cur.execute("SELECT * FROM encounters WHERE id = %s", (encounter_id,))
+        row = cur.fetchone()
+        return _serial(dict(row)) if row else None
+
+
+def update_encounter(encounter_id: str, updates: dict) -> dict | None:
+    """Allowed fields mirror update_appointment's ALLOWED-set pattern."""
+    ALLOWED = {"status", "summary", "completed_at", "updated_at"}
+    set_parts = []
+    params = []
+    for field, value in updates.items():
+        if field not in ALLOWED:
+            continue
+        set_parts.append(f"{field} = %s")
+        params.append(value)
+    if not set_parts:
+        return get_encounter(encounter_id)
+    if "updated_at" not in [p.split(" ")[0] for p in set_parts]:
+        set_parts.append("updated_at = now()")
+    params.append(encounter_id)
+    with db_cursor() as cur:
+        cur.execute(
+            f"UPDATE encounters SET {', '.join(set_parts)} WHERE id = %s RETURNING *",
+            params,
+        )
+        row = cur.fetchone()
+        return _serial(dict(row)) if row else None
+
+
+def encounters_for_patient(patient_id: str) -> list[dict]:
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT * FROM encounters WHERE patient_id = %s ORDER BY started_at DESC",
+            (patient_id,),
+        )
+        return [_serial(dict(r)) for r in cur.fetchall()]
+
+
+def encounters_for_doctor(doctor_id: str) -> list[dict]:
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT * FROM encounters WHERE doctor_id = %s ORDER BY started_at DESC",
+            (doctor_id,),
+        )
+        return [_serial(dict(r)) for r in cur.fetchall()]
+
+
+def get_encounter_bundle(encounter_id: str) -> dict:
+    """
+    Return a complete encounter bundle: the encounter row, its linked
+    appointment (from the appropriate table based on appointment_source),
+    plus all notes, prescriptions, and lab reports tagged with this
+    encounter_id.
+
+    Uses four simple SELECTs composed in Python — consistent with this
+    file's existing style; no JOIN mega-query.
+    """
+    enc = get_encounter(encounter_id)
+    if not enc:
+        return {
+            "encounter":     None,
+            "appointment":   None,
+            "notes":         [],
+            "prescriptions": [],
+            "lab_reports":   [],
+        }
+
+    # ── Appointment — fetch from the correct table ────────────────────────────
+    appointment = None
+    appt_id  = enc.get("appointment_id")
+    appt_src = enc.get("appointment_source", "")
+    if appt_id:
+        with db_cursor(commit=False) as cur:
+            if appt_src == "legacy":
+                cur.execute(
+                    "SELECT * FROM appointments WHERE id = %s", (appt_id,)
+                )
+            else:   # 'emr' or unset — default to emr_appointments
+                cur.execute(
+                    "SELECT * FROM emr_appointments WHERE id = %s", (appt_id,)
+                )
+            row = cur.fetchone()
+            if row:
+                appointment = _serial(dict(row))
+
+    # ── Notes ─────────────────────────────────────────────────────────────────
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT * FROM doctor_notes WHERE encounter_id = %s ORDER BY created_at ASC",
+            (encounter_id,),
+        )
+        notes = [_serial(dict(r)) for r in cur.fetchall()]
+
+    # ── Prescriptions ─────────────────────────────────────────────────────────
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT * FROM emr_prescriptions WHERE encounter_id = %s ORDER BY created_at ASC",
+            (encounter_id,),
+        )
+        prescriptions = []
+        for row in cur.fetchall():
+            d = _serial(dict(row))
+            meds = d.get("medications")
+            if isinstance(meds, str):
+                try:
+                    d["medications"] = json.loads(meds)
+                except (ValueError, TypeError):
+                    d["medications"] = []
+            prescriptions.append(d)
+
+    # ── Lab Reports ───────────────────────────────────────────────────────────
+    with db_cursor(commit=False) as cur:
+        cur.execute(
+            "SELECT * FROM emr_lab_reports WHERE encounter_id = %s ORDER BY created_at ASC",
+            (encounter_id,),
+        )
+        lab_reports = []
+        for row in cur.fetchall():
+            d = _serial(dict(row))
+            res = d.get("results")
+            if isinstance(res, str):
+                try:
+                    d["results"] = json.loads(res)
+                except (ValueError, TypeError):
+                    d["results"] = {}
+            lab_reports.append(d)
+
+    return {
+        "encounter":     enc,
+        "appointment":   appointment,
+        "notes":         notes,
+        "prescriptions": prescriptions,
+        "lab_reports":   lab_reports,
+    }

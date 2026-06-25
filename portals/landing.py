@@ -235,6 +235,36 @@ def profile():
     return render_template("profile.html", **_page_context())
 
 
+@app.route("/encounter/<encounter_id>")
+def encounter_detail(encounter_id):
+    """Render the read-only encounter detail page.
+
+    Session-authenticated (same pattern as /health-record, /emr, etc.).
+    Proxies to GET /emr/encounters/<id>/bundle using the session JWT, then
+    renders encounter_detail.html with the bundle data.
+    """
+    guard = _require_session()
+    if guard: return guard
+    jwt_tok = session.get("jwt_token", "")
+    hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
+    try:
+        r = http.get(f"{BACKEND}/emr/encounters/{encounter_id}/bundle",
+                     headers=hdrs, timeout=10)
+        if r.status_code == 404:
+            return render_template("base.html", error="Encounter not found."), 404
+        if r.status_code == 403:
+            return render_template("base.html", error="Access denied."), 403
+        if not r.ok:
+            return render_template("base.html",
+                                   error=f"Could not load encounter ({r.status_code})."), 502
+        bundle = r.json()
+    except Exception as e:
+        app.logger.warning("encounter_detail proxy failed: %s", e)
+        return render_template("base.html",
+                               error="Backend unreachable. Ensure the server is running."), 503
+    return render_template("encounter_detail.html", bundle=bundle, **_page_context())
+
+
 @app.route("/logout")
 def logout():
     session.clear()
@@ -1867,9 +1897,161 @@ def doctor_access_expiry(patient_code):
         return jsonify({"expires_at": None, "error": str(e)}), 200
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+@app.route("/api/patient/timeline", methods=["GET"])
+def patient_timeline():
+    """Returns full chronological timeline for the logged-in patient.
+
+    Part C (option a chosen): reads from PostgreSQL via server.emr.store
+    instead of stale flat JSON files (EMR_RX, EMR_LR, etc.).
+
+    Events with an encounter_id are grouped under their encounter entry.
+    Events without an encounter_id are returned as individual ungrouped
+    items — this preserves backward compatibility for records created
+    before the encounters table existed.
+    """
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    pid = session.get("profile_code", "")
+    if not pid:
+        return jsonify({"timeline": []}), 200
+
+    # Import emr.store here (not at module top) to avoid import-time DB init
+    try:
+        import sys as _sys
+        import os as _os
+        _server_dir = _os.path.join(ROOT, "server")
+        if _server_dir not in _sys.path:
+            _sys.path.insert(0, _server_dir)
+        from emr import store as _emr_store
+    except Exception as _ie:
+        app.logger.warning("patient_timeline: cannot import emr.store: %s", _ie)
+        return jsonify({"timeline": []}), 200
+
+    # ── Collect all raw events from Postgres ──────────────────────────────────
+    ungrouped = []   # events with no encounter_id
+    encounter_ids_seen = set()
+    encounters_map = {}  # encounter_id -> encounter dict
+
+    try:
+        # 1. Encounters — the primary grouping unit
+        for enc in _emr_store.encounters_for_patient(pid):
+            eid = enc["id"]
+            encounter_ids_seen.add(eid)
+            encounters_map[eid] = {
+                "type":        "encounter",
+                "encounter_id": eid,
+                "status":      enc.get("status", "in_progress"),
+                "reason":      enc.get("reason", ""),
+                "doctor_id":   enc.get("doctor_id", ""),
+                "date":        enc.get("started_at", enc.get("created_at", "")),
+                "items":       [],
+            }
+
+        # 2. Prescriptions
+        for rx in _emr_store.prescriptions_for_patient(pid):
+            meds = rx.get("medications") or []
+            med_names = ", ".join(m.get("name", "") for m in meds if m.get("name"))
+            event = {
+                "type":        "prescription",
+                "title":       rx.get("diagnosis") or "Prescription",
+                "detail":      f"Medications: {med_names}" if med_names else "",
+                "date":        rx.get("created_at", ""),
+                "id":          rx.get("id", ""),
+                "encounter_id": rx.get("encounter_id"),
+            }
+            eid = rx.get("encounter_id")
+            if eid and eid in encounters_map:
+                encounters_map[eid]["items"].append(event)
+            else:
+                ungrouped.append(event)
+
+        # 3. Lab reports
+        for lr in _emr_store.lab_reports_for_patient(pid):
+            event = {
+                "type":        "lab_report",
+                "title":       lr.get("report_type", "Lab Report"),
+                "detail":      lr.get("notes", ""),
+                "date":        lr.get("created_at", ""),
+                "id":          lr.get("id", ""),
+                "encounter_id": lr.get("encounter_id"),
+            }
+            eid = lr.get("encounter_id")
+            if eid and eid in encounters_map:
+                encounters_map[eid]["items"].append(event)
+            else:
+                ungrouped.append(event)
+
+        # 4. EMR appointments
+        for a in _emr_store.appointments_for_patient(pid):
+            event = {
+                "type":   "appointment",
+                "title":  f"Appointment — {a.get('reason', 'Scheduled visit')}",
+                "detail": f"{a.get('date_time', '')} [{a.get('status', 'scheduled')}]",
+                "date":   a.get("created_at", ""),
+                "id":     a.get("id", ""),
+                "encounter_id": a.get("encounter_id"),
+            }
+            eid = a.get("encounter_id")
+            if eid and eid in encounters_map:
+                encounters_map[eid]["items"].append(event)
+            else:
+                ungrouped.append(event)
+
+        # 5. Doctor notes (direct DB — doctor_notes is outside emr.store)
+        if _HAS_PSYCOPG2:
+            try:
+                import psycopg2 as _pg2
+                import psycopg2.extras as _pg2e
+                _conn = _pg2.connect(DB_URL)
+                _cur  = _conn.cursor(cursor_factory=_pg2e.RealDictCursor)
+                _cur.execute(
+                    "SELECT * FROM doctor_notes WHERE patient_code = %s ORDER BY created_at DESC",
+                    (pid,)
+                )
+                for n in _cur.fetchall():
+                    nd = dict(n)
+                    for _k, _v in nd.items():
+                        if hasattr(_v, "isoformat"):
+                            nd[_k] = _v.isoformat()
+                    event = {
+                        "type":   "note",
+                        "title":  f"Note from Dr. {nd.get('doctor_name', 'Unknown')}",
+                        "detail": nd.get("note_text", ""),
+                        "date":   nd.get("created_at", ""),
+                        "id":     nd.get("note_id", ""),
+                        "encounter_id": nd.get("encounter_id"),
+                    }
+                    eid = nd.get("encounter_id")
+                    if eid and eid in encounters_map:
+                        encounters_map[eid]["items"].append(event)
+                    else:
+                        ungrouped.append(event)
+                _cur.close(); _conn.close()
+            except Exception as _ne:
+                app.logger.debug("patient_timeline notes fetch: %s", _ne)
+
+    except Exception as _e:
+        app.logger.warning("patient_timeline Postgres fetch failed: %s", _e)
+        return jsonify({"timeline": []}), 200
+
+    # ── Assemble final timeline ───────────────────────────────────────────────
+    # Encounter groups come first (sorted by started_at desc), then ungrouped
+    events = []
+    for enc_event in sorted(encounters_map.values(),
+                            key=lambda e: e.get("date", ""), reverse=True):
+        # Sort items within the encounter chronologically
+        enc_event["items"].sort(key=lambda x: x.get("date", ""))
+        events.append(enc_event)
+
+    ungrouped.sort(key=lambda x: x.get("date", ""), reverse=True)
+    events.extend(ungrouped)
+
+    return jsonify({"timeline": events}), 200
+
+
+# â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• 
 #   EMR MODULE PROXY ROUTES  (landing â†’ backend /emr/*)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• 
 
 @app.route("/emr/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 def emr_proxy(subpath):
@@ -2132,73 +2314,6 @@ def doctor_appts_merged():
     all_appts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return jsonify({"appointments": all_appts}), 200
 
-
-@app.route("/api/patient/timeline", methods=["GET"])
-def patient_timeline():
-    """Returns full chronological timeline for the logged-in patient."""
-    if not session.get("logged_in"):
-        return jsonify({"error": "unauthenticated"}), 401
-    pid      = session.get("profile_code", "")
-    username = session.get("username", "")
-
-    events = []
-
-    # Prescriptions
-    for rx in _load_json_safe(EMR_RX):
-        if rx.get("patient_id") == pid:
-            events.append({
-                "type": "prescription", "icon": "ðŸ’Š",
-                "title": rx.get("diagnosis", "Prescription"),
-                "detail": f"Medications: {', '.join(m.get('name','') for m in rx.get('medications', []))}",
-                "date": rx.get("created_at", ""),
-                "id": rx.get("id", "")
-            })
-
-    # Lab Reports
-    for lr in _load_json_safe(EMR_LR):
-        if lr.get("patient_id") == pid:
-            events.append({
-                "type": "lab_report", "icon": "ðŸ§ª",
-                "title": lr.get("report_type", "Lab Report"),
-                "detail": lr.get("notes", ""),
-                "date": lr.get("created_at", ""),
-                "id": lr.get("id", "")
-            })
-
-    # Appointments (both stores)
-    for a in _load_json_safe(APPT_DB):
-        if a.get("patient_id") == pid or a.get("patient_username") == username:
-            events.append({
-                "type": "appointment", "icon": "ðŸ“…",
-                "title": f"Appointment with Dr. {a.get('doctor_username', 'â€”')}",
-                "detail": f"{a.get('date', '')} {a.get('time', '')} â€” {a.get('notes', '')} [{a.get('status','pending')}]",
-                "date": a.get("created_at", ""),
-                "id": a.get("id", "")
-            })
-    for a in _load_json_safe(EMR_APPT):
-        if a.get("patient_id") == pid:
-            events.append({
-                "type": "appointment", "icon": "ðŸ“…",
-                "title": f"Scheduled Appointment",
-                "detail": f"{a.get('date_time', '')} â€” {a.get('reason', '')} [{a.get('status','scheduled')}]",
-                "date": a.get("created_at", ""),
-                "id": a.get("id", "")
-            })
-
-    # Doctor Notes
-    for n in _load_json_safe(NOTES_DB):
-        if n.get("patient_code") == pid or n.get("patient_username") == username:
-            events.append({
-                "type": "note", "icon": "ðŸ“",
-                "title": f"Note from Dr. {n.get('doctor_name', 'â€”')}",
-                "detail": n.get("note_text", ""),
-                "date": n.get("created_at", ""),
-                "id": n.get("note_id", "")
-            })
-
-    # Sort newest first
-    events.sort(key=lambda x: x.get("date", ""), reverse=True)
-    return jsonify({"timeline": events}), 200
 
 
 @app.route("/api/patient/prescriptions-direct", methods=["GET"])
