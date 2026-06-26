@@ -42,8 +42,12 @@
   /* ── Tab switching ───────────────────────────────────────────────── */
   function initTabs() {
     document.querySelectorAll('[data-tab-group]').forEach(function (group) {
-      var tabs    = group.querySelectorAll('[data-tab]');
-      var panels  = group.querySelectorAll('[data-tab-panel]');
+      var tabs  = group.querySelectorAll('[data-tab]');
+      // Panels are siblings of the tab-group element, not descendants.
+      // Search in the parent container so the lookup always works regardless
+      // of DOM depth.
+      var scope  = group.parentElement || group;
+      var panels = scope.querySelectorAll('[data-tab-panel]');
 
       tabs.forEach(function (tab) {
         tab.addEventListener('click', function () {
@@ -51,7 +55,7 @@
           tabs.forEach(function (t)   { t.classList.remove('active'); });
           panels.forEach(function (p) { p.classList.add('hidden'); });
           tab.classList.add('active');
-          var panel = group.querySelector('[data-tab-panel="' + target + '"]');
+          var panel = scope.querySelector('[data-tab-panel="' + target + '"]');
           if (panel) panel.classList.remove('hidden');
         });
       });

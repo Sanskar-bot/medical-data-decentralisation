@@ -13,11 +13,7 @@
       {% set role = session.get('role', 'patient') %}
       <span class="badge badge-{{ role }}">{{ role | capitalize }}</span>
     </div>
-    {% if session.get('profile_code') %}
-      <div class="sidebar-user-code">{{ session.get('profile_code') }}</div>
-    {% elif session.get('doctor_code') %}
-      <div class="sidebar-user-code">{{ session.get('doctor_code') }}</div>
-    {% endif %}
+    {% if session.get('profile_code') %}{# code hidden from sidebar — visible in Profile & Settings #}{% endif %}
   </div>
 
   <!-- ── PATIENT NAVIGATION ── -->

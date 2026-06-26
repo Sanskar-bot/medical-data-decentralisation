@@ -95,6 +95,24 @@
     catch(e) { return s; }
   }
 
+  function expiryBadge(respondedAt) {
+    if (!respondedAt) return '<span class="badge badge-approved">Active</span>';
+    var exp  = new Date(new Date(respondedAt).getTime() + 24 * 3600 * 1000);
+    var now  = new Date();
+    var diff = exp - now;
+    if (diff > 0) {
+      var h    = Math.round(diff / 3600000);
+      var sub  = h < 1 ? 'Expires in <1 h' : ('Expires in ' + h + ' h');
+      return '<span class="badge badge-approved">Active</span>' +
+             '<div style="font-size:var(--t-xs);color:var(--tx3);margin-top:3px;">' + sub + '</div>';
+    } else {
+      var d    = Math.round(-diff / 86400000);
+      var sub2 = d < 1 ? 'Expired today' : ('Expired ' + d + ' day' + (d > 1 ? 's' : '') + ' ago');
+      return '<span class="badge badge-denied">Expired</span>' +
+             '<div style="font-size:var(--t-xs);color:var(--tx3);margin-top:3px;">' + sub2 + '</div>';
+    }
+  }
+
   function renderRequestCard(r, status) {
     var doctorLabel = r.doctor_name || r.doctor_code || '—';
     var actions = '';
@@ -104,7 +122,7 @@
         '<button class="btn-danger btn-sm" id="deny-btn-' + r.request_id + '" type="button">Deny</button>';
     } else if (status === 'approved') {
       actions =
-        '<span class="badge badge-approved">Approved</span>' +
+        expiryBadge(r.responded_at) +
         '<button class="btn-danger btn-sm" id="revoke-btn-' + r.request_id + '" type="button" style="margin-left:var(--sp-2);">Revoke</button>';
     } else {
       actions = '<span class="badge badge-' + status + '">' + status.charAt(0).toUpperCase() + status.slice(1) + '</span>';
@@ -114,13 +132,11 @@
       '<div style="display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);">' +
         '<div>' +
           '<div style="font-size:var(--t-sm); font-weight:600; color:var(--tx1); margin-bottom:var(--sp-1);">Dr. ' + doctorLabel + '</div>' +
-          '<div class="type-mono" style="font-size:var(--t-xs);">' + (r.doctor_code||'') + '</div>' +
         '</div>' +
         '<div class="cluster-3">' + actions + '</div>' +
       '</div>' +
       '<div style="margin-top:var(--sp-3); padding-top:var(--sp-3); border-top:1px solid var(--b1); display:flex; gap:var(--sp-6);">' +
         '<div class="field-row" style="padding:0; border:none; gap:2px;"><div class="field-label">Requested</div><div class="field-value" style="font-size:var(--t-sm);">' + fmt(r.requested_at) + '</div></div>' +
-        '<div class="field-row" style="padding:0; border:none; gap:2px;"><div class="field-label">Status</div><div class="field-value"><span class="badge badge-' + status + '">' + status + '</span></div></div>' +
       '</div>' +
     '</div>';
   }

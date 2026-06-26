@@ -88,6 +88,31 @@
     return '<span class="badge ' + (map[s]||'badge-pending') + '">' + s + '</span>';
   }
 
+  function expiryBadge(respondedAt, expiresAt) {
+    // Prefer explicit expires_at; fall back to responded_at + 24h
+    var exp;
+    if (expiresAt) {
+      exp = new Date(expiresAt);
+    } else if (respondedAt) {
+      exp = new Date(new Date(respondedAt).getTime() + 24 * 3600 * 1000);
+    } else {
+      return '<span class="badge badge-approved">Active</span>';
+    }
+    var now  = new Date();
+    var diff = exp - now;
+    if (diff > 0) {
+      var h = Math.round(diff / 3600000);
+      var sub = h < 1 ? 'Expires in &lt;1 h' : ('Expires in ' + h + ' h');
+      return '<span class="badge badge-approved">Active</span>' +
+             '<div style="font-size:var(--t-xs);color:var(--tx3);margin-top:2px;">' + sub + '</div>';
+    } else {
+      var d = Math.round(-diff / 86400000);
+      var sub2 = d < 1 ? 'Expired today' : ('Expired ' + d + ' day' + (d > 1 ? 's' : '') + ' ago');
+      return '<span class="badge badge-denied">Expired</span>' +
+             '<div style="font-size:var(--t-xs);color:var(--tx3);margin-top:2px;">' + sub2 + '</div>';
+    }
+  }
+
   function render(reqs) {
     var q = (document.getElementById('search-input').value||'').toLowerCase();
     var filtered = q ? reqs.filter(function(r) {
@@ -115,20 +140,22 @@
         return;
       }
       el.innerHTML = rows.map(function(r) {
-        var code = r.profile_code || r.patient_code || '—';
         var patName = r.name || r.patient_name || r.username || '';
-        var viewBtn = '<a href="/doctor/view_patient?code=' + encodeURIComponent(code) + '" class="btn-secondary btn-sm">View</a>';
-        var noteBtn = '<a href="/doctor/view_patient?code=' + encodeURIComponent(code) + '" class="btn-ghost btn-sm">Notes</a>';
+        var username = r.username || r.patient_username || '';
+        var code     = r.profile_code || r.patient_code || '';
+        // Notes deep-link: pre-select this patient in the dropdown
+        var notesHref = '/notes?patient=' + encodeURIComponent(username || code);
+        var viewBtn   = '<a href="/doctor/view_patient?code=' + encodeURIComponent(code) + '" class="btn-secondary btn-sm">View</a>';
+        var noteBtn   = '<a href="' + notesHref + '" class="btn-ghost btn-sm">Notes</a>';
         return '<tr>' +
           '<td>' +
             (patName
               ? '<div style="font-weight:600; color:var(--tx1); font-size:var(--t-sm); margin-bottom:2px;">' + patName + '</div>'
               : '') +
-            '<span class="type-mono" style="font-size:var(--t-xs); color:var(--tx3);">' + code + '</span>' +
           '</td>' +
           '<td style="font-size:var(--t-xs); color:var(--tx3);">' + fmt(r.requested_at||r.timestamp) + '</td>' +
           (r.status === 'approved'
-            ? '<td style="font-size:var(--t-xs); color:var(--tx3);">' + (r.expires_at ? fmt(r.expires_at) : '24 h from approval') + '</td>'
+            ? '<td>' + expiryBadge(r.responded_at, r.expires_at) + '</td>'
             : '<td>' + badge(r.status) + '</td>'
           ) +
           '<td class="cluster-2">' + viewBtn + (r.status === 'approved' ? ' ' + noteBtn : '') + '</td>' +

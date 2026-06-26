@@ -16,9 +16,8 @@
       {{ name.split(' ')[0] }}
     </h1>
     <p class="type-label" style="color:var(--tx3);">
-      {% if role == 'patient' %}Profile code:
-        <span class="type-mono">{{ profile_code }}</span>
-      {% elif role == 'doctor' %}{{ specialization }}{% if hospital %} · {{ hospital }}{% endif %}
+      {% if role == 'doctor' %}{{ specialization }}{% if hospital %} · {{ hospital }}{% endif %}
+      {% elif role == 'patient' %}Your health records are encrypted and secure.
       {% endif %}
     </p>
   </div>
@@ -61,7 +60,7 @@
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--tx3)" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
       </div>
       <div class="stat-card-value stat-card-accent" id="stat-approved">—</div>
-      <div class="stat-card-label">approved requests</div>
+      <div class="stat-card-label">active doctor access</div>
     </div>
 
     <div class="stat-card fade-in" style="animation-delay:120ms">
@@ -155,16 +154,16 @@
           <span class="badge badge-encrypted">Encrypted</span>
         </div>
         <div class="field-row" style="padding-top:0;">
-          <div class="field-label">Profile Code</div>
-          <div class="field-value type-mono">{{ profile_code }}</div>
-        </div>
-        <div class="field-row">
           <div class="field-label">Encryption</div>
           <div class="field-value">AES-256-GCM</div>
         </div>
         <div class="field-row">
           <div class="field-label">Key Storage</div>
           <div class="field-value">Device-local (PBKDF2)</div>
+        </div>
+        <div class="field-row">
+          <div class="field-label">Zero-Trust</div>
+          <div class="field-value">No server-side keys</div>
         </div>
       </div>
     </div>
@@ -326,8 +325,9 @@
         </div>
       </div>
       <div class="input-group">
-        <label class="input-label" for="note-visit-date">Visit date</label>
-        <input class="input-field" type="date" id="note-visit-date">
+        <p class="type-label" style="color:var(--tx3); font-size:var(--t-xs); margin:0;">
+          Visit date recorded automatically at submission time.
+        </p>
       </div>
       <div class="input-group">
         <label class="input-label" for="note-text">Note</label>
@@ -464,11 +464,18 @@
         var approved = reqs.filter(function(r) { return r.status === 'approved'; });
         var denied   = reqs.filter(function(r) { return r.status === 'denied'; });
 
-        document.getElementById('stat-pending').textContent = pending.length;
-        document.getElementById('stat-approved').textContent = approved.length;
-        document.getElementById('tab-count-pending').textContent = pending.length;
+        // Count only non-expired approved entries for the Active Doctor Access stat
+        var now = Date.now();
+        var activeCount = approved.filter(function(r) {
+          if (!r.responded_at) return true; // assume active if no responded_at
+          return (new Date(r.responded_at).getTime() + 24 * 3600 * 1000) > now;
+        }).length;
+
+        document.getElementById('stat-pending').textContent  = pending.length;
+        document.getElementById('stat-approved').textContent = activeCount;
+        document.getElementById('tab-count-pending').textContent  = pending.length;
         document.getElementById('tab-count-approved').textContent = approved.length;
-        document.getElementById('tab-count-denied').textContent = denied.length;
+        document.getElementById('tab-count-denied').textContent   = denied.length;
 
         renderRequests('pending-list', pending, 'pending');
         renderRequests('approved-list', approved, 'approved');
@@ -477,10 +484,29 @@
       .catch(function() {});
     }
 
+    function expiryBadge(respondedAt) {
+      if (!respondedAt) return '';
+      var exp  = new Date(new Date(respondedAt).getTime() + 24 * 3600 * 1000);
+      var now  = new Date();
+      var diff = exp - now;
+      if (diff > 0) {
+        var h = Math.round(diff / 3600000);
+        var sub = h < 1 ? 'Expires in &lt;1 h' : ('Expires in ' + h + ' h');
+        return '<span class="badge badge-approved" style="margin-left:var(--sp-2);">Active</span>' +
+               '<div style="font-size:var(--t-xs);color:var(--tx3);margin-top:2px;">' + sub + '</div>';
+      } else {
+        var d = Math.round(-diff / 86400000);
+        var sub2 = d < 1 ? 'Expired today' : ('Expired ' + d + ' day' + (d > 1 ? 's' : '') + ' ago');
+        return '<span class="badge badge-denied" style="margin-left:var(--sp-2);">Expired</span>' +
+               '<div style="font-size:var(--t-xs);color:var(--tx3);margin-top:2px;">' + sub2 + '</div>';
+      }
+    }
+
     function renderRequests(containerId, reqs, status) {
       var el = document.getElementById(containerId);
       if (!reqs.length) {
-        el.innerHTML = '<div class="empty-state"><div class="empty-state-title">No ' + status + ' requests</div></div>';
+        var msgs = {pending:'No pending requests', approved:'No approved requests', denied:'No denied requests'};
+        el.innerHTML = '<div class="empty-state"><div class="empty-state-title">' + (msgs[status] || 'None') + '</div></div>';
         return;
       }
       var rows = reqs.map(function(r) {
@@ -490,21 +516,23 @@
             '<button class="btn-primary btn-sm" onclick="approveRequest(\'' + r.request_id + '\',\'' + r.doctor_code + '\')" type="button">Approve</button> ' +
             '<button class="btn-danger btn-sm" onclick="denyRequest(\'' + r.request_id + '\',\'' + r.doctor_code + '\')" type="button">Deny</button>';
         } else if (status === 'approved') {
-          actions = '<span class="badge badge-approved">Approved</span>';
+          actions = expiryBadge(r.responded_at);
         } else {
           actions = '<span class="badge badge-denied">Denied</span>';
         }
         return '<tr>' +
-          '<td>' + (r.doctor_name || r.doctor_code || '—') + '</td>' +
-          '<td class="type-mono" style="font-size:var(--t-xs);">' + (r.doctor_code || '—') + '</td>' +
+          '<td><strong style="color:var(--tx1);">' + (r.doctor_name || '—') + '</strong></td>' +
           '<td>' + formatDate(r.requested_at) + '</td>' +
           '<td class="cluster-2">' + actions + '</td>' +
           '</tr>';
       }).join('');
+      var headers = status === 'approved'
+        ? '<th>Doctor</th><th>Requested</th><th>Access Status</th>'
+        : '<th>Doctor</th><th>Requested</th><th>Actions</th>';
       el.innerHTML =
         '<div class="card" style="padding:0;overflow:hidden;">' +
         '<table class="data-table" aria-label="' + status + ' requests">' +
-        '<thead><tr><th>Doctor</th><th>Code</th><th>Requested</th><th>Actions</th></tr></thead>' +
+        '<thead><tr>' + headers + '</tr></thead>' +
         '<tbody>' + rows + '</tbody></table></div>';
     }
 
@@ -647,7 +675,6 @@
     if (addNoteBtn) addNoteBtn.addEventListener('click', function() {
       var raw      = (document.getElementById('note-patient-code').value||'').trim();
       var noteType = document.getElementById('note-type').value;
-      var visitDate= document.getElementById('note-visit-date').value;
       var noteText = (document.getElementById('note-text').value||'').trim();
       if (!raw || !noteText) { showAlert(noteAlertEl, 'Patient identifier and note text are required.', 'error'); return; }
       addNoteBtn.disabled = true;
@@ -660,7 +687,8 @@
         return fetch('/doctor/add_note', {
           method: 'POST',
           headers: authHeaders(),
-          body: JSON.stringify({profile_code: code, note_type: noteType, visit_date: visitDate, note_text: noteText})
+          // visit_date omitted — backend captures server time to prevent backdating
+          body: JSON.stringify({profile_code: code, note_type: noteType, note_text: noteText})
         }).then(function(r) { return r.json().then(function(d){ return {ok:r.ok,data:d}; }); });
       })
       .then(function(res) {

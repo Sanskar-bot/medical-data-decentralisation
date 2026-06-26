@@ -830,7 +830,8 @@ def patient_requests():
                 pt = cur.fetchone()
                 if pt:
                     cur.execute("""
-                        SELECT a.id, a.status, a.created_at, a.doctor_id, a.doctor_email,
+                        SELECT a.id, a.status, a.created_at, a.responded_at,
+                               a.doctor_id, a.doctor_email,
                                u.doctor_code, u.name AS doctor_name, u.username AS doctor_username
                         FROM access_db a
                         LEFT JOIN users u ON a.doctor_id = u.id
@@ -847,6 +848,7 @@ def patient_requests():
                                        x.get("doctor_email") or "Doctor")
                         doc_code    = (x.get("doctor_code") or x.get("doctor_email") or
                                        str(x.get("doctor_id", "")))
+                        responded   = x.get("responded_at")
                         normalized.append({
                             "id":           rid,
                             "request_id":   rid,
@@ -854,6 +856,7 @@ def patient_requests():
                             "doctor_name":  doc_display,
                             "status":       x.get("status", "pending"),
                             "requested_at": x["created_at"].isoformat() if hasattr(x.get("created_at"), "isoformat") else str(x.get("created_at", "")),
+                            "responded_at": responded.isoformat() if responded and hasattr(responded, "isoformat") else str(responded or ""),
                         })
                 cur.close(); conn.close()
             except Exception as e:
@@ -921,45 +924,7 @@ def patient_approve():
                     return jsonify(data), rb.status_code
             except Exception as e:
                 app.logger.debug("patient_approve JWT path: %s", e)
-
-        # â”€â”€ Path 2: Legacy crypto (only if local profile + doctor public key exist) â”€â”€
-        try:
-            from common.crypto_utils import (
-                derive_kek_from_password, unwrap_key_with_kek,
-                aesgcm_encrypt, rsa_load_private, rsa_load_public, rsa_wrap_key,
-            )
-            req_r = http.get(f"{BACKEND}/request_status/{request_id}", headers=_headers(), timeout=8)
-            if req_r.ok:
-                req_entry   = req_r.json()
-                doc_pub_pem = req_entry.get("doctor_public_pem", "")
-                if doc_pub_pem and os.path.exists(upath):
-                    local    = json.load(open(upath, encoding="utf-8"))
-                    kp       = local.get("key_protection", {})
-                    salt     = b64decode(kp["salt_b64"])
-                    kek, _   = derive_kek_from_password(pw, salt=salt)
-                    K_data   = unwrap_key_with_kek(kek, kp["wrapped_k"])
-                    priv_pem = SecureKeyStore.load_private_key(f"patient__{profile_code}")
-                    priv     = rsa_load_private(priv_pem)
-                    doc_pub  = rsa_load_public(doc_pub_pem.encode())
-                    from os import urandom
-                    T        = urandom(32)
-                    enc_kdata= aesgcm_encrypt(T, K_data)
-                    wrapped_T= rsa_wrap_key(doc_pub, T)
-                    resp = http.post(
-                        f"{BACKEND}/approve_request",
-                        json={"request_id": request_id, "patient_code": profile_code,
-                              "doctor_code": doc_code, "wrapped_key": wrapped_T,
-                              "encrypted_kdata_with_temp": enc_kdata},
-                        headers=_headers(), timeout=10,
-                    )
-                    try:
-                        return jsonify(resp.json()), resp.status_code
-                    except Exception:
-                        return jsonify({"status": "approved"}), 200
-        except Exception as e:
-            app.logger.debug("patient_approve legacy path: %s", e)
-
-        # â”€â”€ Path 3: Direct psycopg2 UPDATE (ownership verified via profile_code) â”€
+        # -- Fallback: direct psycopg2 approve (ownership verified via profile_code) --
         if _HAS_PSYCOPG2:
             try:
                 conn = psycopg2.connect(DB_URL)
@@ -986,7 +951,7 @@ def patient_approve():
         return jsonify({"error": str(e)}), 500
 
 
-# â”€â”€ Deny access request â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Deny access request -------------------------------------------------------
 @app.route("/patient/deny", methods=["POST"])
 def patient_deny():
     err = _patient_session_check()
@@ -1046,7 +1011,7 @@ def patient_deny():
         return jsonify({"error": str(e)}), 502
 
 
-# â”€â”€ Doctor notes (pull â†’ save locally â†’ delete from server) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Doctor notes (pull -> save locally -> delete from server) -----------------
 @app.route("/patient/notes")
 def patient_notes():
     err = _patient_session_check()
@@ -1070,22 +1035,38 @@ def patient_notes():
             except Exception:
                 local_notes = []
 
-        local_ids = {n.get("id") for n in local_notes}
+        # Build dedup set — handle both 'id' and 'note_id' key names
+        local_ids = set()
+        for n in local_notes:
+            nid = n.get("id") or n.get("note_id")
+            if nid:
+                local_ids.add(nid)
 
         # 2. Fetch new notes from server (temporary relay)
+        # BUG FIX: backend returns a plain JSON list, NOT {"notes": [...]}
+        # Calling .get("notes", []) on a list raises AttributeError (silently caught
+        # as except Exception -> server_notes = []), so notes were never fetched.
         try:
             r = http.get(f"{BACKEND}/doctor_notes/patient/{profile_code}",
                          headers=_headers(), timeout=8)
-            server_notes = r.json().get("notes", []) if r.ok else []
+            if r.ok:
+                body = r.json()
+                server_notes = body if isinstance(body, list) else body.get("notes", [])
+            else:
+                server_notes = []
         except Exception:
             server_notes = []
 
         # 3. Pull each new note onto the patient's device
         newly_pulled = []
         for note in server_notes:
-            note_id = note.get("id", "")
+            # BUG FIX: backend field is 'note_id', not 'id'
+            note_id = note.get("note_id") or note.get("id") or ""
+            if not note_id:
+                continue  # skip malformed notes
+
             if note_id in local_ids:
-                # Already saved locally â€” still delete the server copy
+                # Already saved locally -- still delete the server copy
                 try:
                     http.delete(f"{BACKEND}/doctor_notes/{note_id}",
                                 headers=_headers(), timeout=6)
@@ -1101,15 +1082,16 @@ def patient_notes():
                                   headers=_headers(), timeout=15)
                     if ri.ok:
                         local_img_path = os.path.join(images_dir, img_filename)
-                        with open(local_img_path, "wb") as f:
-                            f.write(ri.content)
+                        with open(local_img_path, "wb") as fimg:
+                            fimg.write(ri.content)
                     else:
                         img_filename = ""   # image unavailable
                 except Exception:
                     img_filename = ""
 
-            # Save note locally (with local image reference)
-            local_note = {**note, "image_filename": img_filename}
+            # BUG FIX: normalise both 'id' and 'note_id' keys so dedup works on next sync
+            local_note = {**note, "id": note_id, "note_id": note_id,
+                          "image_filename": img_filename}
             local_notes.append(local_note)
             local_ids.add(note_id)
             newly_pulled.append(note_id)
@@ -1136,7 +1118,6 @@ def patient_notes():
         return jsonify({"error": str(e)}), 502
 
 
-# â”€â”€ Serve patient-local note images from their own device â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/patient/note_image/<filename>")
 def patient_local_note_image(filename):
     # Allow both patients (own notes) and doctors (reading patient notes with access)
@@ -1216,7 +1197,7 @@ def patient_history():
         return jsonify({"error": str(e), "history": []}), 200
 
 
-# â”€â”€ Full audit log proxy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ——— Full audit log proxy ————————————————————————————————————————————————————————————
 @app.route("/portal/audit-log")
 def portal_audit_log():
     """Proxy to the server's audit/log endpoint, filtering to the current user."""
@@ -1239,7 +1220,7 @@ def portal_audit_log():
 
 
 
-# â”€â”€ Patient: list all registered doctors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ——— Patient: list all registered doctors ————————————————————————————————————————————
 @app.route("/patient/doctors", methods=["GET"])
 def patient_list_doctors():
     """Return all registered doctors from PostgreSQL users table."""
@@ -1360,15 +1341,16 @@ def doctor_load_profile():
 
 # â”€â”€ Request patient access â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/request_access", methods=["POST"])
+# ── Request patient access ─────────────────────────────────────────────────────────
+@app.route("/doctor/request_access", methods=["POST"])
 def doctor_request_access():
-    """Send an access request to a patient â€” no password required.
+    """Send an access request to a patient - no password required.
     Uses the JWT-authenticated /access/request endpoint on the backend.
     """
     err = _doctor_session_check()
     if err: return err
     try:
         d = request.get_json(force=True) or {}
-        # Accept either key â€” JS sends 'profile_code', legacy callers send 'patient_code'
         raw_code = d.get("profile_code") or d.get("patient_code") or ""
         pat_code = _resolve_patient_code(raw_code.strip())
         if not pat_code:
@@ -1376,9 +1358,8 @@ def doctor_request_access():
 
         jwt = session.get("jwt_token", "")
         if not jwt:
-            return jsonify({"error": "Doctor session expired â€” please log in again"}), 401
+            return jsonify({"error": "Doctor session expired - please log in again"}), 401
 
-        # Resolve profile_code â†’ internal patient UUID for /access/request
         patient_uid = None
         if _HAS_PSYCOPG2:
             try:
@@ -1396,24 +1377,23 @@ def doctor_request_access():
                 app.logger.warning("doctor_request_access uid lookup: %s", e)
 
         if not patient_uid:
-            # Fallback: try backend resolve
             try:
-                rx = http.get(f"{BACKEND}/api/resolve_username/{raw_code.strip()}",
-                              headers=_headers(), timeout=5)
+                rx = http.get(
+                    f"{BACKEND}/api/resolve_username/{raw_code.strip()}",
+                    headers=_headers(), timeout=5
+                )
                 if rx.ok:
                     patient_uid = rx.json().get("id") or rx.json().get("uid") or pat_code
             except Exception:
-                patient_uid = pat_code  # last resort: use profile_code as-is
+                patient_uid = pat_code
 
         hdrs = {**_headers(), "Authorization": f"Bearer {jwt}"}
-
         rb = http.post(
             f"{BACKEND}/access/request",
             json={"patient_id": patient_uid},
             headers=hdrs, timeout=10,
         )
 
-        # Auto-refresh on expired token then retry once
         if rb.status_code == 401:
             try:
                 err_str = rb.json().get("error", "")
@@ -1429,7 +1409,6 @@ def doctor_request_access():
                         headers=hdrs, timeout=10,
                     )
 
-        # Safe JSON parse â€” backend may return empty body on some paths
         try:
             data = rb.json()
         except Exception:
@@ -1440,6 +1419,7 @@ def doctor_request_access():
         return jsonify(data), rb.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 502
+
 
 
 
@@ -1576,16 +1556,18 @@ def patient_timeline_rich():
     }), 200
 
 
-# â”€â”€ Add clinical note â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Add clinical note ----------------------------------------------------------
 @app.route("/doctor/add_note", methods=["POST"])
 def doctor_add_note():
     err = _doctor_session_check()
     if err: return err
     try:
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
         d = request.get_json(force=True) or {}
 
-        # Resolve patient username â†’ profile_code
-        pat_code = _resolve_patient_code((d.get("patient_code") or d.get("profile_code") or "").strip())
+        pat_code = _resolve_patient_code(
+            (d.get("patient_code") or d.get("profile_code") or "").strip()
+        )
         if not pat_code:
             return jsonify({"error": "Patient username is required"}), 400
 
@@ -1593,8 +1575,45 @@ def doctor_add_note():
         if not doc_code:
             return jsonify({"error": "Doctor code missing from session. Please log out and log in again."}), 401
 
-        # Build note payload using session-cached doctor metadata
-        # (avoids the fragile proxy â†’ doctor_portal â†’ password-verify chain)
+        # Security: enforce active (non-expired) access
+        if _HAS_PSYCOPG2:
+            try:
+                conn = psycopg2.connect(DB_URL)
+                cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute(
+                    "SELECT id FROM users WHERE profile_code=%s AND role='patient' LIMIT 1",
+                    (pat_code,)
+                )
+                pt_row = cur.fetchone()
+                if pt_row:
+                    cur.execute(
+                        "SELECT id FROM users WHERE doctor_code=%s OR LOWER(username)=LOWER(%s) LIMIT 1",
+                        (doc_code, doc_code)
+                    )
+                    doc_row = cur.fetchone()
+                    if doc_row:
+                        cur.execute(
+                            "SELECT responded_at FROM access_db "
+                            "WHERE doctor_id=%s AND patient_id=%s AND status='approved' LIMIT 1",
+                            (str(doc_row["id"]), str(pt_row["id"]))
+                        )
+                        acc = cur.fetchone()
+                        if not acc:
+                            cur.close(); conn.close()
+                            return jsonify({"error": "No approved access for this patient."}), 403
+                        responded = acc.get("responded_at")
+                        if responded:
+                            exp = responded.replace(tzinfo=_tz.utc) + _td(hours=24)
+                            if _dt.now(_tz.utc) > exp:
+                                cur.close(); conn.close()
+                                return jsonify({"error": "Your access for this patient has expired. Ask the patient to re-approve."}), 403
+                cur.close(); conn.close()
+            except Exception as _ae:
+                app.logger.debug("doctor_add_note access check: %s", _ae)
+
+        # visit_date always uses server UTC time - prevents backdating
+        server_visit_date = _dt.utcnow().strftime("%Y-%m-%d")
+
         note_payload = {
             "patient_code":          pat_code,
             "doctor_code":           doc_code,
@@ -1603,19 +1622,13 @@ def doctor_add_note():
             "doctor_hospital":       session.get("hospital", ""),
             "note_type":             d.get("note_type", "General"),
             "note_text":             d.get("note_text", ""),
-            "visit_date":            d.get("visit_date", ""),
+            "visit_date":            server_visit_date,
         }
 
-        # POST directly to backend â€” no password re-verification needed
-        # (user is already authenticated via Flask session)
-        jwt_tok = session.get('jwt_token', '')
+        jwt_tok = session.get("jwt_token", "")
         hdrs = {**_headers()}
         if jwt_tok:
-            hdrs['Authorization'] = f'Bearer {jwt_tok}'
-        jwt_tok = session.get('jwt_token', '')
-        hdrs = {**_headers()}
-        if jwt_tok:
-            hdrs['Authorization'] = f'Bearer {jwt_tok}'
+            hdrs["Authorization"] = f"Bearer {jwt_tok}"
         rb = http.post(
             f"{BACKEND}/doctor_notes/add",
             json=note_payload,
@@ -1626,16 +1639,39 @@ def doctor_add_note():
             resp_data = rb.json()
         except Exception:
             resp_data = {
-                "error": f"Backend error (HTTP {rb.status_code}). "
-                         f"Ensure you have active approved access for patient '{pat_code}'."
+                "error": (
+                    f"Backend error (HTTP {rb.status_code}). "
+                    f"Ensure you have active approved access for patient '{pat_code}'."
+                )
             }
+
+        # Audit log on success
+        if rb.status_code in (200, 201) and _HAS_PSYCOPG2:
+            try:
+                conn2 = psycopg2.connect(DB_URL)
+                cur2  = conn2.cursor()
+                cur2.execute(
+                    "INSERT INTO audit_log (action, actor, target, detail, ip) "
+                    "VALUES (%s,%s,%s,%s,%s)",
+                    (
+                        "ADD_CLINICAL_NOTE",
+                        doc_code,
+                        pat_code,
+                        f"note_type={note_payload['note_type']}, visit_date={server_visit_date}",
+                        request.remote_addr or "",
+                    )
+                )
+                conn2.commit()
+                cur2.close(); conn2.close()
+            except Exception as _al:
+                app.logger.debug("doctor_add_note audit log: %s", _al)
+
         return jsonify(resp_data), rb.status_code
 
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
 
-# â”€â”€ List doctor notes for a patient â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/notes/<patient_code>")
 def doctor_notes_list(patient_code):
     err = _doctor_session_check()
@@ -1895,6 +1931,73 @@ def doctor_access_expiry(patient_code):
         return jsonify({"expires_at": None}), 200
     except Exception as e:
         return jsonify({"expires_at": None, "error": str(e)}), 200
+
+
+# Doctor: respond to appointment — URL that appointments.html frontend actually calls.
+# The route /api/doctor/appointment-requests/<id>/respond above is the backend-proxy
+# variant; this one works directly on the local JSON store so it never needs a
+# backend round-trip for patient-submitted requests.
+@app.route("/api/doctor/appointment-respond/<req_id>", methods=["POST"])
+def doctor_appt_respond_direct(req_id):
+    """Accept / reject / complete an appointment.
+
+    Primary  → update appointments_db.json (patient-submitted requests).
+    Fallback → forward to backend PostgreSQL via JWT.
+    """
+    if not session.get("logged_in") or session.get("role") != "doctor":
+        return jsonify({"error": "unauthenticated"}), 401
+
+    d      = request.get_json(force=True) or {}
+    status = d.get("status", "")
+    if status not in ("accepted", "rejected", "completed", "rescheduled"):
+        return jsonify({"error": "invalid_status"}), 400
+
+    username = session.get("username", "")
+    doc_code = session.get("doctor_code", "")
+
+    # ── Path 1: flat JSON file (patient-submitted appointments) ──────────────
+    # _load_json_safe / _save_json_safe / APPT_DB are defined later in this
+    # module but resolved at call-time, so referencing them here is safe.
+    try:
+        entries = _load_json_safe(APPT_DB)
+        if not isinstance(entries, list):
+            entries = []
+        updated = False
+        for entry in entries:
+            if entry.get("id") == req_id and (
+                entry.get("doctor_username", "").lower() == username.lower()
+                or entry.get("doctor_id") == doc_code
+            ):
+                entry["status"] = status
+                updated = True
+                break
+        if updated:
+            _save_json_safe(APPT_DB, entries)
+            return jsonify({"message": "updated"}), 200
+    except Exception as _je:
+        app.logger.debug("doctor_appt_respond_direct JSON path: %s", _je)
+
+    # ── Path 2: backend PostgreSQL via JWT ────────────────────────────────────
+    try:
+        jwt_tok = session.get("jwt_token", "")
+        if jwt_tok:
+            hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
+            r = http.post(
+                f"{BACKEND}/api/doctor/appointment-requests/{req_id}/respond",
+                json={"status": status},
+                headers=hdrs,
+                timeout=8,
+            )
+            if r.ok:
+                return jsonify({"message": "updated"}), 200
+            try:
+                return jsonify(r.json()), r.status_code
+            except Exception:
+                return jsonify({"error": f"Backend {r.status_code}"}), r.status_code
+    except Exception as _be:
+        app.logger.debug("doctor_appt_respond_direct backend path: %s", _be)
+
+    return jsonify({"error": "Appointment not found or not authorized"}), 404
 
 
 @app.route("/api/patient/timeline", methods=["GET"])
@@ -2569,6 +2672,59 @@ def patient_revoke():
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
+# -- Active patients for notes dropdown ----------------------------------------
+@app.route("/api/doctor/active_patients", methods=["GET"])
+def api_doctor_active_patients():
+    """Return patients that have granted this doctor active (non-expired) access.
+    Used by the Add Clinical Note form to populate the patient dropdown.
+    Access is considered active if responded_at + 24 hours > now().
+    """
+    err = _doctor_session_check()
+    if err: return err
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+    doc_code = session.get("doctor_code", "")
+    patients = []
+
+    if _HAS_PSYCOPG2:
+        try:
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            # Resolve doctor UUID
+            cur.execute(
+                "SELECT id FROM users WHERE doctor_code=%s OR LOWER(username)=LOWER(%s) LIMIT 1",
+                (doc_code, doc_code)
+            )
+            doc_row = cur.fetchone()
+            if doc_row:
+                doc_uuid = str(doc_row["id"])
+                # Fetch approved accesses within last 24 hours
+                cur.execute("""
+                    SELECT a.responded_at,
+                           p.profile_code, p.username, p.name, p.email
+                    FROM access_db a
+                    JOIN users p ON a.patient_id::text = p.id::text
+                    WHERE (a.doctor_id::text = %s OR a.doctor_id = %s)
+                      AND a.status = 'approved'
+                      AND a.responded_at IS NOT NULL
+                      AND a.responded_at > NOW() - INTERVAL '24 hours'
+                    ORDER BY a.responded_at DESC
+                """, (doc_uuid, doc_code))
+                for row in cur.fetchall():
+                    patients.append({
+                        "profile_code": row.get("profile_code", ""),
+                        "patient_code": row.get("profile_code", ""),
+                        "username":     row.get("username", ""),
+                        "name":         row.get("name", ""),
+                        "email":        row.get("email", ""),
+                    })
+            cur.close(); conn.close()
+        except Exception as e:
+            app.logger.debug("api_doctor_active_patients: %s", e)
+
+    return jsonify({"patients": patients}), 200
+
+
 
 # â”€â”€ Doctor: my patients list (approved + pending) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/my_requests", methods=["GET"])
@@ -2595,14 +2751,19 @@ def doctor_my_requests():
                     doc_uuid = str(doc_row["id"])
                     # Query by BOTH UUID and doctor_code to handle old + new rows
                     cur.execute("""
-                        SELECT a.id as req_id, a.status, a.created_at,
+                        SELECT a.id as req_id, a.status, a.created_at, a.responded_at,
                                a.patient_id,
-                               p.profile_code, p.username, p.name, p.email
+                               p.profile_code, p.username, p.name, p.email,
+                               wk.temp_key_expires_at
                         FROM access_db a
                         LEFT JOIN users p ON a.patient_id::text = p.id::text
+                        LEFT JOIN wrapped_keys wk ON (
+                            wk.profile_code = p.profile_code
+                            AND wk.doctor_code = %s
+                        )
                         WHERE a.doctor_id::text = %s OR a.doctor_id = %s
                         ORDER BY a.created_at DESC
-                    """, (doc_uuid, doc_code))
+                    """, (doc_code, doc_uuid, doc_code))
                     seen = set()
                     for row in cur.fetchall():
                         rid = str(row.get("req_id", ""))
@@ -2623,7 +2784,11 @@ def doctor_my_requests():
                                 cur2.close()
                                 if r2:
                                     pc = r2.get("profile_code") or ""
-                        ts = row["created_at"].isoformat() if row.get("created_at") else ""
+                        ts          = row["created_at"].isoformat() if row.get("created_at") else ""
+                        responded   = row.get("responded_at")
+                        resp_iso    = responded.isoformat() if responded and hasattr(responded, "isoformat") else str(responded or "")
+                        expires_raw = row.get("temp_key_expires_at")
+                        exp_iso     = expires_raw.isoformat() if expires_raw and hasattr(expires_raw, "isoformat") else str(expires_raw or "")
                         reqs.append({
                             "id":           rid,
                             "request_id":   rid,
@@ -2636,6 +2801,8 @@ def doctor_my_requests():
                             "requested_at": ts,
                             "timestamp":    ts,
                             "approved_at":  ts,
+                            "responded_at": resp_iso,
+                            "expires_at":   exp_iso,
                             "doctor_code":  doc_code,
                         })
 

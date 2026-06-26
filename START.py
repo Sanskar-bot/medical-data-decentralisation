@@ -21,20 +21,43 @@ PIDFILE = os.path.join(ROOT, "medvault_pids.json")
 # ── Helper: start a service detached from this terminal ──────────────────────
 def start_background(label, script, port):
     if sys.platform == "win32":
-        # DETACHED_PROCESS: child runs independently of the parent terminal
-        DETACHED = 0x00000008
+        # DETACHED_PROCESS + CREATE_NEW_PROCESS_GROUP: no console
+        # CREATE_BREAKAWAY_FROM_JOB: escapes the IDE's job object so the child
+        # survives after this launcher process exits.
+        DETACHED                = 0x00000008
         CREATE_NEW_PROCESS_GROUP = 0x00000200
+        CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+        log_path = os.path.join(ROOT, f"logs_{label.replace(' ','_')}.log")
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["FLASK_ENV"]        = "development"
-        p = subprocess.Popen(
-            [PY, script],
-            cwd=ROOT,
-            env=env,
-            creationflags=DETACHED | CREATE_NEW_PROCESS_GROUP,
-            stdout=open(os.path.join(ROOT, f"logs_{label.replace(' ','_')}.log"), "w"),
-            stderr=subprocess.STDOUT,
-        )
+        try:
+            p = subprocess.Popen(
+                [PY, script],
+                cwd=ROOT,
+                env=env,
+                creationflags=DETACHED | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB,
+                stdout=open(log_path, "w", encoding="utf-8"),
+                stderr=subprocess.STDOUT,
+            )
+        except OSError:
+            # Job object disallows breakaway — fall back to PowerShell Start-Process
+            # which always runs outside the current job object.
+            ps_cmd = (
+                f"Start-Process -FilePath '{PY}' "
+                f"-ArgumentList '{script}' "
+                f"-WorkingDirectory '{ROOT}' "
+                f"-WindowStyle Hidden "
+                f"-RedirectStandardOutput '{log_path}'"
+            )
+            subprocess.Popen(
+                ["powershell", "-NoProfile", "-NonInteractive",
+                 "-WindowStyle", "Hidden", "-Command", ps_cmd],
+                cwd=ROOT, creationflags=CREATE_NEW_PROCESS_GROUP,
+            )
+            # Return a dummy object — PID tracking won't work for this path
+            class _Dummy: pid = None
+            return _Dummy()
     else:
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"

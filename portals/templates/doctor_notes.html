@@ -46,36 +46,52 @@
       <div class="note-form" id="add-note-section">
         <h2 class="type-h3" style="margin-bottom:var(--sp-5);">Add Note</h2>
         <div id="form-alert" style="display:none;"></div>
-        <div class="grid-2">
-          <div class="input-group">
-            <label class="input-label" for="note-patient">Patient username or code</label>
-            <input class="input-field" type="text" id="note-patient" placeholder="patient_username">
-          </div>
-          <div class="input-group">
-            <label class="input-label" for="note-type">Note type</label>
-            <select class="input-field" id="note-type">
-              <option value="General">General</option>
-              <option value="Diagnosis">Diagnosis</option>
-              <option value="Prescription">Prescription</option>
-              <option value="Lab Result">Lab Result</option>
-              <option value="Follow-up">Follow-up</option>
-              <option value="Referral">Referral</option>
-            </select>
+
+        <!-- No-access empty state (hidden until JS runs) -->
+        <div id="no-access-state" style="display:none;">
+          <div class="empty-state">
+            <div class="empty-state-title">No active patient access</div>
+            <div class="empty-state-desc">You don’t currently have active approved access to any patient. Ask a patient to grant you access first (valid for 24 hours).</div>
           </div>
         </div>
-        <div class="input-group">
-          <label class="input-label" for="note-visit-date">Visit date</label>
-          <input class="input-field" type="date" id="note-visit-date">
+
+        <!-- Form (hidden until patients loaded) -->
+        <div id="note-form-body" style="display:none;">
+          <div class="grid-2">
+            <div class="input-group">
+              <label class="input-label" for="note-patient">Patient</label>
+              <select class="input-field" id="note-patient">
+                <option value="">Select a patient…</option>
+              </select>
+              <span class="input-hint" id="patient-load-hint" style="color:var(--tx3);">Loading active patients…</span>
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="note-type">Note type</label>
+              <select class="input-field" id="note-type">
+                <option value="General">General</option>
+                <option value="Diagnosis">Diagnosis</option>
+                <option value="Prescription">Prescription</option>
+                <option value="Lab Result">Lab Result</option>
+                <option value="Follow-up">Follow-up</option>
+                <option value="Referral">Referral</option>
+              </select>
+            </div>
+          </div>
+          <div class="input-group">
+            <p class="type-label" style="color:var(--tx3); font-size:var(--t-xs); margin:0;">
+              Visit date: today — recorded automatically at submission time.
+            </p>
+          </div>
+          <div class="input-group">
+            <label class="input-label" for="note-text">Clinical note</label>
+            <textarea class="input-field" id="note-text" rows="6" placeholder="Clinical observations, diagnosis, treatment plan, follow-up instructions…"></textarea>
+          </div>
+          <button class="btn-primary" id="add-note-btn" type="button">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            <span id="note-btn-text">Add note</span>
+            <span id="note-spinner" class="spinner" style="display:none;"></span>
+          </button>
         </div>
-        <div class="input-group">
-          <label class="input-label" for="note-text">Clinical note</label>
-          <textarea class="input-field" id="note-text" rows="6" placeholder="Clinical observations, diagnosis, treatment plan, follow-up instructions…"></textarea>
-        </div>
-        <button class="btn-primary" id="add-note-btn" type="button">
-          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
-          <span id="note-btn-text">Add note</span>
-          <span id="note-spinner" class="spinner" style="display:none;"></span>
-        </button>
       </div>
     </div>
 
@@ -180,12 +196,71 @@
 
   // ── DOCTOR: add note ──────────────────────────────────────────
   if (ROLE === 'doctor') {
+
+    // Pre-select patient from ?patient= query param
+    var urlParams   = new URLSearchParams(window.location.search);
+    var prePatient  = urlParams.get('patient') || '';
+
+    // Load active patients into the dropdown
+    fetch('/api/doctor/active_patients', {
+      headers: {'Authorization': 'Bearer ' + JWT}
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var patients = d.patients || [];
+      var hint = document.getElementById('patient-load-hint');
+      if (hint) hint.textContent = '';
+
+      if (!patients.length) {
+        document.getElementById('no-access-state').style.display = 'block';
+        return;
+      }
+
+      var sel = document.getElementById('note-patient');
+      sel.innerHTML = '<option value="">Select a patient…</option>';
+      patients.forEach(function(p) {
+        var opt = document.createElement('option');
+        opt.value   = p.profile_code || p.username || p.patient_code || '';
+        opt.dataset.patientCode = opt.value;
+        var label   = p.name || p.username || p.profile_code || 'Unknown';
+        opt.textContent = label;
+        sel.appendChild(opt);
+      });
+
+      // Pre-select if ?patient= param was provided
+      if (prePatient) {
+        for (var i = 0; i < sel.options.length; i++) {
+          var v = sel.options[i].value;
+          if (v === prePatient || v.toLowerCase() === prePatient.toLowerCase()) {
+            sel.selectedIndex = i;
+            break;
+          }
+        }
+      }
+
+      document.getElementById('note-form-body').style.display = 'block';
+    })
+    .catch(function() {
+      // On error fall back to showing the form without patient list
+      document.getElementById('note-form-body').style.display = 'block';
+      if (document.getElementById('patient-load-hint'))
+        document.getElementById('patient-load-hint').textContent = 'Could not load patients — type a code manually.';
+      // Re-render select as a text input fallback
+      var sel = document.getElementById('note-patient');
+      var inp = document.createElement('input');
+      inp.className = 'input-field';
+      inp.type      = 'text';
+      inp.id        = 'note-patient';
+      inp.placeholder = 'patient_username';
+      sel.parentNode.replaceChild(inp, sel);
+    });
+
     var addBtn = document.getElementById('add-note-btn');
     if (addBtn) addBtn.addEventListener('click', function() {
-      var patient   = (document.getElementById('note-patient').value||'').trim();
-      var noteType  = document.getElementById('note-type').value;
-      var visitDate = document.getElementById('note-visit-date').value;
-      var noteText  = (document.getElementById('note-text').value||'').trim();
+      var sel      = document.getElementById('note-patient');
+      var patient  = (sel ? (sel.value || (sel.options && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].value : '') || '') : '').trim();
+      var noteType = document.getElementById('note-type').value;
+      var noteText = (document.getElementById('note-text').value||'').trim();
 
       if (!patient || !noteText) { showAlert(formAlertEl, 'Patient and note text are required.', 'error'); return; }
 
@@ -195,8 +270,9 @@
 
       fetch('/doctor/add_note', {
         method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({patient_code: patient, note_type: noteType, visit_date: visitDate, note_text: noteText})
+        headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + JWT},
+        // visit_date omitted — backend captures server time to prevent backdating
+        body: JSON.stringify({patient_code: patient, note_type: noteType, note_text: noteText})
       })
       .then(function(r) { return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
       .then(function(res) {
@@ -205,9 +281,8 @@
         document.getElementById('note-spinner').style.display = 'none';
         if (res.ok) {
           showAlert(pageAlertEl, 'Note added successfully. Patient will receive it on next sync.', 'success');
-          document.getElementById('note-text').value    = '';
-          document.getElementById('note-patient').value = '';
-          document.getElementById('note-visit-date').value = '';
+          document.getElementById('note-text').value = '';
+          document.getElementById('note-patient').selectedIndex = 0;
         } else {
           showAlert(formAlertEl, res.data.error||'Failed to add note.', 'error');
         }
