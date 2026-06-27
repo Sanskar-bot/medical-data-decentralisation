@@ -11,6 +11,7 @@ Serves:
   GET  /logout        â†’ Clear session, redirect to /
 """
 import os, sys, json, secrets, string, hashlib
+from auth_utils import hash_password, check_password, cors_after_request
 try:
     import psycopg2
     import psycopg2.extras
@@ -283,14 +284,12 @@ def login():
         if not identifier or not password:
             return jsonify({"error": "Username/email and password are required"}), 400
 
-        sha_hash = hashlib.sha256(password.encode()).hexdigest()
 
         # Send raw password to backend â€” server handles both SHA-256 and werkzeug
         try:
             r = http.post(
                 f"{BACKEND}/auth/login",
-                json={"email": identifier, "password": password,
-                      "password_hash": sha_hash},
+                json={"email": identifier, "password": password},
                 headers=_headers(),
                 timeout=10,
             )
@@ -389,10 +388,9 @@ def login_upgrade():
 
         # Upgrade succeeded â€” now log the user in by re-using the new token from the response
         # Immediately call login with the new password to populate session
-        sha2 = hashlib.sha256(new_pw.encode()).hexdigest()
         r2 = http.post(
             f"{BACKEND}/auth/login",
-            json={"email": identifier, "password": new_pw, "password_hash": sha2},
+            json={"email": identifier, "password": new_pw},
             headers=_headers(), timeout=10,
         )
         data2 = r2.json()
@@ -472,7 +470,7 @@ def register_patient():
                 "wrapped_k": wrapped_k,              # str (base64)
                 "salt_b64":  b64encode(salt).decode("utf-8"),
             },
-            "password_hash": hashlib.sha256(password.encode()).hexdigest(),
+            "password_hash": hash_password(password),
             "jwt_token": "",
         }
         with open(_user_json_path(profile_code), "w", encoding="utf-8") as f:
@@ -500,7 +498,7 @@ def register_patient():
             resp = http.post(
                 f"{BACKEND}/internal/register_user_db",
                 json={"email": email, "username": username, "name": name, "role": "patient",
-                      "password_hash": hashlib.sha256(password.encode()).hexdigest(),
+                      "password_hash": hash_password(password),
                       "profile_code": profile_code,
                       "public_key": pub_pem.decode("utf-8")},
                 headers=_headers(), timeout=10,
@@ -525,12 +523,13 @@ def register_patient():
         try:
             _lr = http.post(
                 f"{BACKEND}/auth/login",
-                json={"email": email, "password": password,
-                      "password_hash": hashlib.sha256(password.encode()).hexdigest()},
+                json={"email": email, "password": password},
                 headers=_headers(), timeout=10,
             )
             if _lr.ok:
-                session["jwt_token"] = _lr.json().get("access_token", "")
+                _lr_data = _lr.json()
+                session["jwt_token"] = _lr_data.get("access_token", "")
+                session["user_id"]   = _lr_data.get("user_id", "")
             else:
                 session["jwt_token"] = ""
         except Exception:
@@ -623,7 +622,7 @@ def register_doctor():
             resp = http.post(
                 f"{BACKEND}/internal/register_user_db",
                 json={"email": email, "username": username, "name": name, "role": "doctor",
-                      "password_hash": hashlib.sha256(password.encode()).hexdigest(),
+                      "password_hash": hash_password(password),
                       "profile_code": doctor_code,
                       "doctor_code": doctor_code,
                       "public_key": pub_pem.decode("utf-8")},
@@ -651,12 +650,13 @@ def register_doctor():
         try:
             _lr = http.post(
                 f"{BACKEND}/auth/login",
-                json={"email": email, "password": password,
-                      "password_hash": hashlib.sha256(password.encode()).hexdigest()},
+                json={"email": email, "password": password},
                 headers=_headers(), timeout=10,
             )
             if _lr.ok:
-                session["jwt_token"] = _lr.json().get("access_token", "")
+                _lr_data = _lr.json()
+                session["jwt_token"] = _lr_data.get("access_token", "")
+                session["user_id"]   = _lr_data.get("user_id", "")
             else:
                 session["jwt_token"] = ""
         except Exception:
@@ -2434,7 +2434,9 @@ def patient_prescriptions_direct():
         try:
             hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
             # Use profile_code as patient_id (backend stores it that way)
-            r = http.get(f"{BACKEND}/emr/prescriptions/patient/{pid}", headers=hdrs, timeout=8)
+            # BUG3 FIX: EMR tables store users.id (UUID), not profile_code
+            _emr_pid = session.get("user_id") or pid
+            r = http.get(f"{BACKEND}/emr/prescriptions/patient/{_emr_pid}", headers=hdrs, timeout=8)
             if r.ok:
                 data = r.json()
                 rxs = data if isinstance(data, list) else data.get("prescriptions", [])
@@ -2487,7 +2489,9 @@ def patient_lab_reports_direct():
     if jwt_tok:
         try:
             hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
-            r = http.get(f"{BACKEND}/emr/lab-reports/patient/{pid}", headers=hdrs, timeout=8)
+            # BUG3 FIX: EMR tables store users.id (UUID), not profile_code
+            _emr_pid = session.get("user_id") or pid
+            r = http.get(f"{BACKEND}/emr/lab-reports/patient/{_emr_pid}", headers=hdrs, timeout=8)
             if r.ok:
                 data = r.json()
                 lrs = data if isinstance(data, list) else data.get("lab_reports", data.get("reports", []))

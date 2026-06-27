@@ -21,7 +21,7 @@ from common.secure_key_store import SecureKeyStore
 _PORTALS_DIR = os.path.dirname(__file__)
 if _PORTALS_DIR not in sys.path:
     sys.path.insert(0, _PORTALS_DIR)
-from auth_utils import login_required  # noqa: E402
+from auth_utils import login_required, hash_password, cors_after_request  # noqa: E402
 
 BACKEND   = os.environ.get("SERVER_BASE", "http://127.0.0.1:5000")
 USERS_DIR = os.path.join(ROOT, "client", "Users")
@@ -45,10 +45,8 @@ app.config.update(
 
 @app.after_request
 def cors(r):
-    r.headers["Access-Control-Allow-Origin"]  = "*"
-    r.headers["Access-Control-Allow-Headers"] = "Content-Type,X-API-Key,Authorization"
-    r.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS,DELETE"
-    return r
+    # Whitelist-based CORS - replaces the old wildcard
+    return cors_after_request(r)
 
 def api_key():
     kf = os.path.join(ROOT, "server", "api_key.txt")
@@ -101,8 +99,7 @@ def api_register():
     profile_code = b64encode(os.urandom(6)).decode().replace("=","").replace("/","_")
     pdir = user_dir(profile_code)
     os.makedirs(pdir, exist_ok=True)
-    import hashlib
-    pw_hash = hashlib.sha256(pw.encode()).hexdigest()
+    pw_hash = hash_password(pw)
     local = {"profile_code":profile_code,"patient_details":record,
              "patient_public_pem":pub_pem.decode(),"encrypted_record":enc,
              "signature":sig,"key_protection":{"wrapped_k":wrapped_k,"salt_b64":b64encode(salt).decode()},
@@ -259,11 +256,11 @@ def patient_verify_otp():  # intentionally unprotected — used during registrat
 def patient_login():  # intentionally unprotected — this IS the login endpoint
     if request.method == "OPTIONS": return jsonify({}), 200
     d = request.get_json(force=True)
-    import hashlib
-    pw_hash = hashlib.sha256(d.get("password","").encode()).hexdigest()
+    raw_pw = d.get("password", "")
+    pw_hash = hash_password(raw_pw)
     try:
         r = http.post(f"{BACKEND}/auth/login",
-                      json={"email":d.get("email",""),"password_hash":pw_hash}, headers=bh(), timeout=8)
+                      json={"email":d.get("email",""), "password":d.get("password","")}, headers=bh(), timeout=8)
         return jsonify(r.json()), r.status_code
     except Exception as e: return jsonify({"error":str(e)}), 502
 

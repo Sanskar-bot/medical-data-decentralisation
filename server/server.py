@@ -2452,7 +2452,20 @@ def user_search():
 
 import secrets as _csp_secrets
 
-_ALLOWED_ORIGINS = {"http://127.0.0.1:5001", "http://127.0.0.1:5002", "http://127.0.0.1:5003"}
+_ALLOWED_ORIGINS_DEFAULT = {
+    "http://127.0.0.1:5001",  # patient portal
+    "http://127.0.0.1:5002",  # doctor portal
+    "http://127.0.0.1:5003",  # landing
+    "http://localhost:5001",
+    "http://localhost:5002",
+    "http://localhost:5003",
+}
+_env_ao = os.environ.get("MEDVAULT_ALLOWED_ORIGINS", "")
+_ALLOWED_ORIGINS = (
+    {o.strip() for o in _env_ao.split(",") if o.strip()}
+    if _env_ao.strip()
+    else _ALLOWED_ORIGINS_DEFAULT
+)
 
 
 @app.before_request
@@ -2503,6 +2516,106 @@ print("[UPGRADE] New auth/report/image/access endpoints loaded ✓")
 # ════════════════════════════════════════════════════════════════════════════
 from emr.routes import emr_bp
 
+# ════════════════════════════════════════════════════════════════════════════
+# PATIENT / DOCTOR IDENTITY RESOLUTION HELPERS
+# ════════════════════════════════════════════════════════════════════════════
+# The system has two parallel identity models:
+#   • profile_code  – short alphanumeric code (legacy crypto layer)
+#   • users.id      – UUID (canonical identity for all JWT-based EMR tables)
+#
+# _resolve_patient_uuid() accepts either format and always returns the UUID
+# so EMR routes can be called with either a profile_code OR a UUID without
+# returning empty results.
+
+import re as _re_uuid
+
+_UUID_RE = _re_uuid.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+    _re_uuid.IGNORECASE
+)
+
+
+def _resolve_patient_uuid(identifier: str) -> str | None:
+    """
+    Resolve *identifier* to the canonical users.id (UUID).
+
+    Accepts:
+        - A UUID string (returned as-is after existence check)
+        - A profile_code (looked up via users.profile_code)
+        - An email (looked up via users.email)
+
+    Returns the UUID string on success, or None if not found.
+    """
+    if not identifier:
+        return None
+    identifier = identifier.strip()
+    try:
+        with db_cursor(commit=False) as cur:
+            if _UUID_RE.match(identifier):
+                # Already looks like a UUID — verify it exists
+                cur.execute("SELECT id FROM users WHERE id = %s LIMIT 1", (identifier,))
+                row = cur.fetchone()
+                if row:
+                    return str(row["id"])
+                # Could be a UUID that exists only in the patients table
+                # (registered before users_db entry was created) — return as-is
+                return identifier
+            # Treat as profile_code
+            cur.execute(
+                "SELECT id FROM users WHERE profile_code = %s LIMIT 1",
+                (identifier,)
+            )
+            row = cur.fetchone()
+            if row:
+                return str(row["id"])
+            # Treat as email
+            cur.execute(
+                "SELECT id FROM users WHERE email = %s LIMIT 1",
+                (identifier,)
+            )
+            row = cur.fetchone()
+            if row:
+                return str(row["id"])
+    except Exception as _e:
+        print(f"[_resolve_patient_uuid] DB error for {identifier!r}: {_e}")
+    return None
+
+
+def _resolve_doctor_uuid(identifier: str) -> str | None:
+    """
+    Resolve *identifier* to the canonical users.id (UUID) for a doctor.
+
+    Accepts UUID, doctor_code, or email.
+    """
+    if not identifier:
+        return None
+    identifier = identifier.strip()
+    try:
+        with db_cursor(commit=False) as cur:
+            if _UUID_RE.match(identifier):
+                cur.execute("SELECT id FROM users WHERE id = %s LIMIT 1", (identifier,))
+                row = cur.fetchone()
+                return str(row["id"]) if row else identifier
+            cur.execute(
+                "SELECT id FROM users WHERE doctor_code = %s LIMIT 1",
+                (identifier,)
+            )
+            row = cur.fetchone()
+            if row:
+                return str(row["id"])
+            cur.execute(
+                "SELECT id FROM users WHERE email = %s LIMIT 1",
+                (identifier,)
+            )
+            row = cur.fetchone()
+            if row:
+                return str(row["id"])
+    except Exception as _e:
+        print(f"[_resolve_doctor_uuid] DB error for {identifier!r}: {_e}")
+    return None
+
+
+
 # Inject server helpers so the blueprint can use them without circular imports
 app.config["EMR_require_jwt"]  = _require_jwt
 app.config["EMR_audit"]        = audit
@@ -2510,6 +2623,9 @@ app.config["EMR_rate_limited"] = rate_limited
 # Updated to use DB-backed helpers
 app.config["EMR_load_users"]   = _db_get_all_users
 app.config["EMR_save_users"]   = _db_save_users_bulk
+# Identity resolution — resolve profile_code <-> UUID for patient/doctor
+app.config["EMR_resolve_patient_uuid"] = _resolve_patient_uuid
+app.config["EMR_resolve_doctor_uuid"]  = _resolve_doctor_uuid
 
 app.register_blueprint(emr_bp)
 print("[EMR] EMR module loaded ✓")

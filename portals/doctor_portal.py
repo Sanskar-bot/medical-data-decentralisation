@@ -24,7 +24,7 @@ from common.secure_key_store import SecureKeyStore
 _PORTALS_DIR = os.path.dirname(__file__)
 if _PORTALS_DIR not in sys.path:
     sys.path.insert(0, _PORTALS_DIR)
-from auth_utils import login_required  # noqa: E402
+from auth_utils import login_required, cors_after_request  # noqa: E402
 
 BACKEND     = os.environ.get("SERVER_BASE", "http://127.0.0.1:5000")
 DOCTORS_DIR = os.path.join(ROOT, "doctor", "Doctors")
@@ -53,10 +53,8 @@ app.config.update(
 
 @app.after_request
 def cors(r):
-    r.headers["Access-Control-Allow-Origin"]  = "*"
-    r.headers["Access-Control-Allow-Headers"] = "Content-Type,X-API-Key"
-    r.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-    return r
+    # Whitelist-based CORS - replaces the old wildcard
+    return cors_after_request(r)
 
 def api_key():
     kf = os.path.join(ROOT, "server", "api_key.txt")
@@ -587,4 +585,4 @@ def emr_proxy(subpath):
 
 if __name__ == "__main__":
     print("  Doctor Portal → http://127.0.0.1:5002")
-    app.run(host="127.0.0.1", port=5002, debug=False)
+    app.run(host="127.0.0.1", port=5002, debug=False)

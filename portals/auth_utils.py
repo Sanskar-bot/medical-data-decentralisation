@@ -6,14 +6,76 @@ Provides:
   - login_required(role=None)  Flask decorator  (server-side session check)
   - hash_password(pw)          werkzeug pbkdf2:sha256 hash
   - check_password(pw, stored) supports both old sha256 AND new werkzeug hashes
+  - ALLOWED_ORIGINS            set of permitted CORS origins (from env or defaults)
+  - cors_after_request(resp)   after_request hook implementing whitelist CORS
 """
 
+import os
 from functools import wraps
 from flask import session, redirect, url_for, jsonify, request
 from werkzeug.security import generate_password_hash, check_password_hash as wz_check
 import hashlib
 
 LANDING_URL = "http://127.0.0.1:5003"
+
+
+# ── CORS configuration ─────────────────────────────────────────────────────────
+# Reads from MEDVAULT_ALLOWED_ORIGINS env var (comma-separated list of origins).
+# Falls back to the three localhost portal ports used in development.
+# Example .env entry:
+#   MEDVAULT_ALLOWED_ORIGINS=http://127.0.0.1:5001,http://127.0.0.1:5002,http://127.0.0.1:5003
+
+_DEFAULT_ORIGINS = {
+    "http://127.0.0.1:5001",  # patient portal
+    "http://127.0.0.1:5002",  # doctor portal
+    "http://127.0.0.1:5003",  # landing page
+    "http://localhost:5001",
+    "http://localhost:5002",
+    "http://localhost:5003",
+}
+
+_env_origins_raw = os.environ.get("MEDVAULT_ALLOWED_ORIGINS", "")
+if _env_origins_raw.strip():
+    ALLOWED_ORIGINS: set = {o.strip() for o in _env_origins_raw.split(",") if o.strip()}
+else:
+    ALLOWED_ORIGINS: set = _DEFAULT_ORIGINS
+
+
+def cors_after_request(response):
+    """
+    Centralized CORS after_request hook for all MedVault portals.
+
+    Only emits Access-Control-Allow-Origin when the request carries an Origin
+    header that is in the ALLOWED_ORIGINS whitelist.  Wildcard '*' is never used.
+
+    Usage in each Flask app::
+
+        from auth_utils import cors_after_request
+
+        @app.after_request
+        def _cors(r):
+            return cors_after_request(r)
+    """
+    origin = request.headers.get("Origin", "")
+    # Always set Vary: Origin so caches know the response varies by origin
+    vary = response.headers.get("Vary", "")
+    if vary:
+        if "Origin" not in vary:
+            response.headers["Vary"] = vary + ", Origin"
+    else:
+        response.headers["Vary"] = "Origin"
+
+    if origin and origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"]      = origin
+        response.headers["Access-Control-Allow-Headers"]     = (
+            "Content-Type,X-API-Key,Authorization"
+        )
+        response.headers["Access-Control-Allow-Methods"]     = (
+            "GET,POST,PUT,DELETE,OPTIONS"
+        )
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+
+    return response
 
 
 # ── Password helpers ──────────────────────────────────────────────────────────
@@ -71,7 +133,6 @@ def login_required(role: str | None = None):
             # ── Allow API-key authenticated requests (from landing.py proxy) ──
             api_key = request.headers.get("X-API-Key", "")
             if api_key:
-                import os
                 # [C1] Prefer SERVER_API_KEY env var; fall back to api_key.txt only in dev mode
                 stored_key = os.environ.get("SERVER_API_KEY", "")
                 if not stored_key:
@@ -101,12 +162,13 @@ def login_required(role: str | None = None):
 
 
 def _is_json_request() -> bool:
-    """True when the caller expects a JSON response (API / XHR call)."""
-    accept = request.headers.get("Accept", "")
-    content_type = request.headers.get("Content-Type", "")
+    """Return True if the caller expects a JSON response."""
+    ct = request.content_type or ""
+    accept = request.accept_mimetypes
+    xhr = request.headers.get("X-Requested-With", "") == "XMLHttpRequest"
     return (
-        "application/json" in accept
-        or "application/json" in content_type
+        "application/json" in ct
+        or xhr
+        or (accept.best == "application/json")
         or request.path.startswith("/api/")
-        or request.is_json
     )

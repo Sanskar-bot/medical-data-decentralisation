@@ -54,6 +54,22 @@ def _audit(action, actor="", target="", detail=""):
         fn(action, actor=actor, target=target, detail=detail)
 
 
+def _resolve_pid(patient_id: str) -> str:
+    """
+    Resolve *patient_id* to the canonical users.id UUID.
+
+    Accepts both a UUID and a profile_code (short alphanumeric).  Falls back
+    to the original value when the resolver is unavailable or returns None,
+    so this is always safe to call.
+    """
+    fn = _get_helper("resolve_patient_uuid")
+    if fn:
+        resolved = fn(patient_id)
+        if resolved:
+            return resolved
+    return patient_id
+
+
 def _rate_limited(max_calls=10, window=60):
     """Lazy wrapper for server.py's rate_limited.  Defers helper lookup to
     request-time so it works even when the blueprint is imported outside an
@@ -81,9 +97,12 @@ def _rate_limited(max_calls=10, window=60):
 def get_patient_profile(patient_id):
     """Fetch extended EMR profile for a patient."""
     p = request.jwt_payload
+    patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
     # Patient can only see own profile; doctors and admins can see any
     if p.get("role") == "patient" and p.get("uid") != patient_id:
-        return jsonify({"error": "forbidden"}), 403
+        # Also accept a match against the raw profile_code claim
+        if p.get("profile_code") and p.get("profile_code") != request.view_args.get("patient_id"):
+            return jsonify({"error": "forbidden"}), 403
 
     profile = store.get_profile(patient_id)
     if not profile:
@@ -98,6 +117,7 @@ def get_patient_profile(patient_id):
 def upsert_patient_profile(patient_id):
     """Create or update a patient's extended EMR profile."""
     p = request.jwt_payload
+    patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
     if p.get("role") == "patient" and p.get("uid") != patient_id:
         return jsonify({"error": "forbidden"}), 403
 
@@ -316,9 +336,9 @@ def create_prescription():
 @_require_jwt_deco()
 def list_patient_prescriptions(patient_id):
     p = request.jwt_payload
-    # Compare with profile_code claim if available (uid is now UUID)
-    patient_code = p.get("profile_code") or p.get("uid", "")
-    if p.get("role") == "patient" and patient_code != patient_id:
+    patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
+    # Patient can only view own prescriptions
+    if p.get("role") == "patient" and p.get("uid") != patient_id:
         return jsonify({"error": "forbidden"}), 403
     rxs = store.prescriptions_for_patient(patient_id)
     rxs.sort(key=lambda r: r.get("created_at", ""), reverse=True)
@@ -387,8 +407,9 @@ def create_lab_report():
 @_require_jwt_deco()
 def list_patient_lab_reports(patient_id):
     p = request.jwt_payload
-    patient_code = p.get("profile_code") or p.get("uid", "")
-    if p.get("role") == "patient" and patient_code != patient_id:
+    patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
+    # Patient can only view own lab reports
+    if p.get("role") == "patient" and p.get("uid") != patient_id:
         return jsonify({"error": "forbidden"}), 403
     reports = store.lab_reports_for_patient(patient_id)
     reports.sort(key=lambda r: r.get("created_at", ""), reverse=True)
@@ -533,8 +554,8 @@ def create_condition():
 @_require_jwt_deco()
 def list_patient_conditions(patient_id):
     p = request.jwt_payload
-    patient_code = p.get("profile_code") or p.get("uid", "")
-    if p.get("role") == "patient" and patient_code != patient_id:
+    patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
+    if p.get("role") == "patient" and p.get("uid") != patient_id:
         return jsonify({"error": "forbidden"}), 403
     status_filter = request.args.get("status") or None
     conds = store.conditions_for_patient(patient_id, status=status_filter)
@@ -625,8 +646,8 @@ def create_encounter():
 @_require_jwt_deco()
 def list_patient_encounters(patient_id):
     p = request.jwt_payload
-    patient_code = p.get("profile_code") or p.get("uid", "")
-    if p.get("role") == "patient" and patient_code != patient_id:
+    patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
+    if p.get("role") == "patient" and p.get("uid") != patient_id:
         return jsonify({"error": "forbidden"}), 403
     encs = store.encounters_for_patient(patient_id)
     return jsonify(encs), 200
