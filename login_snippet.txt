@@ -1,0 +1,16 @@
+def login():
+    try:
+        d = request.get_json(force=True) or {}
+        # Accept either email or username in the same field
+        identifier = (d.get("email") or d.get("username") or "").strip().lower()
+        password   = d.get("password") or ""
+
+        if not identifier or not password:
+            return jsonify({"error": "Username/email and password are required"}), 400
+
+        sha_hash = hashlib.sha256(password.encode()).hexdigest()
+
+        # Send raw password to backend â€” server handles both SHA-256 and werkzeug
+        try:
+            r = http.post(
+                f"{BACK

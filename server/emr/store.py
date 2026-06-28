@@ -63,6 +63,15 @@ def get_profile(patient_id: str) -> dict | None:
                 d["emergency_contact"] = {}
         elif ec is None:
             d["emergency_contact"] = {}
+        # patient_metadata: always return as dict, never None or string
+        pm = d.get("patient_metadata")
+        if isinstance(pm, str):
+            try:
+                d["patient_metadata"] = json.loads(pm)
+            except (ValueError, TypeError):
+                d["patient_metadata"] = {}
+        elif pm is None:
+            d["patient_metadata"] = {}
         # Bug 2: always inject computed age from date_of_birth
         dob = d.get("date_of_birth")
         if dob:
@@ -91,8 +100,8 @@ def upsert_profile(profile: dict):
             INSERT INTO emr_profiles (
                 patient_id, name, age, date_of_birth, gender, blood_group,
                 medical_history, allergies, emergency_contact,
-                past_visits, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                past_visits, patient_metadata, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
             ON CONFLICT (patient_id) DO UPDATE SET
                 name              = EXCLUDED.name,
                 age               = EXCLUDED.age,
@@ -103,6 +112,7 @@ def upsert_profile(profile: dict):
                 allergies         = EXCLUDED.allergies,
                 emergency_contact = EXCLUDED.emergency_contact,
                 past_visits       = EXCLUDED.past_visits,
+                patient_metadata  = emr_profiles.patient_metadata || EXCLUDED.patient_metadata,
                 updated_at        = now()
         """, (
             pid,
@@ -115,6 +125,7 @@ def upsert_profile(profile: dict):
             _jsonify(profile.get("allergies", [])),
             _jsonify_obj(profile.get("emergency_contact", {})),
             _jsonify(profile.get("past_visits", [])),
+            _jsonify_obj(profile.get("patient_metadata", {})),
         ))
 
 

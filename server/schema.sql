@@ -216,6 +216,44 @@ CREATE TABLE IF NOT EXISTS emr_appointments (
 CREATE INDEX IF NOT EXISTS idx_emr_appt_patient ON emr_appointments(patient_id);
 CREATE INDEX IF NOT EXISTS idx_emr_appt_doctor  ON emr_appointments(doctor_id);
 
+-- ── Unified appointment view ────────────────────────────────────────────────
+CREATE OR REPLACE VIEW appointments_unified AS
+SELECT
+    id::TEXT AS id,
+    'request'::TEXT AS source,
+    patient_id,
+    patient_name,
+    patient_username,
+    doctor_username,
+    ''::TEXT AS doctor_id,
+    date,
+    time,
+    (date || ' ' || time)::TEXT AS date_time,
+    notes AS reason,
+    notes,
+    status,
+    created_at,
+    updated_at
+FROM appointments
+UNION ALL
+SELECT
+    id::TEXT AS id,
+    'emr'::TEXT AS source,
+    patient_id,
+    ''::TEXT AS patient_name,
+    ''::TEXT AS patient_username,
+    ''::TEXT AS doctor_username,
+    doctor_id,
+    ''::TEXT AS date,
+    ''::TEXT AS time,
+    date_time,
+    reason,
+    notes,
+    status,
+    created_at,
+    updated_at
+FROM emr_appointments;
+
 -- ── EMR prescriptions ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS emr_prescriptions (
     id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
@@ -338,6 +376,7 @@ ALTER TABLE appointments      ADD COLUMN IF NOT EXISTS encounter_id  TEXT;
 -- age TEXT is kept for backward-compatibility (existing rows are unaffected).
 -- Application layer always derives age from date_of_birth when present.
 ALTER TABLE emr_profiles ADD COLUMN IF NOT EXISTS date_of_birth DATE;
+ALTER TABLE emr_profiles ADD COLUMN IF NOT EXISTS patient_metadata JSONB DEFAULT '{}';
 
 CREATE INDEX IF NOT EXISTS idx_emr_rx_encounter
     ON emr_prescriptions(encounter_id);

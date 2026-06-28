@@ -127,6 +127,15 @@ def new_patient_profile(data: dict) -> dict:
     computed_age = compute_age(dob_raw) if dob_raw else (
         int(age_raw) if str(age_raw).strip().isdigit() else age_raw
     )
+    # Preserve metadata fields on initial creation so partial saves do not
+    # lose vitals / lifestyle / address values.
+    metadata_fields = {
+        "height", "weight", "blood_pressure", "heart_rate",
+        "blood_sugar", "oxygen_saturation",
+        "smoking", "alcohol", "exercise", "diet",
+        "address",
+    }
+    patient_metadata = {k: data[k] for k in metadata_fields if k in data}
     return {
         "patient_id":        data["patient_id"],
         "name":              (data.get("name") or "").strip(),
@@ -142,6 +151,7 @@ def new_patient_profile(data: dict) -> dict:
         "allergies":         _norm_allergy_list(data.get("allergies", [])),
         "emergency_contact": data.get("emergency_contact", {}),
         "past_visits":       data.get("past_visits", []),
+        "patient_metadata":  patient_metadata,
         "created_at":        _now_iso(),
         "updated_at":        _now_iso(),
     }
@@ -335,6 +345,62 @@ def parse_dosage(text: str) -> dict | None:
         # Unknown unit — preserve as-is (lowercase)
         unit = unit_raw
     return {"value": value, "unit": unit}
+
+
+def parse_frequency(text: str) -> dict | None:
+    """
+    Parse a free-text frequency string into a structured dict.
+
+    Returns:
+        {"normalized": str, "times_per_day": float} on success
+        None if the string cannot be matched
+    """
+    if not text:
+        return None
+    key = text.strip().lower()
+    # Try exact match first
+    result = FREQUENCY_NORMALIZER.get(key)
+    if not result:
+        # Try with punctuation stripped
+        key_clean = key.replace(".", "").replace(" ", "")
+        result = FREQUENCY_NORMALIZER.get(key_clean)
+    if not result:
+        # Try prefix match for "every N hours" patterns
+        for k, v in FREQUENCY_NORMALIZER.items():
+            if key.startswith(k) or k.startswith(key):
+                result = v
+                break
+    if result:
+        return {"normalized": result[0], "times_per_day": result[1]}
+    return None
+
+
+def parse_duration(text: str) -> dict | None:
+    """
+    Parse a free-text duration string into a structured dict with days.
+
+    Examples:
+        "7 days"    -> {"days": 7,  "original": "7 days"}
+        "2 weeks"   -> {"days": 14, "original": "2 weeks"}
+        "1 month"   -> {"days": 30, "original": "1 month"}
+        "3 months"  -> {"days": 90, "original": "3 months"}
+        "10"        -> {"days": 10, "original": "10"}
+
+    Returns None if not parseable.
+    """
+    if not text:
+        return None
+    import re as _re
+    text = text.strip().lower()
+    # Pattern: optional number + optional unit
+    m = _re.search(r'(\d+(?:\.\d+)?)\s*(day|days|week|weeks|month|months|year|years)?', text)
+    if not m:
+        return None
+    value = float(m.group(1))
+    unit  = (m.group(2) or "day").rstrip("s")  # normalise plural
+    multipliers = {"day": 1, "week": 7, "month": 30, "year": 365}
+    days = int(value * multipliers.get(unit, 1))
+    return {"days": days, "original": text}
 
 
 def parse_frequency(text: str) -> dict | None:

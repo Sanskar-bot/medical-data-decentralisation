@@ -150,6 +150,21 @@ class TestPatientProfile:
         assert data["age"] == 26
         assert data["allergies"] == ["Dust"]
 
+    def test_update_profile_merges_metadata_without_overwriting(self, client, jwt_encode):
+        uid = "PAT-005"
+        client.put(f"/emr/patient/{uid}/profile",
+                   headers=_auth_headers(jwt_encode, role="patient", uid=uid),
+                   json={"name": "Dina", "age": 31, "address": "12 Main St"})
+        r = client.put(f"/emr/patient/{uid}/profile",
+                       headers=_auth_headers(jwt_encode, role="patient", uid=uid),
+                       json={"height": 170, "weight": 65, "smoking": "Never"})
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data["patient_metadata"]["height"] == 170
+        assert data["patient_metadata"]["weight"] == 65
+        assert data["patient_metadata"]["smoking"] == "Never"
+        assert data["patient_metadata"]["address"] == "12 Main St"
+
     def test_patient_cannot_see_other_profile(self, client, jwt_encode):
         r = client.get("/emr/patient/OTHER/profile",
                        headers=_auth_headers(jwt_encode, role="patient", uid="ME"))
@@ -256,6 +271,15 @@ class TestAppointments:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestPrescriptions:
+    def test_enrich_medication_parses_frequency_and_duration(self):
+        from emr.models import _enrich_medication
+        med = {"name": "Amoxicillin", "dosage": "500mg", "frequency": "twice daily", "duration": "7 days"}
+        result = _enrich_medication(med)
+        assert result["dosage_value"] == 500.0
+        assert result["frequency_normalized"] == "twice_daily"
+        assert result["times_per_day"] == 2.0
+        assert result["duration_days"] == 7
+
     def test_create_prescription(self, client, jwt_encode):
         r = client.post("/emr/prescriptions",
                         headers=_auth_headers(jwt_encode, role="doctor", uid="DOC-001"),

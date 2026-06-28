@@ -2671,21 +2671,21 @@ def patient_appts_merged():
             "created_at":       str(row.get("created_at", "")),
         }
 
-    def _norm_emr(row):
+    def _norm_view_row(row):
         return {
             "id":               row.get("id", ""),
-            "source":           "emr",
+            "source":           row.get("source", "request"),
             "patient_id":       row.get("patient_id", ""),
             "patient_name":     row.get("patient_name", ""),
             "patient_username": row.get("patient_username", ""),
             "doctor_username":  row.get("doctor_username", ""),
             "doctor_id":        row.get("doctor_id", ""),
-            "date":             "",
-            "time":             "",
+            "date":             row.get("date", ""),
+            "time":             row.get("time", ""),
             "date_time":        str(row.get("date_time", "")),
-            "reason":           row.get("reason", ""),
+            "reason":           row.get("reason", row.get("notes", "")),
             "notes":            row.get("notes", ""),
-            "status":           row.get("status", "scheduled"),
+            "status":           row.get("status", "pending"),
             "created_at":       str(row.get("created_at", "")),
         }
 
@@ -2698,23 +2698,13 @@ def patient_appts_merged():
             if identifiers:
                 ph = ",".join(["%s"] * len(identifiers))
                 cur.execute(
-                    "SELECT * FROM appointments WHERE patient_id = ANY(ARRAY[" + ph + "]::text[]) "
+                    "SELECT * FROM appointments_unified WHERE patient_id = ANY(ARRAY[" + ph + "]::text[]) "
                     "OR patient_username = ANY(ARRAY[" + ph + "]::text[]) "
                     "ORDER BY created_at DESC",
                     identifiers * 2,
                 )
                 for row in cur.fetchall():
-                    r = _norm_legacy(dict(row))
-                    if r["id"] not in seen_ids:
-                        seen_ids.add(r["id"])
-                        all_appts.append(r)
-            if user_id:
-                cur.execute(
-                    "SELECT * FROM emr_appointments WHERE patient_id = %s ORDER BY created_at DESC",
-                    (user_id,),
-                )
-                for row in cur.fetchall():
-                    r = _norm_emr(dict(row))
+                    r = _norm_view_row(dict(row))
                     if r["id"] not in seen_ids:
                         seen_ids.add(r["id"])
                         all_appts.append(r)
@@ -2732,7 +2722,22 @@ def patient_appts_merged():
                     all_appts.append(r)
         for a in _load_json_safe(EMR_APPT):
             if a.get("patient_id") in (pid, user_id):
-                r = _norm_emr(a)
+                r = _norm_view_row({
+                    "id": a.get("id", ""),
+                    "source": "emr",
+                    "patient_id": a.get("patient_id", ""),
+                    "patient_name": a.get("patient_name", ""),
+                    "patient_username": "",
+                    "doctor_username": "",
+                    "doctor_id": a.get("doctor_id", ""),
+                    "date": "",
+                    "time": "",
+                    "date_time": a.get("date_time", ""),
+                    "reason": a.get("reason", ""),
+                    "notes": a.get("notes", ""),
+                    "status": a.get("status", "scheduled"),
+                    "created_at": a.get("created_at", ""),
+                })
                 if r["id"] not in seen_ids:
                     seen_ids.add(r["id"])
                     all_appts.append(r)
@@ -2776,21 +2781,21 @@ def doctor_appts_merged():
             "created_at":       str(row.get("created_at", "")),
         }
 
-    def _norm_emr(row):
+    def _norm_view_row(row):
         return {
             "id":               row.get("id", ""),
-            "source":           "emr",
+            "source":           row.get("source", "request"),
             "patient_id":       row.get("patient_id", ""),
             "patient_name":     row.get("patient_name", ""),
-            "patient_username": "",
-            "doctor_username":  "",
+            "patient_username": row.get("patient_username", ""),
+            "doctor_username":  row.get("doctor_username", ""),
             "doctor_id":        row.get("doctor_id", ""),
-            "date":             "",
-            "time":             "",
+            "date":             row.get("date", ""),
+            "time":             row.get("time", ""),
             "date_time":        str(row.get("date_time", "")),
-            "reason":           row.get("reason", ""),
+            "reason":           row.get("reason", row.get("notes", "")),
             "notes":            row.get("notes", ""),
-            "status":           row.get("status", "scheduled"),
+            "status":           row.get("status", "pending"),
             "created_at":       str(row.get("created_at", "")),
         }
 
@@ -2803,24 +2808,13 @@ def doctor_appts_merged():
             if doc_ids:
                 ph = ",".join(["%s"] * len(doc_ids))
                 cur.execute(
-                    "SELECT * FROM appointments WHERE doctor_username = ANY(ARRAY[" + ph + "]::text[]) "
+                    "SELECT * FROM appointments_unified WHERE doctor_username = ANY(ARRAY[" + ph + "]::text[]) "
                     "OR doctor_id = ANY(ARRAY[" + ph + "]::text[]) "
                     "ORDER BY created_at DESC",
                     doc_ids * 2,
                 )
                 for row in cur.fetchall():
-                    r = _norm_legacy(dict(row))
-                    if r["id"] not in seen_ids:
-                        seen_ids.add(r["id"])
-                        all_appts.append(r)
-            did = user_id or doc_code
-            if did:
-                cur.execute(
-                    "SELECT * FROM emr_appointments WHERE doctor_id = %s ORDER BY created_at DESC",
-                    (did,),
-                )
-                for row in cur.fetchall():
-                    r = _norm_emr(dict(row))
+                    r = _norm_view_row(dict(row))
                     if r["id"] not in seen_ids:
                         seen_ids.add(r["id"])
                         all_appts.append(r)
@@ -2838,7 +2832,22 @@ def doctor_appts_merged():
                     all_appts.append(r)
         for a in _load_json_safe(EMR_APPT):
             if a.get("doctor_id") in (doc_code, user_id):
-                r = _norm_emr(a)
+                r = _norm_view_row({
+                    "id": a.get("id", ""),
+                    "source": "emr",
+                    "patient_id": a.get("patient_id", ""),
+                    "patient_name": a.get("patient_name", ""),
+                    "patient_username": "",
+                    "doctor_username": "",
+                    "doctor_id": a.get("doctor_id", ""),
+                    "date": "",
+                    "time": "",
+                    "date_time": a.get("date_time", ""),
+                    "reason": a.get("reason", ""),
+                    "notes": a.get("notes", ""),
+                    "status": a.get("status", "scheduled"),
+                    "created_at": a.get("created_at", ""),
+                })
                 if r["id"] not in seen_ids:
                     seen_ids.add(r["id"])
                     all_appts.append(r)

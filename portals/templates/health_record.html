@@ -493,6 +493,10 @@
 
   // ── RENDER ─────────────────────────────────────────────────────────────────
   function render(rec) {
+    // Flatten patient_metadata into rec so field access is uniform
+    var _meta = (typeof rec.patient_metadata === 'object' && rec.patient_metadata !== null)
+                ? rec.patient_metadata : {};
+
     // Personal
     document.getElementById('rec-name').textContent    = rec.name  || '—';
     document.getElementById('rec-age').textContent     = rec.age   ? rec.age + ' yrs' : '—';
@@ -500,7 +504,7 @@
     document.getElementById('rec-blood').textContent   = rec.blood_group || '—';
     document.getElementById('rec-email').textContent   = rec.email || '—';
     document.getElementById('rec-phone').textContent   = rec.phone || '—';
-    document.getElementById('rec-address').textContent = rec.address || '—';
+    document.getElementById('rec-address').textContent = (rec.address || _meta.address) || '—';
     document.getElementById('rec-emergency').textContent = rec.emergency_contact || '—';
 
     // Allergies
@@ -516,20 +520,20 @@
     document.getElementById('meds-list-view').innerHTML = listItems(meds, 'No medications recorded', '--p5');
 
     // Vitals
-    var h = rec.height, w = rec.weight;
+    var h = (rec.height || _meta.height), w = (rec.weight || _meta.weight);
     document.getElementById('rec-height').textContent = h ? h + ' cm' : '—';
     document.getElementById('rec-weight').textContent = w ? w + ' kg' : '—';
     document.getElementById('rec-bmi').textContent = (h && w) ? (w / Math.pow(h/100, 2)).toFixed(1) + ' kg/m²' : '—';
-    document.getElementById('rec-bp').textContent     = rec.blood_pressure || '—';
-    document.getElementById('rec-hr').textContent     = rec.heart_rate ? rec.heart_rate + ' bpm' : '—';
-    document.getElementById('rec-sugar').textContent  = rec.blood_sugar || '—';
-    document.getElementById('rec-o2').textContent     = rec.oxygen_saturation ? rec.oxygen_saturation + '%' : '—';
+    document.getElementById('rec-bp').textContent     = (rec.blood_pressure || _meta.blood_pressure) || '—';
+    document.getElementById('rec-hr').textContent     = (rec.heart_rate || _meta.heart_rate) ? (rec.heart_rate || _meta.heart_rate) + ' bpm' : '—';
+    document.getElementById('rec-sugar').textContent  = (rec.blood_sugar || _meta.blood_sugar) || '—';
+    document.getElementById('rec-o2').textContent     = (rec.oxygen_saturation || _meta.oxygen_saturation) ? (rec.oxygen_saturation || _meta.oxygen_saturation) + '%' : '—';
 
     // Lifestyle
-    document.getElementById('rec-smoking').textContent  = rec.smoking  || '—';
-    document.getElementById('rec-alcohol').textContent  = rec.alcohol  || '—';
-    document.getElementById('rec-exercise').textContent = rec.exercise || '—';
-    document.getElementById('rec-diet').textContent     = rec.diet     || '—';
+    document.getElementById('rec-smoking').textContent  = (rec.smoking  || _meta.smoking)  || '—';
+    document.getElementById('rec-alcohol').textContent  = (rec.alcohol  || _meta.alcohol)  || '—';
+    document.getElementById('rec-exercise').textContent = (rec.exercise || _meta.exercise) || '—';
+    document.getElementById('rec-diet').textContent     = (rec.diet     || _meta.diet)     || '—';
 
     // Notes
     document.getElementById('rec-notes').textContent = rec.notes || '—';
@@ -696,12 +700,13 @@
   // ── VITALS edit ───────────────────────────────────────────────────────────
   var closeVitals = sectionToggle('view-vitals', 'edit-vitals', 'edit-vitals-btn',
     function fill() {
-      document.getElementById('e-height').value = _rec.height || '';
-      document.getElementById('e-weight').value = _rec.weight || '';
-      document.getElementById('e-bp').value     = _rec.blood_pressure || '';
-      document.getElementById('e-hr').value     = _rec.heart_rate || '';
-      document.getElementById('e-sugar').value  = _rec.blood_sugar || '';
-      document.getElementById('e-o2').value     = _rec.oxygen_saturation || '';
+      var _meta = (_rec.patient_metadata && typeof _rec.patient_metadata === 'object') ? _rec.patient_metadata : {};
+      document.getElementById('e-height').value = (_rec.height || _meta.height) || '';
+      document.getElementById('e-weight').value = (_rec.weight || _meta.weight) || '';
+      document.getElementById('e-bp').value     = (_rec.blood_pressure || _meta.blood_pressure) || '';
+      document.getElementById('e-hr').value     = (_rec.heart_rate || _meta.heart_rate) || '';
+      document.getElementById('e-sugar').value  = (_rec.blood_sugar || _meta.blood_sugar) || '';
+      document.getElementById('e-o2').value     = (_rec.oxygen_saturation || _meta.oxygen_saturation) || '';
     },
     function cancel() { closeVitals(); }
   );
@@ -720,10 +725,11 @@
   // ── LIFESTYLE edit ────────────────────────────────────────────────────────
   var closeLifestyle = sectionToggle('view-lifestyle', 'edit-lifestyle', 'edit-lifestyle-btn',
     function fill() {
-      document.getElementById('e-smoking').value  = _rec.smoking  || '';
-      document.getElementById('e-alcohol').value  = _rec.alcohol  || '';
-      document.getElementById('e-exercise').value = _rec.exercise || '';
-      document.getElementById('e-diet').value     = _rec.diet     || '';
+      var _meta = (_rec.patient_metadata && typeof _rec.patient_metadata === 'object') ? _rec.patient_metadata : {};
+      document.getElementById('e-smoking').value  = (_rec.smoking  || _meta.smoking)  || '';
+      document.getElementById('e-alcohol').value  = (_rec.alcohol  || _meta.alcohol)  || '';
+      document.getElementById('e-exercise').value = (_rec.exercise || _meta.exercise) || '';
+      document.getElementById('e-diet').value     = (_rec.diet     || _meta.diet)     || '';
     },
     function cancel() { closeLifestyle(); }
   );
@@ -757,6 +763,64 @@
     document.getElementById('record-locked-panel').style.display  = 'block';
     document.getElementById('unlock-pw').value = '';
   });
+
+  function attemptKeyRecovery() {
+    var pwInput = document.querySelector('#key-recovery-modal input[type="password"]');
+    if (!pwInput) {
+      alert('Password input not found in the modal.');
+      return;
+    }
+    var pw = pwInput.value.trim();
+    if (!pw) {
+      pwInput.focus();
+      return;
+    }
+
+    var btn = document.getElementById('kr-submit-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Restoring…'; }
+
+    fetch('/api/restore_key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw }),
+      credentials: 'same-origin',
+    })
+    .then(function(r) { return r.json().then(function(d) { return { status: r.status, body: d }; }); })
+    .then(function(res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Restore Key'; }
+      if (res.status === 200) {
+        var modal  = document.getElementById('key-recovery-modal');
+        var banner = document.getElementById('key-unavailable-banner');
+        if (modal)  modal.style.display  = 'none';
+        if (banner) banner.style.display = 'none';
+        var pageAlert = document.getElementById('page-alert');
+        if (pageAlert) {
+          pageAlert.textContent = 'Encryption key restored. You can now approve or deny access requests.';
+          pageAlert.className   = 'alert alert-success';
+          pageAlert.style.display = 'block';
+          setTimeout(function() { pageAlert.style.display = 'none'; }, 6000);
+        } else {
+          alert('Encryption key restored successfully. Access request features are now available.');
+        }
+      } else if (res.status === 404 && res.body.error === 'no_backup') {
+        alert(
+          'No key backup found on the server.\n\n' +
+          'This account was registered before key-backup was enabled.\n' +
+          'Please log in from your original device to enable recovery.'
+        );
+      } else if (res.status === 401) {
+        alert('Wrong password — please try again.');
+        pwInput.value = '';
+        pwInput.focus();
+      } else {
+        alert('Key recovery failed: ' + (res.body.message || res.body.error || 'Unknown error'));
+      }
+    })
+    .catch(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Restore Key'; }
+      alert('Network error — please check your connection and try again.\n\n' + err);
+    });
+  }
 })();
 </script>
 {% endblock %}

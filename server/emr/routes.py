@@ -128,16 +128,35 @@ def upsert_patient_profile(patient_id):
 
     existing = store.get_profile(patient_id)
     if existing:
-        # Partial update — merge incoming fields into existing
-        for key in ("name", "age", "gender", "blood_group",
+        # Partial update — merge known scalar fields into existing
+        for key in ("name", "age", "date_of_birth", "gender", "blood_group",
                      "medical_history", "emergency_contact",
                      "past_visits"):
             if key in body:
                 existing[key] = body[key]
-        # Allergies require normalisation: the browser may send a
-        # comma-separated string; we always persist a list.
+        # Allergies: normalise on merge (browser may send comma-string)
         if "allergies" in body:
             existing["allergies"] = models._norm_allergy_list(body["allergies"])
+        # patient_metadata: merge vitals, lifestyle, address into the JSONB
+        # column. Never overwrite the entire blob — only update keys present
+        # in the incoming body so unrelated fields survive partial saves.
+        METADATA_FIELDS = {
+            "height", "weight", "blood_pressure", "heart_rate",
+            "blood_sugar", "oxygen_saturation",          # vitals
+            "smoking", "alcohol", "exercise", "diet",    # lifestyle
+            "address",                                   # demographics
+        }
+        incoming_meta = {k: body[k] for k in METADATA_FIELDS if k in body}
+        if incoming_meta:
+            current_meta = existing.get("patient_metadata") or {}
+            if isinstance(current_meta, str):
+                import json as _json
+                try:
+                    current_meta = _json.loads(current_meta)
+                except Exception:
+                    current_meta = {}
+            current_meta.update(incoming_meta)
+            existing["patient_metadata"] = current_meta
         existing["updated_at"] = models._now_iso()
         store.upsert_profile(existing)
         _audit("emr_profile_updated", actor=p.get("sub", ""), target=patient_id)

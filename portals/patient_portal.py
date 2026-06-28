@@ -95,6 +95,19 @@ def api_register():
     kek, salt = derive_kek_from_password(pw)
     wrapped_k = wrap_key_with_kek(kek, K_data)
     priv_pem  = rsa_serialize_private(priv)
+    # Create a server-side encrypted backup of the private key so key
+    # recovery works on new devices. Uses the same Argon2id KEK as the
+    # local wrapped_k but with a fresh independent salt, so compromising
+    # one does not compromise the other.
+    import json as _json_kr
+    from base64 import b64encode as _b64e_kr
+    from common.crypto_utils import derive_kek_from_password, wrap_key_with_kek
+    _kr_kek, _kr_salt = derive_kek_from_password(pw)
+    _kr_wrapped = wrap_key_with_kek(_kr_kek, priv_pem)
+    _encrypted_priv_backup = _json_kr.dumps({
+        "salt_b64":   _b64e_kr(_kr_salt).decode(),
+        "wrapped_priv": _kr_wrapped,
+    })
     pub_pem   = rsa_serialize_public(pub)
     profile_code = b64encode(os.urandom(6)).decode().replace("=","").replace("/","_")
     pdir = user_dir(profile_code)
@@ -124,7 +137,7 @@ def api_register():
                 json={"email":email,"name":name,"role":"patient",
                       "password_hash":pw_hash,"profile_code":profile_code,
                       "public_key":pub_pem.decode(),
-                      "encrypted_private_key":""},
+                      "encrypted_private_key":_encrypted_priv_backup},
                 headers=bh(), timeout=8)
         except Exception as e: print(f"[warn] users_db register: {e}")
 
@@ -230,6 +243,87 @@ def api_deny():
             json={"request_id":d.get("request_id"),"status":"denied"}, headers=bh(), timeout=8)
         return jsonify({"status":"ok"}) if r.ok else (jsonify({"error":r.text}), r.status_code)
     except Exception as e: return jsonify({"error":str(e)}), 502
+
+@app.route("/api/restore_key", methods=["POST", "OPTIONS"])
+@login_required(role="patient")
+def api_restore_key():
+    """
+    Restore the patient's RSA private key on this device.
+
+    The frontend sends the account password. We:
+      1. Call the backend /auth/login to get the encrypted_private_key blob.
+      2. If the blob is non-empty, try to decrypt it using the password-derived KEK.
+      3. Store the recovered private key in SecureKeyStore on this machine.
+      4. Return success.
+    """
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+
+    d = request.get_json(force=True) or {}
+    password = d.get("password", "").strip()
+    if not password:
+        return jsonify({"error": "Password is required"}), 400
+
+    profile_code = session.get("profile_code", "")
+    email        = session.get("email", "")
+    if not profile_code or not email:
+        return jsonify({"error": "Session expired — please log in again"}), 401
+
+    try:
+        login_r = http.post(
+            f"{BACKEND}/auth/login",
+            json={"email": email, "password": password},
+            headers=bh(),
+            timeout=10,
+        )
+    except Exception as e:
+        return jsonify({"error": f"Cannot reach backend: {e}"}), 502
+
+    if not login_r.ok:
+        body = {}
+        try:
+            body = login_r.json()
+        except Exception:
+            pass
+        if login_r.status_code == 401 or "credential" in body.get("error", "").lower():
+            return jsonify({"error": "Wrong password — please try again"}), 401
+        return jsonify({"error": "Backend authentication failed"}), 502
+
+    login_data          = login_r.json()
+    encrypted_priv_blob = login_data.get("encrypted_private_key", "")
+
+    if not encrypted_priv_blob:
+        return jsonify({
+            "error": "no_backup",
+            "message": (
+                "No encrypted key backup exists on the server for this account. "
+                "This happens for accounts registered before key-backup was added. "
+                "Please re-register on your original device to create a backup, "
+                "or contact support."
+            ),
+        }), 404
+
+    try:
+        from common.crypto_utils import derive_kek_from_password, unwrap_key_with_kek
+        from base64 import b64decode
+        import json as _json
+
+        blob = _json.loads(encrypted_priv_blob)
+        salt     = b64decode(blob["salt_b64"])
+        wrapped  = blob["wrapped_priv"]
+        kek, _   = derive_kek_from_password(password, salt=salt)
+        priv_pem = unwrap_key_with_kek(kek, wrapped)
+    except (KeyError, ValueError, TypeError) as e:
+        return jsonify({"error": f"Key decryption failed — wrong password or corrupt backup: {e}"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Unexpected decryption error: {e}"}), 500
+
+    try:
+        SecureKeyStore.store_private_key(f"patient__{profile_code}", priv_pem)
+    except Exception as e:
+        return jsonify({"error": f"Failed to store key on this device: {e}"}), 500
+
+    return jsonify({"message": "Key restored successfully on this device"}), 200
 
 # ── NEW ENDPOINTS ──────────────────────────────────────────────────────────
 
