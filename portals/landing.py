@@ -11,6 +11,10 @@ Serves:
   GET  /logout        â†’ Clear session, redirect to /
 """
 import os, sys, json, secrets, string, hashlib, re
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 from auth_utils import hash_password, check_password, cors_after_request
 try:
     import psycopg2
@@ -1493,21 +1497,26 @@ def _resolve_patient_uuid_or_code(patient_code: str) -> tuple[str, str]:
     return profile_code or raw, patient_id or raw
 
 
-def _require_active_access(patient_code: str):
-    """Return None if logged-in doctor has an active approved access grant."""
+def _require_active_access(doctor_code: str, patient_code: str = None):
+    """Return None if the logged-in doctor has active approved patient access."""
     err = _doctor_session_check()
     if err:
         return err
 
+    # Backward-compatible until existing call sites are wired to pass doctor_code.
+    if patient_code is None:
+        patient_code = doctor_code
+        doctor_code = session.get("doctor_code", "")
+
     if not patient_code:
         return jsonify({"error": "patient_code_required"}), 400
 
-    doc_code = session.get("doctor_code", "")
+    doc_code = session.get("doctor_code", "") or doctor_code
     if not doc_code:
         return jsonify({"error": "unauthenticated"}), 401
 
-    resolved_code, patient_id = _resolve_patient_uuid_or_code(patient_code)
-    if not resolved_code:
+    profile_code = _resolve_patient_code(patient_code)
+    if not profile_code:
         return jsonify({"error": "patient_not_found"}), 404
 
     if not _HAS_PSYCOPG2:
@@ -1517,18 +1526,29 @@ def _require_active_access(patient_code: str):
     try:
         conn = psycopg2.connect(DB_URL)
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        cur.execute(
+            "SELECT id FROM users WHERE doctor_code=%s OR LOWER(username)=LOWER(%s) LIMIT 1",
+            (doc_code, doc_code)
+        )
+        doc_row = cur.fetchone()
+        if not doc_row:
+            cur.close(); conn.close()
+            return jsonify({"error": "doctor_not_found"}), 403
+
+        doctor_uuid = str(doc_row["id"])
         cur.execute(
             """
             SELECT a.status, a.responded_at, wk.temp_key_expires_at
             FROM access_db a
             LEFT JOIN users p ON a.patient_id::text = p.id::text
-            LEFT JOIN wrapped_keys wk ON wk.profile_code = %s AND wk.doctor_code = %s
-            WHERE (a.doctor_id::text = %s OR a.doctor_id = %s)
-              AND ((a.patient_id::text = %s OR a.patient_id = %s) OR p.profile_code = %s)
-              AND a.status = 'approved'
+            LEFT JOIN wrapped_keys wk ON wk.profile_code = p.profile_code AND wk.doctor_code = %s
+            WHERE (a.doctor_id::text = %s OR a.doctor_id::text = %s)
+              AND (p.profile_code = %s OR a.patient_id::text = %s)
+            ORDER BY a.responded_at DESC NULLS LAST, a.created_at DESC
             LIMIT 1
             """,
-            (resolved_code, doc_code, doc_code, doc_code, patient_id, resolved_code, resolved_code)
+            (doc_code, doctor_uuid, doc_code, profile_code, profile_code)
         )
         row = cur.fetchone()
         cur.close(); conn.close()
@@ -1537,13 +1557,16 @@ def _require_active_access(patient_code: str):
         return jsonify({"error": "access_check_failed", "detail": str(e)}), 500
 
     if not row:
-        return jsonify({"error": "access_denied", "message": "You do not have approved access to this patient."}), 403
+        return jsonify({"error": "access_denied", "message": "You do not have access to this patient."}), 403
+
+    if row.get("status") != "approved":
+        return jsonify({"error": "access_not_approved", "message": "Access to this patient is not approved."}), 403
 
     expires_at = row.get("temp_key_expires_at")
     if not expires_at:
         responded_at = row.get("responded_at")
         if not responded_at:
-            return jsonify({"error": "access_denied", "message": "You do not have approved access to this patient."}), 403
+            return jsonify({"error": "access_expired", "message": "Your access to this patient has expired."}), 403
         expires_at = responded_at + _td(hours=24)
 
     if isinstance(expires_at, str):
@@ -1695,7 +1718,7 @@ def doctor_fetch_record():
         if not pat_code:
             return jsonify({"error": "Patient identifier is required"}), 400
 
-        err = _require_active_access(pat_code)
+        err = _require_active_access(session.get("doctor_code", ""), pat_code)
         if err:
             return err
 
@@ -1787,7 +1810,7 @@ def doctor_patient_timeline(username):
     if not pat_code:
         return jsonify({"error": "Patient not found"}), 404
 
-    err = _require_active_access(pat_code)
+    err = _require_active_access(session.get("doctor_code", ""), pat_code)
     if err:
         return err
 
@@ -1843,7 +1866,7 @@ def doctor_add_note():
         if not doc_code:
             return jsonify({"error": "Doctor code missing from session. Please log out and log in again."}), 401
 
-        err = _require_active_access(pat_code)
+        err = _require_active_access(doc_code, pat_code)
         if err:
             return err
 
@@ -1913,14 +1936,15 @@ def doctor_notes_list(patient_code):
     err = _doctor_session_check()
     if err: return err
 
-    err = _require_active_access(patient_code)
+    resolved_code = _resolve_patient_code(patient_code)
+    err = _require_active_access(session.get("doctor_code", ""), resolved_code)
     if err:
         return err
 
     try:
         doc_code = session.get("doctor_code", "")
         r = http.get(
-            f"{DOCTOR_PORTAL}/api/doctor_notes/{patient_code}?doctor_code={doc_code}",
+            f"{DOCTOR_PORTAL}/api/doctor_notes/{resolved_code}?doctor_code={doc_code}",
             cookies={"session": request.cookies.get("session", "")},
             headers=_fwd_headers(), timeout=10,
         )
@@ -1952,7 +1976,8 @@ def doctor_delete_note(note_id):
             app.logger.debug("doctor_delete_note note lookup: %s", e)
 
     if note_patient_code:
-        err = _require_active_access(note_patient_code)
+        resolved_note_patient_code = _resolve_patient_code(note_patient_code)
+        err = _require_active_access(session.get("doctor_code", ""), resolved_note_patient_code)
         if err:
             return err
 
@@ -2046,12 +2071,12 @@ def doctor_patient_notes(patient_code):
     err = _doctor_session_check()
     if err: return err
 
-    err = _require_active_access(patient_code)
+    resolved_code = _resolve_patient_code(patient_code)
+    err = _require_active_access(session.get("doctor_code", ""), resolved_code)
     if err:
         return err
     try:
         # Resolve username â†’ profile_code (folder name on disk)
-        resolved_code = _resolve_patient_code(patient_code)
         notes_file = os.path.join(USERS_DIR, resolved_code, "notes.json")
         if not os.path.exists(notes_file):
             return jsonify({"notes": [], "source": "local"}), 200
@@ -3261,13 +3286,13 @@ def doctor_patient_prescriptions(patient_code):
     err = _doctor_session_check()
     if err: return err
 
-    err = _require_active_access(patient_code)
+    resolved_code, patient_id = _resolve_patient_uuid_or_code(patient_code)
+    err = _require_active_access(session.get("doctor_code", ""), resolved_code)
     if err:
         return err
 
     rxs = []
     if _HAS_PSYCOPG2:
-        resolved_code, patient_id = _resolve_patient_uuid_or_code(patient_code)
         try:
             conn = psycopg2.connect(DB_URL)
             cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -3293,13 +3318,13 @@ def doctor_patient_lab_reports(patient_code):
     err = _doctor_session_check()
     if err: return err
 
-    err = _require_active_access(patient_code)
+    resolved_code, patient_id = _resolve_patient_uuid_or_code(patient_code)
+    err = _require_active_access(session.get("doctor_code", ""), resolved_code)
     if err:
         return err
 
     lrs = []
     if _HAS_PSYCOPG2:
-        resolved_code, patient_id = _resolve_patient_uuid_or_code(patient_code)
         try:
             conn = psycopg2.connect(DB_URL)
             cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -3337,7 +3362,7 @@ def doctor_add_prescription():
 
         if not pat_code:
             return jsonify({"error": "Patient identifier is required"}), 400
-        err = _require_active_access(pat_code)
+        err = _require_active_access(session.get("doctor_code", ""), pat_code)
         if err:
             return err
         if not diagnosis:
@@ -3410,7 +3435,7 @@ def doctor_add_lab_report():
 
         if not pat_code:
             return jsonify({"error": "Patient identifier is required"}), 400
-        err = _require_active_access(pat_code)
+        err = _require_active_access(session.get("doctor_code", ""), pat_code)
         if err:
             return err
         if not report_type:
@@ -3521,10 +3546,6 @@ def doctor_view_patient():
     if not code:
         return redirect("/dashboard")
 
-    err = _require_active_access(code)
-    if err:
-        return redirect("/dashboard")
-
     profile_code = code  # default fallback
 
     # If code looks like a UUID (access_db request id), resolve patient_id → profile_code
@@ -3561,6 +3582,10 @@ def doctor_view_patient():
         resolved = _resolve_patient_code(code)
         if resolved:
             profile_code = resolved
+
+    err = _require_active_access(session.get("doctor_code", ""), profile_code)
+    if err:
+        return err
 
     ctx = _page_context()
     ctx["patient_code"] = profile_code
