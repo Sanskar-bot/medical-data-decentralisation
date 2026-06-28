@@ -197,6 +197,8 @@ def _page_context():
         specialization=session.get("specialization", ""),
         hospital=session.get("hospital", ""),
         jwt_token=session.get("jwt_token", ""),
+        # Bug 1: cross-device key availability flag
+        key_available=session.get("key_available", True),
     )
 
 @app.route("/health-record")
@@ -344,8 +346,25 @@ def login():
                 pass
         session.permanent = True
 
+        # ── Bug 1: Cross-device key availability check ────────────────────────
+        # After login, test whether the private key is available on THIS device.
+        # This flag drives UI degradation and recovery CTAs across all templates.
+        _key_id = None
+        if role == "patient" and pcode:
+            _key_id = f"patient__{pcode}"
+        elif role == "doctor" and dcode:
+            _key_id = f"doctor__{dcode}"
+        if _key_id:
+            try:
+                session["key_available"] = SecureKeyStore.exists(_key_id)
+            except Exception:
+                session["key_available"] = False
+        else:
+            session["key_available"] = True  # non-crypto roles always available
+
         return jsonify({"message": "ok", "redirect": "/dashboard",
-                        "role": session["role"]})
+                        "role": session["role"],
+                        "key_available": session.get("key_available", True)})
     except Exception as e:
         app.logger.exception("Login error")
         return jsonify({"error": str(e)}), 500
@@ -948,6 +967,108 @@ def patient_approve():
         return jsonify({"status": "approved", "message": "Access granted"}), 200
     except Exception as e:
         app.logger.exception("patient_approve error")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Bug 1: Cross-device key recovery endpoints ──────────────────────────────
+
+@app.route("/api/patient/key-status", methods=["GET"])
+def patient_key_status():
+    """
+    Report whether the patient's private key is available on this device.
+    Updates session['key_available'] on every call so it stays fresh.
+    """
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    profile_code = session.get("profile_code", "")
+    doc_code     = session.get("doctor_code", "")
+    role         = session.get("role", "patient")
+    key_id = (f"patient__{profile_code}" if role == "patient" and profile_code
+              else f"doctor__{doc_code}" if role == "doctor" and doc_code
+              else None)
+    available = True
+    if key_id:
+        try:
+            available = SecureKeyStore.exists(key_id)
+        except Exception:
+            available = False
+    session["key_available"] = available
+    return jsonify({
+        "available": available,
+        "message": "Key present on this device." if available else (
+            "Your encryption key is not available on this device. "
+            "Use the key recovery option to restore access."
+        ),
+    }), 200
+
+
+@app.route("/api/patient/encrypted-key", methods=["GET"])
+def patient_get_encrypted_key():
+    """
+    Return the encrypted_private_key blob stored in the users DB.
+    The frontend decrypts it client-side using the user's password (Web Crypto API),
+    then sends the PEM to /api/patient/reimport-key. Never returns plaintext.
+    """
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    user_id = session.get("user_id", "")
+    email   = session.get("email", "")
+    if not _HAS_PSYCOPG2:
+        return jsonify({"error": "Database not available"}), 503
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "SELECT encrypted_private_key FROM users WHERE id=%s OR email=%s LIMIT 1",
+            (user_id, email)
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return jsonify({"error": "User not found"}), 404
+        epk = row.get("encrypted_private_key")
+        if not epk:
+            return jsonify({"error": "No encrypted key stored. Key recovery requires the original device."}), 404
+        return jsonify({"encrypted_private_key": epk}), 200
+    except Exception as e:
+        app.logger.exception("get_encrypted_key error")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/patient/reimport-key", methods=["POST"])
+def patient_reimport_key():
+    """
+    Re-import a private key onto this device via DPAPI.
+
+    Request body: { "pem": "<plaintext RSA private key PEM>" }
+
+    The frontend decrypts the encrypted_private_key blob (from /api/patient/encrypted-key)
+    using the user's password in-browser, then POSTs the plaintext PEM here.
+    This endpoint stores it via DPAPI and immediately discards the PEM from memory.
+    The server never logs or persists the plaintext key.
+    """
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    role         = session.get("role", "patient")
+    profile_code = session.get("profile_code", "")
+    doc_code     = session.get("doctor_code", "")
+    try:
+        body = request.get_json(force=True) or {}
+        pem  = (body.get("pem") or "").strip()
+        if not pem:
+            return jsonify({"error": "pem is required"}), 400
+        if not pem.startswith("-----BEGIN"):
+            return jsonify({"error": "pem must be a valid PEM-encoded private key"}), 400
+        key_id = (f"patient__{profile_code}" if role == "patient" and profile_code
+                  else f"doctor__{doc_code}" if role == "doctor" and doc_code
+                  else None)
+        if not key_id:
+            return jsonify({"error": "Could not determine key identifier for this account"}), 400
+        SecureKeyStore.store_private_key(key_id, pem.encode())
+        session["key_available"] = True
+        return jsonify({"message": "Key successfully restored on this device.", "key_available": True}), 200
+    except Exception as e:
+        app.logger.exception("reimport_key error")
         return jsonify({"error": str(e)}), 500
 
 
@@ -2292,7 +2413,6 @@ def _enrich_with_doctor_name(records: list) -> list:
     """Enrich EMR records with the doctor's actual name from the users table."""
     if not _HAS_PSYCOPG2 or not records:
         return records
-    # Collect unique doctor identifiers (could be code, UUID, or email)
     doctor_ids = set()
     for r in records:
         did = r.get("doctor_id") or r.get("doctor_email") or ""
@@ -2300,7 +2420,6 @@ def _enrich_with_doctor_name(records: list) -> list:
             doctor_ids.add(did)
     if not doctor_ids:
         return records
-    # Bulk lookup
     name_map = {}
     try:
         conn = psycopg2.connect(DB_URL)
@@ -2316,15 +2435,13 @@ def _enrich_with_doctor_name(records: list) -> list:
             if row and row.get("name"):
                 name_map[did] = row["name"]
         cur.close(); conn.close()
-    except Exception as e:
-        pass  # best-effort
-    # Enrich records
+    except Exception:
+        pass
     for r in records:
         did = r.get("doctor_id") or r.get("doctor_email") or ""
         if did and did in name_map and not r.get("doctor_name"):
             r["doctor_name"] = name_map[did]
     return records
-
 
 
 def _load_json_safe(path):
@@ -2346,77 +2463,217 @@ def _save_json_safe(path, data):
 
 @app.route("/api/patient/appointments-merged", methods=["GET"])
 def patient_appts_merged():
-    """Returns all appointments for the logged-in patient from both stores."""
+    """
+    Return all appointments for the logged-in patient from both stores.
+
+    Merges:
+      - `appointments` table   (patient-submitted requests via patient portal)
+      - `emr_appointments` table (doctor-created via EMR module)
+
+    Normalises both to a common shape and deduplicates by ID.
+    PostgreSQL is queried first; falls back to flat-file stores when unavailable.
+    """
     if not session.get("logged_in"):
         return jsonify({"error": "unauthenticated"}), 401
-    pid = session.get("profile_code", "")
+
+    pid      = session.get("profile_code", "")
+    user_id  = session.get("user_id", "")
     username = session.get("username", "")
+    all_appts = []
+    seen_ids = set()
 
-    # Source 1: appointments_db (patient-requested)
-    db = _load_json_safe(APPT_DB)
-    pat_appts = [a for a in db
-                 if a.get("patient_id") == pid
-                 or a.get("patient_username") == username]
+    def _norm_legacy(row):
+        return {
+            "id":               row.get("id", ""),
+            "source":           "request",
+            "patient_id":       row.get("patient_id", ""),
+            "patient_name":     row.get("patient_name", ""),
+            "patient_username": row.get("patient_username", ""),
+            "doctor_username":  row.get("doctor_username", ""),
+            "doctor_id":        row.get("doctor_id", ""),
+            "date":             row.get("date", ""),
+            "time":             row.get("time", ""),
+            "date_time":        f"{row.get('date','')} {row.get('time','')}".strip(),
+            "reason":           row.get("notes", ""),
+            "notes":            row.get("notes", ""),
+            "status":           row.get("status", "pending"),
+            "created_at":       str(row.get("created_at", "")),
+        }
 
-    # Normalize format and tag source
-    for a in pat_appts:
-        a.setdefault("source", "request")
-        a.setdefault("date_display", f"{a.get('date', '')} {a.get('time', '')}")
+    def _norm_emr(row):
+        return {
+            "id":               row.get("id", ""),
+            "source":           "emr",
+            "patient_id":       row.get("patient_id", ""),
+            "patient_name":     row.get("patient_name", ""),
+            "patient_username": row.get("patient_username", ""),
+            "doctor_username":  row.get("doctor_username", ""),
+            "doctor_id":        row.get("doctor_id", ""),
+            "date":             "",
+            "time":             "",
+            "date_time":        str(row.get("date_time", "")),
+            "reason":           row.get("reason", ""),
+            "notes":            row.get("notes", ""),
+            "status":           row.get("status", "scheduled"),
+            "created_at":       str(row.get("created_at", "")),
+        }
 
-    # Source 2: EMR appointments (doctor-created)
-    emr = _load_json_safe(EMR_APPT)
-    emr_pat = [a for a in emr if a.get("patient_id") == pid]
-    for a in emr_pat:
-        a.setdefault("source", "emr")
-        a.setdefault("date_display", a.get("date_time", ""))
-        a.setdefault("notes", a.get("reason", ""))
-        a.setdefault("doctor_username", "Your Doctor")
+    # ── Primary: PostgreSQL ───────────────────────────────────────────────────
+    if _HAS_PSYCOPG2:
+        try:
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            identifiers = [x for x in [user_id, pid, username] if x]
+            if identifiers:
+                ph = ",".join(["%s"] * len(identifiers))
+                cur.execute(
+                    "SELECT * FROM appointments WHERE patient_id = ANY(ARRAY[" + ph + "]::text[]) "
+                    "OR patient_username = ANY(ARRAY[" + ph + "]::text[]) "
+                    "ORDER BY created_at DESC",
+                    identifiers * 2,
+                )
+                for row in cur.fetchall():
+                    r = _norm_legacy(dict(row))
+                    if r["id"] not in seen_ids:
+                        seen_ids.add(r["id"])
+                        all_appts.append(r)
+            if user_id:
+                cur.execute(
+                    "SELECT * FROM emr_appointments WHERE patient_id = %s ORDER BY created_at DESC",
+                    (user_id,),
+                )
+                for row in cur.fetchall():
+                    r = _norm_emr(dict(row))
+                    if r["id"] not in seen_ids:
+                        seen_ids.add(r["id"])
+                        all_appts.append(r)
+            cur.close(); conn.close()
+        except Exception as e:
+            app.logger.debug("patient_appts_merged DB: %s", e)
 
-    all_appts = pat_appts + emr_pat
+    # ── Fallback: flat files ──────────────────────────────────────────────────
+    if not all_appts:
+        for a in _load_json_safe(APPT_DB):
+            if a.get("patient_id") in (pid, user_id) or a.get("patient_username") == username:
+                r = _norm_legacy(a)
+                if r["id"] not in seen_ids:
+                    seen_ids.add(r["id"])
+                    all_appts.append(r)
+        for a in _load_json_safe(EMR_APPT):
+            if a.get("patient_id") in (pid, user_id):
+                r = _norm_emr(a)
+                if r["id"] not in seen_ids:
+                    seen_ids.add(r["id"])
+                    all_appts.append(r)
+
     all_appts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return jsonify({"appointments": all_appts}), 200
 
 
 @app.route("/api/doctor/appointments-merged", methods=["GET"])
 def doctor_appts_merged():
-    """Returns all appointments for the logged-in doctor from both stores."""
+    """
+    Return all appointments for the logged-in doctor from both stores.
+
+    Merges `appointments` + `emr_appointments` tables, normalised and deduplicated.
+    PostgreSQL is queried first; falls back to flat-file stores when unavailable.
+    """
     if not session.get("logged_in"):
         return jsonify({"error": "unauthenticated"}), 401
+
     doc_code = session.get("doctor_code", "")
-    username  = session.get("username", "")
+    user_id  = session.get("user_id", "")
+    username = session.get("username", "")
+    all_appts = []
+    seen_ids = set()
 
-    # Source 1: appointments_db (patient-requested)
-    db = _load_json_safe(APPT_DB)
-    req_appts = [a for a in db
-                 if a.get("doctor_username") == username
-                 or a.get("doctor_id") == doc_code]
-    for a in req_appts:
-        a.setdefault("source", "request")
-        a.setdefault("date_display", f"{a.get('date', '')} {a.get('time', '')}")
+    def _norm_legacy(row):
+        return {
+            "id":               row.get("id", ""),
+            "source":           "request",
+            "patient_id":       row.get("patient_id", ""),
+            "patient_name":     row.get("patient_name", ""),
+            "patient_username": row.get("patient_username", ""),
+            "doctor_username":  row.get("doctor_username", ""),
+            "doctor_id":        row.get("doctor_id", ""),
+            "date":             row.get("date", ""),
+            "time":             row.get("time", ""),
+            "date_time":        f"{row.get('date','')} {row.get('time','')}".strip(),
+            "reason":           row.get("notes", ""),
+            "notes":            row.get("notes", ""),
+            "status":           row.get("status", "pending"),
+            "created_at":       str(row.get("created_at", "")),
+        }
 
-    # Source 2: EMR appointments (doctor-created)
-    emr = _load_json_safe(EMR_APPT)
-    emr_doc = [a for a in emr if a.get("doctor_id") == doc_code]
-    for a in emr_doc:
-        a.setdefault("source", "emr")
-        a.setdefault("date_display", a.get("date_time", ""))
-        a.setdefault("notes", a.get("reason", ""))
-        # Resolve patient username from patient_id
-        pat_username = a.get("patient_id", "")
-        if pat_username == _resolve_patient_code(pat_username):
-            # It's a profile_code â€” try to reverse-map
-            users = _load_json_safe(os.path.join(ROOT, "server", "users_db.json")) if os.path.exists(os.path.join(ROOT, "server", "users_db.json")) else {}
-            if isinstance(users, dict):
-                for u in users.values():
-                    if u.get("profile_code") == a.get("patient_id"):
-                        pat_username = u.get("username", a.get("patient_id", ""))
-                        break
-        a["patient_username"] = pat_username
+    def _norm_emr(row):
+        return {
+            "id":               row.get("id", ""),
+            "source":           "emr",
+            "patient_id":       row.get("patient_id", ""),
+            "patient_name":     row.get("patient_name", ""),
+            "patient_username": "",
+            "doctor_username":  "",
+            "doctor_id":        row.get("doctor_id", ""),
+            "date":             "",
+            "time":             "",
+            "date_time":        str(row.get("date_time", "")),
+            "reason":           row.get("reason", ""),
+            "notes":            row.get("notes", ""),
+            "status":           row.get("status", "scheduled"),
+            "created_at":       str(row.get("created_at", "")),
+        }
 
-    all_appts = req_appts + emr_doc
+    # ── Primary: PostgreSQL ───────────────────────────────────────────────────
+    if _HAS_PSYCOPG2:
+        try:
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            doc_ids = [x for x in [username, doc_code, user_id] if x]
+            if doc_ids:
+                ph = ",".join(["%s"] * len(doc_ids))
+                cur.execute(
+                    "SELECT * FROM appointments WHERE doctor_username = ANY(ARRAY[" + ph + "]::text[]) "
+                    "OR doctor_id = ANY(ARRAY[" + ph + "]::text[]) "
+                    "ORDER BY created_at DESC",
+                    doc_ids * 2,
+                )
+                for row in cur.fetchall():
+                    r = _norm_legacy(dict(row))
+                    if r["id"] not in seen_ids:
+                        seen_ids.add(r["id"])
+                        all_appts.append(r)
+            did = user_id or doc_code
+            if did:
+                cur.execute(
+                    "SELECT * FROM emr_appointments WHERE doctor_id = %s ORDER BY created_at DESC",
+                    (did,),
+                )
+                for row in cur.fetchall():
+                    r = _norm_emr(dict(row))
+                    if r["id"] not in seen_ids:
+                        seen_ids.add(r["id"])
+                        all_appts.append(r)
+            cur.close(); conn.close()
+        except Exception as e:
+            app.logger.debug("doctor_appts_merged DB: %s", e)
+
+    # ── Fallback: flat files ──────────────────────────────────────────────────
+    if not all_appts:
+        for a in _load_json_safe(APPT_DB):
+            if a.get("doctor_username") == username or a.get("doctor_id") in (doc_code, user_id):
+                r = _norm_legacy(a)
+                if r["id"] not in seen_ids:
+                    seen_ids.add(r["id"])
+                    all_appts.append(r)
+        for a in _load_json_safe(EMR_APPT):
+            if a.get("doctor_id") in (doc_code, user_id):
+                r = _norm_emr(a)
+                if r["id"] not in seen_ids:
+                    seen_ids.add(r["id"])
+                    all_appts.append(r)
+
     all_appts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return jsonify({"appointments": all_appts}), 200
-
 
 
 @app.route("/api/patient/prescriptions-direct", methods=["GET"])

@@ -15,6 +15,42 @@ def generate_aes_key() -> bytes:
     """Return a 32-byte AES key (AES-256)."""
     return os.urandom(32)
 
+# Backward-compatible helpers used by the older tests and scripts.
+def aes_gcm_encrypt(plaintext: bytes, key: bytes | None = None):
+    """Compatibility wrapper returning (key, nonce, ciphertext)."""
+    if key is None:
+        key = generate_aes_key()
+    result = aesgcm_encrypt(key, plaintext)
+    return key, result["nonce"], result["ciphertext"]
+
+
+def aes_gcm_decrypt(key: bytes, nonce: str | bytes, ct: str | bytes) -> bytes:
+    """Compatibility wrapper that accepts either raw bytes or base64 strings."""
+    nonce_b64 = nonce.decode() if isinstance(nonce, (bytes, bytearray)) else nonce
+    ct_b64 = ct.decode() if isinstance(ct, (bytes, bytearray)) else ct
+    return aesgcm_decrypt(key, nonce_b64, ct_b64)
+
+
+def rsa_encrypt(pub, key_bytes: bytes) -> str:
+    """Compatibility wrapper around rsa_wrap_key()."""
+    return rsa_wrap_key(pub, key_bytes)
+
+
+def rsa_decrypt(priv, ct_b64: str) -> bytes:
+    """Compatibility wrapper around rsa_unwrap_key()."""
+    return rsa_unwrap_key(priv, ct_b64)
+
+
+def serialize_private_key(priv, password: bytes = None) -> bytes:
+    """Compatibility wrapper for the older test API."""
+    return rsa_serialize_private(priv, password)
+
+
+def serialize_public_key(pub) -> bytes:
+    """Compatibility wrapper for the older test API."""
+    return rsa_serialize_public(pub)
+
+
 def aesgcm_encrypt(key: bytes, plaintext: bytes, aad: bytes = None) -> dict:
     """
     Encrypt plaintext with AES-GCM.

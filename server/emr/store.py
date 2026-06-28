@@ -15,6 +15,8 @@ from datetime import datetime
 # Ensure server/ is on the path so we can import db
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from db import db_cursor
+from emr.models import compute_age as _compute_age
+
 
 # ── Timestamp serialiser ──────────────────────────────────────────────────────
 
@@ -61,7 +63,14 @@ def get_profile(patient_id: str) -> dict | None:
                 d["emergency_contact"] = {}
         elif ec is None:
             d["emergency_contact"] = {}
+        # Bug 2: always inject computed age from date_of_birth
+        dob = d.get("date_of_birth")
+        if dob:
+            computed = _compute_age(str(dob))
+            if computed is not None:
+                d["age"] = computed
         return d
+
 
 
 def upsert_profile(profile: dict):
@@ -80,13 +89,14 @@ def upsert_profile(profile: dict):
     with db_cursor() as cur:
         cur.execute("""
             INSERT INTO emr_profiles (
-                patient_id, name, age, gender, blood_group,
+                patient_id, name, age, date_of_birth, gender, blood_group,
                 medical_history, allergies, emergency_contact,
                 past_visits, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
             ON CONFLICT (patient_id) DO UPDATE SET
                 name              = EXCLUDED.name,
                 age               = EXCLUDED.age,
+                date_of_birth     = EXCLUDED.date_of_birth,
                 gender            = EXCLUDED.gender,
                 blood_group       = EXCLUDED.blood_group,
                 medical_history   = EXCLUDED.medical_history,
@@ -98,6 +108,7 @@ def upsert_profile(profile: dict):
             pid,
             profile.get("name", ""),
             profile.get("age", ""),
+            profile.get("date_of_birth") or None,
             profile.get("gender", ""),
             profile.get("blood_group", ""),
             _jsonify(profile.get("medical_history", [])),
@@ -105,6 +116,7 @@ def upsert_profile(profile: dict):
             _jsonify_obj(profile.get("emergency_contact", {})),
             _jsonify(profile.get("past_visits", [])),
         ))
+
 
 
 def list_profiles() -> list[dict]:

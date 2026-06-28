@@ -9,10 +9,26 @@ import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _pool: pool.ThreadedConnectionPool = None
+
+
+def _apply_schema_migrations(conn):
+    """Apply the repository schema files in an idempotent way."""
+    schema_path = Path(__file__).with_name("schema.sql")
+    additions_path = Path(__file__).with_name("schema_additions.sql")
+    for path in (schema_path, additions_path):
+        if not path.exists():
+            continue
+        sql = path.read_text(encoding="utf-8")
+        if not sql.strip():
+            continue
+        with conn.cursor() as cur:
+            cur.execute(sql)
+    conn.commit()
 
 
 def init_db(database_url: str = None):
@@ -32,10 +48,13 @@ def init_db(database_url: str = None):
             maxconn=10,
             dsn=url
         )
-        # verify connection works
         conn = _pool.getconn()
-        conn.cursor().execute("SELECT 1")
-        _pool.putconn(conn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            _apply_schema_migrations(conn)
+        finally:
+            _pool.putconn(conn)
         logger.info("[DB] PostgreSQL connection pool initialized.")
     except Exception as e:
         raise RuntimeError(f"[DB] Failed to connect to PostgreSQL: {e}")

@@ -100,9 +100,7 @@ def get_patient_profile(patient_id):
     patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
     # Patient can only see own profile; doctors and admins can see any
     if p.get("role") == "patient" and p.get("uid") != patient_id:
-        # Also accept a match against the raw profile_code claim
-        if p.get("profile_code") and p.get("profile_code") != request.view_args.get("patient_id"):
-            return jsonify({"error": "forbidden"}), 403
+        return jsonify({"error": "forbidden"}), 403
 
     profile = store.get_profile(patient_id)
     if not profile:

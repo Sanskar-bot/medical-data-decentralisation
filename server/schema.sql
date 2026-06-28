@@ -333,6 +333,12 @@ ALTER TABLE doctor_notes      ADD COLUMN IF NOT EXISTS encounter_id  TEXT;
 ALTER TABLE emr_appointments  ADD COLUMN IF NOT EXISTS encounter_id  TEXT;
 ALTER TABLE appointments      ADD COLUMN IF NOT EXISTS encounter_id  TEXT;
 
+-- ── Bug 2: structured patient demographics ────────────────────────────────────
+-- date_of_birth replaces the free-text age column as the source of truth.
+-- age TEXT is kept for backward-compatibility (existing rows are unaffected).
+-- Application layer always derives age from date_of_birth when present.
+ALTER TABLE emr_profiles ADD COLUMN IF NOT EXISTS date_of_birth DATE;
+
 CREATE INDEX IF NOT EXISTS idx_emr_rx_encounter
     ON emr_prescriptions(encounter_id);
 CREATE INDEX IF NOT EXISTS idx_emr_lab_encounter
