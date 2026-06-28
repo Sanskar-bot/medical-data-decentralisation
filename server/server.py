@@ -372,11 +372,12 @@ def rate_limited(max_calls=10, window=60):
 # Audit log
 # ════════════════════════════════════════════════════════════════════════════
 
-def audit(action, actor="", target="", detail=""):
+def audit(action, actor="", target="", detail="", ip=""):
+    actor = actor or "api_key"
     try:
-        ip = request.remote_addr if request else ""
+        ip = ip or (request.remote_addr if request else "")
     except RuntimeError:
-        ip = ""
+        ip = ip or ""
     try:
         with db_cursor() as cur:
             cur.execute("""
@@ -760,6 +761,33 @@ def _db_get_access_requests(profile_code: str = None,
         return result
 
 
+def _db_get_access_history(profile_code: str) -> list:
+    with db_cursor(commit=False) as cur:
+        cur.execute("""
+            SELECT request_id, profile_code, doctor_code, status,
+                   created_at, approved_at, denied_at,
+                   cancelled_at, expired_at, NULL::TIMESTAMPTZ AS archived_at
+            FROM access_requests
+            WHERE profile_code = %s
+            UNION ALL
+            SELECT request_id, profile_code, doctor_code, status,
+                   created_at, approved_at, denied_at,
+                   cancelled_at, expired_at, archived_at
+            FROM access_requests_archive
+            WHERE profile_code = %s
+            ORDER BY created_at DESC
+        """, (profile_code, profile_code))
+        rows = cur.fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            for k, v in d.items():
+                if isinstance(v, datetime):
+                    d[k] = v.isoformat()
+            result.append(d)
+        return result
+
+
 def _db_get_one_access_request(request_id: str) -> dict | None:
     with db_cursor(commit=False) as cur:
         cur.execute("SELECT * FROM access_requests WHERE request_id = %s", (request_id,))
@@ -1024,6 +1052,44 @@ def _db_access_get_pending(doctor_id: str, patient_id: str) -> dict | None:
             SELECT * FROM access_db
             WHERE doctor_id = %s AND patient_id = %s AND status = 'pending'
         """, (doctor_id, patient_id))
+        row = cur.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        for k, v in d.items():
+            if isinstance(v, datetime):
+                d[k] = v.isoformat()
+        return d
+
+
+def _db_access_get_for_pair(doctor_id: str, patient_id: str) -> dict | None:
+    with db_cursor(commit=False) as cur:
+        cur.execute("""
+            SELECT * FROM access_db
+            WHERE doctor_id = %s AND patient_id = %s
+            LIMIT 1
+        """, (doctor_id, patient_id))
+        row = cur.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        for k, v in d.items():
+            if isinstance(v, datetime):
+                d[k] = v.isoformat()
+        return d
+
+
+def _db_access_reopen_request(req_id: str, doctor_email: str = "") -> dict | None:
+    with db_cursor() as cur:
+        cur.execute("""
+            UPDATE access_db
+            SET status = 'pending',
+                doctor_email = COALESCE(NULLIF(%s, ''), doctor_email),
+                responded_at = NULL,
+                created_at = now()
+            WHERE id = %s
+            RETURNING *
+        """, (doctor_email, req_id))
         row = cur.fetchone()
         if not row:
             return None
@@ -1396,6 +1462,12 @@ def get_patient_data(profile_code):
             return jsonify({"error": "Malformed encrypted record"}), 500
 
         print(f"\n[🔍 SERVER] Returning encrypted data for {profile_code}")
+        auth_header = request.headers.get("Authorization", "")
+        token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
+        jwt_payload = _jwt_decode(token) if token else None
+        actor = (jwt_payload.get("uid") or jwt_payload.get("sub")) if jwt_payload else "api_key"
+        audit("patient_record_viewed", actor=actor, target=profile_code,
+              detail="", ip=request.remote_addr)
 
         return jsonify({
             "encrypted_record": enc_record,
@@ -1560,6 +1632,12 @@ def get_wrapped_key_for_profile(profile_code):
                 else:
                     entry[k] = v
             out[dk] = entry
+        auth_header = request.headers.get("Authorization", "")
+        token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
+        jwt_payload = _jwt_decode(token) if token else None
+        actor = (jwt_payload.get("uid") or jwt_payload.get("sub")) if jwt_payload else "api_key"
+        audit("wrapped_key_retrieved", actor=actor, target=profile_code,
+              detail="", ip=request.remote_addr)
         return jsonify({"wrapped_keys": out}), 200
     except Exception as e:
         return jsonify({"error": "server_error", "details": str(e)}), 500
@@ -1680,11 +1758,39 @@ def _cleanup_old_requests():
         with db_cursor() as cur:
             # resolved access requests older than 48h
             cur.execute("""
+                INSERT INTO access_requests_archive
+                    (request_id, profile_code, doctor_code, status,
+                     doctor_public_pem, encrypted_doctor_profile, wrapped_key,
+                     encrypted_kdata, temp_key_expires_at, created_at,
+                     approved_at, denied_at, cancelled_at, expired_at, archived_at)
+                SELECT request_id, profile_code, doctor_code, status,
+                       doctor_public_pem, encrypted_doctor_profile, wrapped_key,
+                       encrypted_kdata, temp_key_expires_at, created_at,
+                       approved_at, denied_at, cancelled_at, expired_at, now()
+                FROM access_requests
+                WHERE status IN ('approved','denied')
+                  AND COALESCE(approved_at, denied_at) < now() - interval '48 hours'
+            """)
+            cur.execute("""
                 DELETE FROM access_requests
                 WHERE status IN ('approved','denied')
                   AND COALESCE(approved_at, denied_at) < now() - interval '48 hours'
             """)
             # stale pending older than 7 days
+            cur.execute("""
+                INSERT INTO access_requests_archive
+                    (request_id, profile_code, doctor_code, status,
+                     doctor_public_pem, encrypted_doctor_profile, wrapped_key,
+                     encrypted_kdata, temp_key_expires_at, created_at,
+                     approved_at, denied_at, cancelled_at, expired_at, archived_at)
+                SELECT request_id, profile_code, doctor_code, status,
+                       doctor_public_pem, encrypted_doctor_profile, wrapped_key,
+                       encrypted_kdata, temp_key_expires_at, created_at,
+                       approved_at, denied_at, cancelled_at, expired_at, now()
+                FROM access_requests
+                WHERE status = 'pending'
+                  AND created_at < now() - interval '7 days'
+            """)
             cur.execute("""
                 DELETE FROM access_requests
                 WHERE status = 'pending'
@@ -2177,6 +2283,8 @@ def get_patient_reports(patient_id):
     if p["role"] == "patient" and p["uid"] != patient_id:
         return jsonify({"error": "forbidden"}), 403
     records = _db_get_records_for_patient(patient_id)
+    audit("patient_reports_listed", actor=p.get("uid") or p.get("sub", ""),
+          target=patient_id, detail="", ip=request.remote_addr)
     return jsonify(records)
 
 
@@ -2189,6 +2297,8 @@ def get_report(record_id):
         return jsonify({"error": "not_found"}), 404
     if p["role"] == "patient" and p["uid"] != rec["patient_id"]:
         return jsonify({"error": "forbidden"}), 403
+    audit("report_viewed", actor=p.get("uid") or p.get("sub", ""),
+          target=record_id, detail="", ip=request.remote_addr)
     return jsonify(rec)
 
 
@@ -2251,7 +2361,11 @@ def upload_image():
 @app.route("/images/record/<record_id>", methods=["GET"])
 @_require_jwt()
 def get_images_for_record(record_id):
-    return jsonify(_db_get_images_for_record(record_id))
+    images = _db_get_images_for_record(record_id)
+    audit("record_images_listed",
+          actor=request.jwt_payload.get("uid") or request.jwt_payload.get("sub", ""),
+          target=record_id, detail="", ip=request.remote_addr)
+    return jsonify(images)
 
 
 @app.route("/images/download/<image_id>", methods=["GET"])
@@ -2264,7 +2378,9 @@ def download_image(image_id):
     path = os.path.join(UPLOADS_DIR, img["encrypted_image_path"])
     if not os.path.exists(path):
         return jsonify({"error": "file_missing"}), 404
-    audit("image_download", actor=request.jwt_payload["sub"], target=image_id)
+    audit("image_downloaded",
+          actor=request.jwt_payload.get("uid") or request.jwt_payload.get("sub", ""),
+          target=image_id, detail="", ip=request.remote_addr)
     return send_file(path, as_attachment=True,
                      download_name=f"encrypted_{image_id}.enc")
 
@@ -2323,9 +2439,45 @@ def get_profile_photo(uid):
 @app.route("/access/request", methods=["POST"])
 @_require_jwt(roles=["doctor"])
 def jwt_request_access():
-    body       = request.get_json(force=True) or {}
-    patient_id = body.get("patient_id", "")  # Could be UUID or profile_code
+    body = request.get_json(force=True) or {}
     doctor_jwt = request.jwt_payload
+
+    legacy_fields = ["profile_code", "doctor_code", "doctor_public_pem", "encrypted_doctor_profile_b64"]
+    if all(field in body for field in legacy_fields):
+        profile_code = (body.get("profile_code") or "").strip()
+        doctor_code = (body.get("doctor_code") or "").strip()
+        doctor_pub = body.get("doctor_public_pem")
+        enc_profile_b64 = body.get("encrypted_doctor_profile_b64")
+
+        if not profile_code:
+            return jsonify({"error": "missing profile_code"}), 400
+        if not doctor_code:
+            return jsonify({"error": "invalid_doctor_code"}), 400
+        if not isinstance(doctor_pub, str) or not doctor_pub:
+            return jsonify({"error": "invalid_doctor_public_pem"}), 400
+        if not isinstance(enc_profile_b64, str) or not enc_profile_b64:
+            return jsonify({"error": "invalid_encrypted_profile"}), 400
+
+        safe_code = re.sub(r"[^A-Za-z0-9_\-]", "", profile_code)
+        if not safe_code:
+            return jsonify({"error": "invalid_profile_code"}), 400
+
+        existing = _db_pending_request_exists(safe_code, doctor_code)
+        if existing:
+            return jsonify({"message": "already_pending", "request_id": existing["request_id"]}), 200
+
+        entry = {
+            "request_id": str(uuid.uuid4()),
+            "profile_code": safe_code,
+            "doctor_code": doctor_code,
+            "doctor_public_pem": doctor_pub,
+            "encrypted_doctor_profile_b64": enc_profile_b64,
+        }
+        req_id = _db_create_access_request(entry)
+        audit("access_request", actor=doctor_jwt["sub"], target=safe_code)
+        return jsonify({"status": "ok", "request_id": req_id}), 201
+
+    patient_id = body.get("patient_id", "")  # Could be UUID or profile_code
     if not patient_id:
         return jsonify({"error": "missing patient_id"}), 400
 
@@ -2343,9 +2495,28 @@ def jwt_request_access():
     # doctor_id is the doctor's UUID (uid in JWT is now UUID)
     doctor_uuid = doctor_jwt["uid"]
 
-    existing = _db_access_get_pending(doctor_uuid, patient_uuid)
+    existing = _db_access_get_for_pair(doctor_uuid, patient_uuid)
     if existing:
-        return jsonify({"message": "already_pending", "id": existing["id"]}), 200
+        status = existing.get("status", "")
+        if status == "pending":
+            return jsonify({
+                "message": "already_pending",
+                "id": existing["id"],
+                "status": status,
+            }), 200
+        if status == "approved":
+            return jsonify({
+                "message": "already_approved",
+                "id": existing["id"],
+                "status": status,
+            }), 200
+        reopened = _db_access_reopen_request(existing["id"], doctor_jwt.get("sub", ""))
+        audit("access_request_reopened", actor=doctor_jwt["sub"], target=patient_id)
+        return jsonify({
+            "message": "request_reopened",
+            "id": reopened["id"] if reopened else existing["id"],
+            "status": "pending",
+        }), 200
 
     entry = {
         "id": str(uuid.uuid4()),
@@ -2424,6 +2595,26 @@ def get_audit_log():
                 d["ts"] = d["ts"].isoformat()
             result.append(d)
         return jsonify(result)
+
+
+@app.route("/audit/access_history/<profile_code>", methods=["GET"])
+@_require_jwt()
+def get_access_history(profile_code):
+    safe_code = re.sub(r"[^A-Za-z0-9_\-]", "", profile_code)
+    if not safe_code:
+        return jsonify({"error": "invalid_profile_code"}), 400
+
+    p = request.jwt_payload
+    role = p.get("role", "")
+    if role == "patient":
+        profile_claim = p.get("profile_code", "") or p.get("uid", "")
+        if profile_claim != safe_code:
+            return jsonify({"error": "forbidden"}), 403
+    elif role not in ("doctor", "admin"):
+        return jsonify({"error": "forbidden"}), 403
+
+    history = _db_get_access_history(safe_code)
+    return jsonify(history), 200
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -2806,6 +2997,12 @@ def serve_note_image(filename):
     img_path = os.path.join(NOTE_IMAGES_DIR, filename)
     if not os.path.exists(img_path):
         return jsonify({"error": "image_not_found"}), 404
+    auth_hdr = request.headers.get("Authorization", "")
+    token = auth_hdr.replace("Bearer ", "").strip() if auth_hdr.startswith("Bearer ") else ""
+    jwt_payload = _jwt_decode(token) if token else None
+    actor = (jwt_payload.get("uid") or jwt_payload.get("sub")) if jwt_payload else "api_key"
+    audit("note_image_viewed", actor=actor, target=filename,
+          detail="", ip=request.remote_addr)
     ext  = filename.rsplit(".", 1)[-1].lower()
     mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
             "gif": "image/gif", "webp": "image/webp"}.get(ext, "application/octet-stream")
@@ -2927,9 +3124,11 @@ def doctor_notes_for_patient(patient_code):
     token = auth_hdr.replace("Bearer ", "").strip() if auth_hdr.startswith("Bearer ") else ""
     if not token:
         token = request.cookies.get("access_token", "")
+    auth_actor = "api_key"
     if token:
         jwt_payload = _jwt_decode(token)
         if jwt_payload:
+            auth_actor = jwt_payload.get("uid") or jwt_payload.get("sub") or "api_key"
             role = jwt_payload.get("role", "")
             uid  = jwt_payload.get("uid", "")
             if role == "patient" and uid != patient_code:
@@ -2942,6 +3141,8 @@ def doctor_notes_for_patient(patient_code):
 
     doc_filter = (request.args.get("doctor_code") or "").strip()
     notes = _db_get_notes(patient_code, doctor_code=doc_filter if doc_filter else None)
+    audit("doctor_notes_viewed", actor=auth_actor, target=patient_code,
+          detail="", ip=request.remote_addr)
     return jsonify(notes), 200
 
 

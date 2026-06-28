@@ -2870,9 +2870,8 @@ def patient_prescriptions_direct():
     if jwt_tok:
         try:
             hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
-            # Use profile_code as patient_id (backend stores it that way)
-            # BUG3 FIX: EMR tables store users.id (UUID), not profile_code
-            _emr_pid = session.get("user_id") or pid
+            # Let the backend resolve either UUID or profile_code via _resolve_pid().
+            _emr_pid = session.get("user_id") or session.get("profile_code")
             r = http.get(f"{BACKEND}/emr/prescriptions/patient/{_emr_pid}", headers=hdrs, timeout=8)
             if r.ok:
                 data = r.json()
@@ -2926,8 +2925,8 @@ def patient_lab_reports_direct():
     if jwt_tok:
         try:
             hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
-            # BUG3 FIX: EMR tables store users.id (UUID), not profile_code
-            _emr_pid = session.get("user_id") or pid
+            # Let the backend resolve either UUID or profile_code via _resolve_pid().
+            _emr_pid = session.get("user_id") or session.get("profile_code")
             r = http.get(f"{BACKEND}/emr/lab-reports/patient/{_emr_pid}", headers=hdrs, timeout=8)
             if r.ok:
                 data = r.json()

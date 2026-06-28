@@ -655,7 +655,15 @@
         document.getElementById('req-btn-text').textContent = 'Send access request';
         document.getElementById('req-spinner').style.display = 'none';
         if (res.ok) {
-          showAlert(reqAlertEl, 'Access request sent. Patient will be notified.', 'success');
+          var msg = 'Access request sent. Patient will be notified.';
+          if (res.data && res.data.message === 'already_pending') {
+            msg = 'Access request is already pending for this patient.';
+          } else if (res.data && res.data.message === 'already_approved') {
+            msg = 'Access is already approved for this patient.';
+          } else if (res.data && res.data.message === 'request_reopened') {
+            msg = 'Access request reopened. Patient will be notified.';
+          }
+          showAlert(reqAlertEl, msg, 'success');
           document.getElementById('patient-code-input').value = '';
           loadDoctorRequests();
         } else {

@@ -43,12 +43,17 @@ def start_background(label, script, port):
         except OSError:
             # Job object disallows breakaway — fall back to PowerShell Start-Process
             # which always runs outside the current job object.
+            err_path = os.path.splitext(log_path)[0] + ".err.log"
+            rel_script = os.path.relpath(script, ROOT)
             ps_cmd = (
+                "$env:PYTHONIOENCODING='utf-8'; "
+                "$env:FLASK_ENV='development'; "
                 f"Start-Process -FilePath '{PY}' "
-                f"-ArgumentList '{script}' "
+                f"-ArgumentList @('{rel_script}') "
                 f"-WorkingDirectory '{ROOT}' "
                 f"-WindowStyle Hidden "
-                f"-RedirectStandardOutput '{log_path}'"
+                f"-RedirectStandardOutput '{log_path}' "
+                f"-RedirectStandardError '{err_path}'"
             )
             subprocess.Popen(
                 ["powershell", "-NoProfile", "-NonInteractive",

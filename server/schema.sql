@@ -93,6 +93,33 @@ CREATE INDEX IF NOT EXISTS idx_access_requests_doctor
 CREATE INDEX IF NOT EXISTS idx_access_requests_status
     ON access_requests(status);
 
+-- ── Archived access requests ───────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS access_requests_archive (
+    request_id                  TEXT PRIMARY KEY,
+    profile_code                TEXT NOT NULL,
+    doctor_code                 TEXT NOT NULL,
+    status                      TEXT NOT NULL
+                                CHECK (status IN
+                                ('pending','approved','denied','expired','cancelled')),
+    doctor_public_pem           TEXT,
+    encrypted_doctor_profile    TEXT,
+    wrapped_key                 TEXT,
+    encrypted_kdata             JSONB,
+    temp_key_expires_at         TIMESTAMPTZ,
+    created_at                  TIMESTAMPTZ,
+    approved_at                 TIMESTAMPTZ,
+    denied_at                   TIMESTAMPTZ,
+    cancelled_at                TIMESTAMPTZ,
+    expired_at                  TIMESTAMPTZ,
+    archived_at                 TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_access_requests_archive_profile
+    ON access_requests_archive(profile_code);
+CREATE INDEX IF NOT EXISTS idx_access_requests_archive_doctor
+    ON access_requests_archive(doctor_code);
+CREATE INDEX IF NOT EXISTS idx_access_requests_archive_status
+    ON access_requests_archive(status);
+
 -- ── Wrapped keys ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS wrapped_keys (
     id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
@@ -335,6 +362,29 @@ CREATE INDEX IF NOT EXISTS idx_conditions_status
 -- + lab orders for one encounter.  appointment_source disambiguates which of
 -- the two appointment tables (legacy `appointments` or `emr_appointments`) the
 -- appointment_id refers to — this project currently has two parallel systems.
+-- Vitals
+-- Time-series vital measurements for a patient.  This lives alongside the
+-- latest snapshot stored in emr_profiles.patient_metadata.
+CREATE TABLE IF NOT EXISTS vitals (
+    id                       TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    patient_id               TEXT NOT NULL,
+    recorded_by              TEXT NOT NULL,        -- doctor_id, or 'self'
+    encounter_id             TEXT,
+    height_cm                NUMERIC,
+    weight_kg                NUMERIC,
+    bp_systolic              INTEGER,
+    bp_diastolic             INTEGER,
+    heart_rate_bpm           INTEGER,
+    blood_sugar_mgdl         NUMERIC,
+    oxygen_saturation_pct    NUMERIC,
+    temperature_c            NUMERIC,
+    notes                    TEXT DEFAULT '',
+    recorded_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at               TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_vitals_patient
+    ON vitals(patient_id, recorded_at DESC);
+
 CREATE TABLE IF NOT EXISTS encounters (
     id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     patient_id          TEXT NOT NULL,

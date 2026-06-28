@@ -768,6 +768,80 @@ def new_condition(data: dict) -> dict:
 
 # ── Encounter ─────────────────────────────────────────────────────────────────
 
+# Vitals
+
+def _number_or_none(value):
+    if value is None or str(value).strip() == "":
+        return None
+    return float(value)
+
+
+def _int_or_none(value):
+    if value is None or str(value).strip() == "":
+        return None
+    return int(value)
+
+
+def validate_vitals(data: dict) -> list[str]:
+    """Return list of validation error strings (empty = valid)."""
+    errors = _require(data, ["patient_id", "recorded_by"])
+    non_negative_numeric = (
+        "height_cm",
+        "weight_kg",
+        "blood_sugar_mgdl",
+        "oxygen_saturation_pct",
+    )
+    for field in non_negative_numeric:
+        val = data.get(field)
+        if val is None or str(val).strip() == "":
+            continue
+        try:
+            if float(val) < 0:
+                errors.append(f"{field} cannot be negative")
+        except (TypeError, ValueError):
+            errors.append(f"{field} must be a number")
+    val = data.get("heart_rate_bpm")
+    if val is not None and str(val).strip() != "":
+        try:
+            heart_rate = int(val)
+            if heart_rate < 0:
+                errors.append("heart_rate_bpm cannot be negative")
+            if heart_rate > 400:
+                errors.append("heart_rate_bpm is too high")
+        except (TypeError, ValueError):
+            errors.append("heart_rate_bpm must be an integer")
+    for field in ("bp_systolic", "bp_diastolic"):
+        val = data.get(field)
+        if val is None or str(val).strip() == "":
+            continue
+        try:
+            int(val)
+        except (TypeError, ValueError):
+            errors.append(f"{field} must be an integer")
+    return errors
+
+
+def new_vitals(data: dict) -> dict:
+    """Create a normalised vitals dict."""
+    return {
+        "id":                    str(uuid.uuid4()),
+        "patient_id":            data["patient_id"],
+        "recorded_by":           (data.get("recorded_by") or "").strip(),
+        "encounter_id":          data.get("encounter_id") or None,
+        "height_cm":             _number_or_none(data.get("height_cm")),
+        "weight_kg":             _number_or_none(data.get("weight_kg")),
+        "bp_systolic":           _int_or_none(data.get("bp_systolic")),
+        "bp_diastolic":          _int_or_none(data.get("bp_diastolic")),
+        "heart_rate_bpm":        _int_or_none(data.get("heart_rate_bpm")),
+        "blood_sugar_mgdl":      _number_or_none(data.get("blood_sugar_mgdl")),
+        "oxygen_saturation_pct": _number_or_none(data.get("oxygen_saturation_pct")),
+        "temperature_c":         _number_or_none(data.get("temperature_c")),
+        "notes":                 (data.get("notes") or "").strip(),
+        "recorded_at":           data.get("recorded_at") or _now_iso(),
+        "created_at":            _now_iso(),
+    }
+
+
 ENCOUNTER_STATUSES   = {"in_progress", "completed", "cancelled"}
 APPOINTMENT_SOURCES  = {"", "legacy", "emr"}
 

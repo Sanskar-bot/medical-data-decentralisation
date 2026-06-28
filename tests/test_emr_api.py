@@ -1,5 +1,5 @@
 """
-tests/test_emr_api.py — Automated tests for the EMR module endpoints.
+tests/test_emr_api.py - Automated tests for the EMR module endpoints.
 
 Uses Flask's test_client so no running server is needed.
 Run with:  python -m pytest tests/test_emr_api.py -v
@@ -97,12 +97,14 @@ def _clean_emr_data():
                 TRUNCATE TABLE
                     emr_profiles, emr_appointments,
                     emr_prescriptions, emr_lab_reports,
+                    vitals,
+                    access_db,
+                    access_requests, access_requests_archive,
                     rate_limits
-                RESTART IDENTITY CASCADE
+                RESTART IDENTITY CASCADE;
             """)
-    except Exception as e:
-        print(f"[test cleanup] DB truncate failed: {e}")
-    yield
+    except Exception:
+        pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -381,9 +383,372 @@ class TestLabReports:
         assert r.status_code == 403
 
 
+class TestVitals:
+    def _approve_access(self, doctor_id, patient_id):
+        from db import db_cursor
+        import uuid
+        with db_cursor() as cur:
+            cur.execute("""
+                INSERT INTO access_db (id, doctor_id, doctor_email, patient_id, status, responded_at)
+                VALUES (%s, %s, %s, %s, 'approved', now())
+                ON CONFLICT (doctor_id, patient_id) DO UPDATE SET
+                    status='approved',
+                    responded_at=now()
+            """, (str(uuid.uuid4()), doctor_id, f"{doctor_id.lower()}@test.local", patient_id))
+
+    def test_create_vitals(self, client, jwt_encode):
+        self._approve_access("DOC-VITALS", "PAT-VITALS")
+        r = client.post("/emr/vitals",
+                        headers=_auth_headers(jwt_encode, role="doctor", uid="DOC-VITALS"),
+                        json={
+                            "patient_id": "PAT-VITALS",
+                            "height_cm": 170,
+                            "weight_kg": 65,
+                            "bp_systolic": 120,
+                            "bp_diastolic": 80,
+                            "heart_rate_bpm": 72,
+                        })
+        assert r.status_code == 201
+        data = r.get_json()
+        assert data["patient_id"] == "PAT-VITALS"
+        assert data["recorded_by"] == "DOC-VITALS"
+        assert data["heart_rate_bpm"] == 72
+
+    def test_list_patient_vitals_newest_first(self, client, jwt_encode):
+        self._approve_access("DOC-VITALS", "PAT-VITALS-LIST")
+        headers = _auth_headers(jwt_encode, role="doctor", uid="DOC-VITALS")
+        client.post("/emr/vitals", headers=headers, json={
+            "patient_id": "PAT-VITALS-LIST",
+            "weight_kg": 60,
+            "recorded_at": "2026-01-01T09:00:00+00:00",
+        })
+        client.post("/emr/vitals", headers=headers, json={
+            "patient_id": "PAT-VITALS-LIST",
+            "weight_kg": 62,
+            "recorded_at": "2026-01-02T09:00:00+00:00",
+        })
+        r = client.get("/emr/vitals/patient/PAT-VITALS-LIST",
+                       headers=_auth_headers(jwt_encode, role="patient", uid="PAT-VITALS-LIST"))
+        assert r.status_code == 200
+        rows = r.get_json()
+        assert len(rows) == 2
+        assert float(rows[0]["weight_kg"]) == 62.0
+        assert float(rows[1]["weight_kg"]) == 60.0
+
+    def test_patient_cannot_create_vitals_route(self, client, jwt_encode):
+        r = client.post("/emr/vitals",
+                        headers=_auth_headers(jwt_encode, role="patient", uid="PAT-VITALS"),
+                        json={"patient_id": "PAT-VITALS", "heart_rate_bpm": 72})
+        assert r.status_code == 403
+
+    def test_doctor_without_access_cannot_read_vitals(self, client, jwt_encode):
+        self._approve_access("DOC-AUTHORIZED", "PAT-VITALS-PRIVATE")
+        client.post("/emr/vitals",
+                    headers=_auth_headers(jwt_encode, role="doctor", uid="DOC-AUTHORIZED"),
+                    json={"patient_id": "PAT-VITALS-PRIVATE", "heart_rate_bpm": 72})
+
+        r = client.get("/emr/vitals/patient/PAT-VITALS-PRIVATE",
+                       headers=_auth_headers(jwt_encode, role="doctor", uid="DOC-NO-ACCESS"))
+        assert r.status_code == 403
+
+    def test_doctor_without_access_cannot_create_vitals(self, client, jwt_encode):
+        r = client.post("/emr/vitals",
+                        headers=_auth_headers(jwt_encode, role="doctor", uid="DOC-NO-ACCESS"),
+                        json={"patient_id": "PAT-VITALS-NOACCESS", "heart_rate_bpm": 72})
+        assert r.status_code == 403
+
+    def test_profile_vitals_update_keeps_snapshot_and_creates_history(self, client, jwt_encode):
+        uid = "PAT-VITALS-PROFILE"
+        r = client.put(f"/emr/patient/{uid}/profile",
+                       headers=_auth_headers(jwt_encode, role="patient", uid=uid),
+                       json={"height": 171, "weight": 66, "blood_pressure": "118/76"})
+        assert r.status_code == 201
+        data = r.get_json()
+        assert data["patient_metadata"]["height"] == 171
+        assert data["patient_metadata"]["weight"] == 66
+        assert data["patient_metadata"]["blood_pressure"] == "118/76"
+
+        history = client.get(f"/emr/vitals/patient/{uid}",
+                             headers=_auth_headers(jwt_encode, role="patient", uid=uid))
+        assert history.status_code == 200
+        rows = history.get_json()
+        assert len(rows) == 1
+        assert float(rows[0]["height_cm"]) == 171.0
+        assert float(rows[0]["weight_kg"]) == 66.0
+        assert rows[0]["bp_systolic"] == 118
+        assert rows[0]["bp_diastolic"] == 76
+        assert rows[0]["recorded_by"] == "self"
+
+
+class TestReadAuditLogs:
+    def test_patient_reports_read_writes_audit_log(self, client, jwt_encode):
+        patient_id = "PAT-AUDIT-REPORT"
+        doctor_token = _make_jwt(jwt_encode, role="doctor", uid="DOC-AUDIT-REPORT")
+        upload = client.post(
+            "/reports/upload",
+            headers={"Authorization": f"Bearer {doctor_token}", "Content-Type": "application/json"},
+            json={
+                "patient_id": patient_id,
+                "encrypted_report_blob": {"data": "secret"},
+                "encrypted_aes_key": "encrypted-key",
+            },
+        )
+        assert upload.status_code == 201
+
+        r = client.get(f"/reports/patient/{patient_id}",
+                       headers=_auth_headers(jwt_encode, role="patient", uid=patient_id))
+        assert r.status_code == 200
+
+        from db import db_cursor
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                "SELECT * FROM audit_log WHERE action='patient_reports_listed' AND target=%s ORDER BY ts DESC",
+                (patient_id,),
+            )
+            rows = cur.fetchall()
+        assert len(rows) >= 1
+        assert rows[0]["actor"] == patient_id
+
+    def test_report_read_writes_audit_log(self, client, jwt_encode):
+        patient_id = "PAT-AUDIT-REPORT2"
+        doctor_token = _make_jwt(jwt_encode, role="doctor", uid="DOC-AUDIT-REPORT2")
+        upload = client.post(
+            "/reports/upload",
+            headers={"Authorization": f"Bearer {doctor_token}", "Content-Type": "application/json"},
+            json={
+                "patient_id": patient_id,
+                "encrypted_report_blob": {"data": "secret"},
+                "encrypted_aes_key": "encrypted-key",
+            },
+        )
+        assert upload.status_code == 201
+        record_id = upload.get_json()["record_id"]
+
+        r = client.get(f"/reports/{record_id}",
+                       headers=_auth_headers(jwt_encode, role="patient", uid=patient_id))
+        assert r.status_code == 200
+
+        from db import db_cursor
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                "SELECT * FROM audit_log WHERE action='report_viewed' AND target=%s ORDER BY ts DESC",
+                (record_id,),
+            )
+            rows = cur.fetchall()
+        assert len(rows) >= 1
+        assert rows[0]["actor"] == patient_id
+
+    def test_emr_profile_read_writes_audit_log(self, client, jwt_encode):
+        uid = "PAT-AUDIT-PROFILE"
+        client.put(
+            f"/emr/patient/{uid}/profile",
+            headers=_auth_headers(jwt_encode, role="patient", uid=uid),
+            json={"name": "Audit Patient", "age": 28},
+        )
+        assert client.get(f"/emr/patient/{uid}/profile",
+                          headers=_auth_headers(jwt_encode, role="doctor")).status_code == 200
+
+        from db import db_cursor
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                "SELECT * FROM audit_log WHERE action='emr_profile_read' AND target=%s ORDER BY ts DESC",
+                (uid,),
+            )
+            rows = cur.fetchall()
+        assert len(rows) >= 1
+        assert rows[0]["actor"] == "test-uid-001"
+
+    def test_emr_doctor_encounters_read_writes_audit_log(self, client, jwt_encode):
+        doctor_id = "DOC-AUDIT-ENCOUNTER"
+        client.post(
+            "/emr/encounters",
+            headers=_auth_headers(jwt_encode, role="doctor", uid=doctor_id),
+            json={"patient_id": "PAT-AUDIT-ENCOUNTER", "doctor_id": doctor_id},
+        )
+
+        r = client.get(
+            f"/emr/encounters/doctor/{doctor_id}",
+            headers=_auth_headers(jwt_encode, role="doctor", uid=doctor_id),
+        )
+        assert r.status_code == 200
+
+        from db import db_cursor
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                "SELECT * FROM audit_log WHERE action='emr_doctor_encounters_read' AND target=%s ORDER BY ts DESC",
+                (doctor_id,),
+            )
+            rows = cur.fetchall()
+        assert len(rows) >= 1
+        assert rows[0]["actor"] == doctor_id
+
+    def test_cleanup_archives_access_request_before_delete(self, client, jwt_encode, monkeypatch):
+        import server
+        from db import db_cursor
+
+        # Prevent the cleanup function from scheduling a background timer during the test.
+        class DummyTimer:
+            def __init__(self, interval, fn):
+                pass
+            def start(self):
+                pass
+        monkeypatch.setattr(server._threading, "Timer", DummyTimer)
+
+        doctor_token = _make_jwt(jwt_encode, role="doctor", uid="DOC-ACCESS-ARCHIVE")
+        patient_id = "PAT-ACCESS-ARCHIVE"
+        create = client.post(
+            "/access/request",
+            headers={"Authorization": f"Bearer {doctor_token}", "Content-Type": "application/json"},
+            json={
+                "profile_code": patient_id,
+                "doctor_code": "DOC-ACCESS-ARCHIVE",
+                "doctor_public_pem": "pem",
+                "encrypted_doctor_profile_b64": "abc",
+            },
+        )
+        assert create.status_code == 201
+        request_id = create.get_json()["request_id"]
+
+        # Backdate approved_at and set status to approved so cleanup will archive it.
+        with db_cursor() as cur:
+            cur.execute(
+                "UPDATE access_requests SET status='approved', approved_at = now() - interval '49 hours' WHERE request_id = %s",
+                (request_id,)
+            )
+
+        server._cleanup_old_requests()
+
+        with db_cursor(commit=False) as cur:
+            cur.execute("SELECT * FROM access_requests WHERE request_id = %s", (request_id,))
+            assert cur.fetchone() is None
+            cur.execute("SELECT * FROM access_requests_archive WHERE request_id = %s", (request_id,))
+            row = cur.fetchone()
+        assert row is not None
+        assert row["profile_code"] == patient_id
+
+    def test_access_history_endpoint_returns_archived_metadata(self, client, jwt_encode, monkeypatch):
+        import server
+        from db import db_cursor
+
+        class DummyTimer:
+            def __init__(self, interval, fn):
+                pass
+            def start(self):
+                pass
+        monkeypatch.setattr(server._threading, "Timer", DummyTimer)
+
+        doctor_token = _make_jwt(jwt_encode, role="doctor", uid="DOC-ACCESS-HISTORY")
+        patient_id = "PAT-ACCESS-HISTORY"
+        create = client.post(
+            "/access/request",
+            headers={"Authorization": f"Bearer {doctor_token}", "Content-Type": "application/json"},
+            json={
+                "profile_code": patient_id,
+                "doctor_code": "DOC-ACCESS-HISTORY",
+                "doctor_public_pem": "pem",
+                "encrypted_doctor_profile_b64": "abc",
+            },
+        )
+        assert create.status_code == 201
+        request_id = create.get_json()["request_id"]
+
+        with db_cursor() as cur:
+            cur.execute(
+                "UPDATE access_requests SET status='approved', approved_at = now() - interval '49 hours' WHERE request_id = %s",
+                (request_id,)
+            )
+
+        server._cleanup_old_requests()
+
+        r = client.get(
+            f"/audit/access_history/{patient_id}",
+            headers={"Authorization": f"Bearer {doctor_token}"},
+        )
+        assert r.status_code == 200
+        history = r.get_json()
+        assert isinstance(history, list)
+        assert len(history) >= 1
+        assert history[0]["profile_code"] == patient_id
+        secret_fields = {
+            "doctor_public_pem",
+            "encrypted_doctor_profile",
+            "wrapped_key",
+            "encrypted_kdata",
+            "temp_key_expires_at",
+            "encrypted_record",
+        }
+        assert secret_fields.isdisjoint(history[0])
+
+        patient_token = jwt_encode({
+            "sub": "patient@example.com",
+            "uid": patient_id,
+            "role": "patient",
+            "name": "Patient User",
+            "profile_code": patient_id,
+            "exp": time.time() + 3600,
+        })
+        r2 = client.get(
+            f"/audit/access_history/{patient_id}",
+            headers={"Authorization": f"Bearer {patient_token}"},
+        )
+        assert r2.status_code == 200
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #   ADMIN ENDPOINT TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
+
+class TestAccessRequests:
+    def test_duplicate_pending_access_request_returns_existing(self, client, jwt_encode):
+        headers = _auth_headers(jwt_encode, role="doctor", uid="DOC-DUP-PENDING")
+        first = client.post("/access/request", headers=headers, json={"patient_id": "PAT-DUP-PENDING"})
+        assert first.status_code == 201
+
+        second = client.post("/access/request", headers=headers, json={"patient_id": "PAT-DUP-PENDING"})
+        assert second.status_code == 200
+        data = second.get_json()
+        assert data["message"] == "already_pending"
+        assert data["id"] == first.get_json()["id"]
+
+    def test_duplicate_approved_access_request_is_not_500(self, client, jwt_encode):
+        headers = _auth_headers(jwt_encode, role="doctor", uid="DOC-DUP-APPROVED")
+        first = client.post("/access/request", headers=headers, json={"patient_id": "PAT-DUP-APPROVED"})
+        assert first.status_code == 201
+        request_id = first.get_json()["id"]
+
+        from db import db_cursor
+        with db_cursor() as cur:
+            cur.execute(
+                "UPDATE access_db SET status='approved', responded_at=now() WHERE id=%s",
+                (request_id,),
+            )
+
+        second = client.post("/access/request", headers=headers, json={"patient_id": "PAT-DUP-APPROVED"})
+        assert second.status_code == 200
+        data = second.get_json()
+        assert data["message"] == "already_approved"
+        assert data["id"] == request_id
+
+    def test_denied_access_request_can_be_reopened(self, client, jwt_encode):
+        headers = _auth_headers(jwt_encode, role="doctor", uid="DOC-DUP-DENIED")
+        first = client.post("/access/request", headers=headers, json={"patient_id": "PAT-DUP-DENIED"})
+        assert first.status_code == 201
+        request_id = first.get_json()["id"]
+
+        from db import db_cursor
+        with db_cursor() as cur:
+            cur.execute(
+                "UPDATE access_db SET status='denied', responded_at=now() WHERE id=%s",
+                (request_id,),
+            )
+
+        second = client.post("/access/request", headers=headers, json={"patient_id": "PAT-DUP-DENIED"})
+        assert second.status_code == 200
+        data = second.get_json()
+        assert data["message"] == "request_reopened"
+        assert data["id"] == request_id
+        assert data["status"] == "pending"
+
 
 class TestAdmin:
     def test_non_admin_cannot_access_users(self, client, jwt_encode):
@@ -412,11 +777,11 @@ class TestAdmin:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#   UNIT TESTS — _norm_allergy_list
+#   UNIT TESTS - _norm_allergy_list
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestNormAllergyList:
-    """Pure unit tests — no DB or HTTP needed."""
+    """Pure unit tests - no DB or HTTP needed."""
 
     def setup_method(self):
         from emr.models import _norm_allergy_list
@@ -457,11 +822,86 @@ class TestNormAllergyList:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#   UNIT TESTS — check_allergy_conflicts
+#   UNIT TESTS - check_allergy_conflicts
 # ═══════════════════════════════════════════════════════════════════════════════
 
+class TestVitalsModel:
+    """Pure unit tests - no DB or HTTP needed."""
+
+    def setup_method(self):
+        from emr.models import validate_vitals, new_vitals
+        self.validate = validate_vitals
+        self.new = new_vitals
+
+    def test_required_fields(self):
+        errors = self.validate({})
+        assert "patient_id" in errors
+        assert "recorded_by" in errors
+
+    def test_valid_vitals(self):
+        errors = self.validate({
+            "patient_id": "PAT-MODEL",
+            "recorded_by": "DOC-MODEL",
+            "height_cm": 170,
+            "weight_kg": 65,
+            "heart_rate_bpm": 72,
+            "blood_sugar_mgdl": 95,
+            "oxygen_saturation_pct": 98,
+        })
+        assert errors == []
+
+    def test_negative_values_rejected(self):
+        errors = self.validate({
+            "patient_id": "PAT-MODEL",
+            "recorded_by": "DOC-MODEL",
+            "height_cm": -1,
+            "weight_kg": -1,
+            "heart_rate_bpm": -1,
+            "blood_sugar_mgdl": -1,
+            "oxygen_saturation_pct": -1,
+        })
+        assert "height_cm cannot be negative" in errors
+        assert "weight_kg cannot be negative" in errors
+        assert "heart_rate_bpm cannot be negative" in errors
+        assert "blood_sugar_mgdl cannot be negative" in errors
+        assert "oxygen_saturation_pct cannot be negative" in errors
+
+    def test_absurd_heart_rate_rejected(self):
+        errors = self.validate({
+            "patient_id": "PAT-MODEL",
+            "recorded_by": "DOC-MODEL",
+            "heart_rate_bpm": 401,
+        })
+        assert "heart_rate_bpm is too high" in errors
+
+    def test_new_vitals_normalises_fields(self):
+        result = self.new({
+            "patient_id": "PAT-MODEL",
+            "recorded_by": "DOC-MODEL",
+            "height_cm": "170",
+            "weight_kg": "65.5",
+            "bp_systolic": "120",
+            "bp_diastolic": "80",
+            "heart_rate_bpm": "72",
+            "blood_sugar_mgdl": "95.5",
+            "oxygen_saturation_pct": "98",
+            "notes": " morning ",
+        })
+        assert result["patient_id"] == "PAT-MODEL"
+        assert result["recorded_by"] == "DOC-MODEL"
+        assert result["height_cm"] == 170.0
+        assert result["weight_kg"] == 65.5
+        assert result["bp_systolic"] == 120
+        assert result["bp_diastolic"] == 80
+        assert result["heart_rate_bpm"] == 72
+        assert result["blood_sugar_mgdl"] == 95.5
+        assert result["oxygen_saturation_pct"] == 98.0
+        assert result["notes"] == "morning"
+        assert "id" in result
+
+
 class TestCheckAllergyConflicts:
-    """Pure unit tests — no DB or HTTP needed."""
+    """Pure unit tests - no DB or HTTP needed."""
 
     def setup_method(self):
         from emr.models import check_allergy_conflicts
@@ -498,7 +938,7 @@ class TestCheckAllergyConflicts:
     # ── Cross-reactivity / moderate severity ──────────────────────────────────
 
     def test_cross_reactive_amoxicillin_vs_penicillin_allergy(self):
-        """Amoxicillin is cross-reactive with penicillin allergy — canonical test."""
+        """Amoxicillin is cross-reactive with penicillin allergy - canonical test."""
         conflicts = self.check(["Penicillin"], [{"name": "Amoxicillin"}])
         assert len(conflicts) == 1
         assert conflicts[0]["severity"] == "moderate"
@@ -565,7 +1005,7 @@ class TestCheckAllergyConflicts:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#   INTEGRATION TESTS — Allergy conflict prescription flow
+#   INTEGRATION TESTS - Allergy conflict prescription flow
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestAllergyConflictPrescriptions:
@@ -587,7 +1027,7 @@ class TestAllergyConflictPrescriptions:
     # ── 409 on allergy conflict ───────────────────────────────────────────────
 
     def test_amoxicillin_vs_penicillin_allergy_returns_409(self, client, jwt_encode):
-        """Prescribing Amoxicillin to a patient with Penicillin allergy → 409."""
+        """Prescribing Amoxicillin to a patient with Penicillin allergy - 409."""
         uid = "PAT-ALLERGY-001"
         self._create_patient_profile_with_penicillin_allergy(client, jwt_encode, uid)
 
@@ -631,7 +1071,7 @@ class TestAllergyConflictPrescriptions:
     # ── 201 with override ─────────────────────────────────────────────────────
 
     def test_override_flag_saves_prescription(self, client, jwt_encode):
-        """Same conflict + override_allergy_check: true → 201, prescription saved."""
+        """Same conflict + override_allergy_check: true - 201, prescription saved."""
         uid = "PAT-ALLERGY-003"
         self._create_patient_profile_with_penicillin_allergy(client, jwt_encode, uid)
 
@@ -708,7 +1148,7 @@ class TestAllergyConflictPrescriptions:
     # ── No allergies recorded ─────────────────────────────────────────────────
 
     def test_no_allergies_recorded_prescription_succeeds(self, client, jwt_encode):
-        """Patient has an EMR profile but no allergies → prescription succeeds."""
+        """Patient has an EMR profile but no allergies - prescription succeeds."""
         uid = "PAT-ALLERGY-006"
         client.put(
             f"/emr/patient/{uid}/profile",
@@ -730,7 +1170,7 @@ class TestAllergyConflictPrescriptions:
     # ── No EMR profile at all ─────────────────────────────────────────────────
 
     def test_no_emr_profile_prescription_succeeds(self, client, jwt_encode):
-        """Patient with no EMR profile → no conflict possible → prescription saved."""
+        """Patient with no EMR profile - no conflict possible - prescription saved."""
         uid = "PAT-ALLERGY-007"  # No profile created for this patient
 
         r = client.post(

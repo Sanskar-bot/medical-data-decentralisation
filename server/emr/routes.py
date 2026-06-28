@@ -48,10 +48,10 @@ def _require_jwt_deco(roles=None):
     return decorator
 
 
-def _audit(action, actor="", target="", detail=""):
+def _audit(action, actor="", target="", detail="", ip=""):
     fn = _get_helper("audit")
     if fn:
-        fn(action, actor=actor, target=target, detail=detail)
+        fn(action, actor=actor, target=target, detail=detail, ip=ip)
 
 
 def _resolve_pid(patient_id: str) -> str:
@@ -92,6 +92,138 @@ def _rate_limited(max_calls=10, window=60):
 #   PATIENT PROFILE ENDPOINTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+VITALS_PROFILE_FIELDS = {
+    "height", "weight", "blood_pressure", "heart_rate",
+    "blood_sugar", "oxygen_saturation",
+    "height_cm", "weight_kg", "bp_systolic", "bp_diastolic",
+    "heart_rate_bpm", "blood_sugar_mgdl", "oxygen_saturation_pct",
+    "temperature_c", "notes", "encounter_id", "recorded_at",
+}
+
+
+def _has_vitals_payload(body: dict) -> bool:
+    return any(
+        key in body and body.get(key) is not None and str(body.get(key)).strip() != ""
+        for key in VITALS_PROFILE_FIELDS
+        if key not in {"notes", "encounter_id", "recorded_at"}
+    )
+
+
+def _split_blood_pressure(value):
+    if value is None:
+        return None, None
+    text = str(value).strip()
+    if not text:
+        return None, None
+    parts = text.replace("-", "/").split("/")
+    if len(parts) != 2:
+        return None, None
+    try:
+        return int(parts[0].strip()), int(parts[1].strip())
+    except (TypeError, ValueError):
+        return None, None
+
+
+def _recorded_by_from_jwt(payload: dict) -> str:
+    if payload.get("role") == "patient":
+        return "self"
+    return payload.get("doctor_code") or payload.get("uid", "") or "self"
+
+
+def _doctor_has_patient_access(payload: dict, patient_id: str, raw_patient_id: str | None = None) -> bool:
+    if payload.get("role") == "admin":
+        return True
+    if payload.get("role") != "doctor":
+        return False
+
+    doctor_candidates = {
+        payload.get("uid", ""),
+        payload.get("doctor_code", ""),
+    }
+    resolve_doctor = _get_helper("resolve_doctor_uuid")
+    if resolve_doctor:
+        for ident in list(doctor_candidates):
+            resolved = resolve_doctor(ident)
+            if resolved:
+                doctor_candidates.add(resolved)
+    patient_candidates = {patient_id, raw_patient_id or ""}
+    resolved_raw = _resolve_pid(raw_patient_id or "")
+    if resolved_raw:
+        patient_candidates.add(resolved_raw)
+    doctor_candidates = {d for d in doctor_candidates if d}
+    patient_candidates = {p for p in patient_candidates if p}
+
+    try:
+        from db import db_cursor
+        with db_cursor(commit=False) as cur:
+            cur.execute(
+                "SELECT doctor_code FROM users WHERE id = %s LIMIT 1",
+                (payload.get("uid", ""),),
+            )
+            row = cur.fetchone()
+            if row and row.get("doctor_code"):
+                doctor_candidates.add(row["doctor_code"])
+            cur.execute(
+                "SELECT profile_code FROM users WHERE id = %s LIMIT 1",
+                (patient_id,),
+            )
+            row = cur.fetchone()
+            if row and row.get("profile_code"):
+                patient_candidates.add(row["profile_code"])
+
+            cur.execute(
+                "SELECT 1 FROM access_db WHERE doctor_id = ANY(%s) "
+                "AND patient_id = ANY(%s) AND status = 'approved' LIMIT 1",
+                (list(doctor_candidates), list(patient_candidates)),
+            )
+            if cur.fetchone():
+                return True
+
+            cur.execute(
+                "SELECT 1 FROM wrapped_keys WHERE profile_code = ANY(%s) "
+                "AND doctor_code = ANY(%s) LIMIT 1",
+                (list(patient_candidates), list(doctor_candidates)),
+            )
+            if cur.fetchone():
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _vitals_from_body(body: dict, patient_id: str, recorded_by: str) -> dict:
+    vitals = {
+        "patient_id":   patient_id,
+        "recorded_by":  recorded_by,
+        "encounter_id": body.get("encounter_id") or None,
+        "notes":        body.get("notes", ""),
+    }
+    mapping = {
+        "height":            "height_cm",
+        "weight":            "weight_kg",
+        "heart_rate":        "heart_rate_bpm",
+        "blood_sugar":       "blood_sugar_mgdl",
+        "oxygen_saturation": "oxygen_saturation_pct",
+    }
+    for src, dst in mapping.items():
+        if src in body:
+            vitals[dst] = body[src]
+    for field in (
+        "height_cm", "weight_kg", "bp_systolic", "bp_diastolic",
+        "heart_rate_bpm", "blood_sugar_mgdl", "oxygen_saturation_pct",
+        "temperature_c", "recorded_at",
+    ):
+        if field in body:
+            vitals[field] = body[field]
+    if "blood_pressure" in body and ("bp_systolic" not in vitals or "bp_diastolic" not in vitals):
+        sys, dia = _split_blood_pressure(body.get("blood_pressure"))
+        if sys is not None:
+            vitals["bp_systolic"] = sys
+        if dia is not None:
+            vitals["bp_diastolic"] = dia
+    return vitals
+
+
 @emr_bp.route("/patient/<patient_id>/profile", methods=["GET"])
 @_require_jwt_deco()
 def get_patient_profile(patient_id):
@@ -106,6 +238,8 @@ def get_patient_profile(patient_id):
     if not profile:
         return jsonify({"error": "profile_not_found",
                         "hint": "Use PUT to create the profile first"}), 404
+    _audit("emr_profile_read", actor=p.get("uid") or p.get("sub", ""),
+           target=patient_id, detail="", ip=request.remote_addr)
     return jsonify(profile), 200
 
 
@@ -125,6 +259,16 @@ def upsert_patient_profile(patient_id):
     errors = models.validate_patient_profile(body)
     if errors:
         return jsonify({"error": "validation_failed", "details": errors}), 400
+
+    vitals = None
+    if _has_vitals_payload(body):
+        if p.get("role") == "doctor" and not _doctor_has_patient_access(p, patient_id, patient_id):
+            return jsonify({"error": "forbidden"}), 403
+        vitals_body = _vitals_from_body(body, patient_id, _recorded_by_from_jwt(p))
+        vitals_errors = models.validate_vitals(vitals_body)
+        if vitals_errors:
+            return jsonify({"error": "validation_failed", "details": vitals_errors}), 400
+        vitals = models.new_vitals(vitals_body)
 
     existing = store.get_profile(patient_id)
     if existing:
@@ -159,11 +303,15 @@ def upsert_patient_profile(patient_id):
             existing["patient_metadata"] = current_meta
         existing["updated_at"] = models._now_iso()
         store.upsert_profile(existing)
+        if vitals:
+            store.add_vitals(vitals)
         _audit("emr_profile_updated", actor=p.get("sub", ""), target=patient_id)
         return jsonify(existing), 200
     else:
         profile = models.new_patient_profile(body)
         store.upsert_profile(profile)
+        if vitals:
+            store.add_vitals(vitals)
         _audit("emr_profile_created", actor=p.get("sub", ""), target=patient_id)
         return jsonify(profile), 201
 
@@ -202,6 +350,8 @@ def list_patient_appointments(patient_id):
         return jsonify({"error": "forbidden"}), 403
     appts = store.appointments_for_patient(patient_id)
     appts.sort(key=lambda a: a.get("date_time", ""), reverse=True)
+    _audit("emr_appointments_patient_read", actor=p.get("uid") or p.get("sub", ""),
+           target=patient_id, detail="", ip=request.remote_addr)
     return jsonify(appts), 200
 
 
@@ -213,6 +363,8 @@ def list_doctor_appointments(doctor_id):
         return jsonify({"error": "forbidden"}), 403
     appts = store.appointments_for_doctor(doctor_id)
     appts.sort(key=lambda a: a.get("date_time", ""), reverse=True)
+    _audit("emr_appointments_doctor_read", actor=p.get("uid") or p.get("sub", ""),
+           target=doctor_id, detail="", ip=request.remote_addr)
     return jsonify(appts), 200
 
 
@@ -359,6 +511,8 @@ def list_patient_prescriptions(patient_id):
         return jsonify({"error": "forbidden"}), 403
     rxs = store.prescriptions_for_patient(patient_id)
     rxs.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    _audit("emr_prescriptions_read", actor=p.get("uid") or p.get("sub", ""),
+           target=patient_id, detail="", ip=request.remote_addr)
     return jsonify(rxs), 200
 
 
@@ -373,6 +527,8 @@ def get_prescription(prescription_id):
     patient_code = p.get("profile_code") or p.get("uid", "")
     if p.get("role") == "patient" and patient_code != rx["patient_id"]:
         return jsonify({"error": "forbidden"}), 403
+    _audit("emr_prescription_read", actor=p.get("uid") or p.get("sub", ""),
+           target=prescription_id, detail="", ip=request.remote_addr)
     return jsonify(rx), 200
 
 
@@ -430,6 +586,8 @@ def list_patient_lab_reports(patient_id):
         return jsonify({"error": "forbidden"}), 403
     reports = store.lab_reports_for_patient(patient_id)
     reports.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    _audit("emr_lab_reports_read", actor=p.get("uid") or p.get("sub", ""),
+           target=patient_id, detail="", ip=request.remote_addr)
     return jsonify(reports), 200
 
 
@@ -443,6 +601,8 @@ def get_lab_report(report_id):
     patient_code = p.get("profile_code") or p.get("uid", "")
     if p.get("role") == "patient" and patient_code != report["patient_id"]:
         return jsonify({"error": "forbidden"}), 403
+    _audit("emr_lab_report_read", actor=p.get("uid") or p.get("sub", ""),
+           target=report_id, detail="", ip=request.remote_addr)
     return jsonify(report), 200
 
 
@@ -536,6 +696,56 @@ def admin_stats():
 #   CONDITIONS (PROBLEM LIST) ENDPOINTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+@emr_bp.route("/vitals", methods=["POST"])
+@_require_jwt_deco(roles=["doctor", "admin"])
+@_rate_limited(max_calls=20, window=60)
+def create_vitals():
+    body  = request.get_json(force=True) or {}
+    jwt_p = request.jwt_payload
+
+    raw_patient_id = body.get("patient_id", "")
+    if body.get("patient_id"):
+        body["patient_id"] = _resolve_pid(body["patient_id"])
+    else:
+        return jsonify({"error": "patient_id is required"}), 400
+    if jwt_p.get("role") == "doctor" and not _doctor_has_patient_access(jwt_p, body["patient_id"], raw_patient_id):
+        return jsonify({"error": "forbidden"}), 403
+    if not body.get("recorded_by"):
+        body["recorded_by"] = _recorded_by_from_jwt(jwt_p)
+
+    errors = models.validate_vitals(body)
+    if errors:
+        return jsonify({"error": "validation_failed", "details": errors}), 400
+
+    encounter_id = body.get("encounter_id") or None
+    if encounter_id:
+        enc = store.get_encounter(encounter_id)
+        if not enc or enc["patient_id"] != body["patient_id"]:
+            return jsonify({"error": "encounter_patient_mismatch"}), 400
+
+    vitals = models.new_vitals(body)
+    store.add_vitals(vitals)
+    _audit("vitals_created", actor=jwt_p.get("sub", ""),
+           target=body["patient_id"], detail=f"id={vitals['id']}")
+    return jsonify(vitals), 201
+
+
+@emr_bp.route("/vitals/patient/<patient_id>", methods=["GET"])
+@_require_jwt_deco()
+def list_patient_vitals(patient_id):
+    p = request.jwt_payload
+    raw_patient_id = patient_id
+    patient_id = _resolve_pid(patient_id)
+    if p.get("role") == "patient" and p.get("uid") != patient_id:
+        return jsonify({"error": "forbidden"}), 403
+    if p.get("role") == "doctor" and not _doctor_has_patient_access(p, patient_id, raw_patient_id):
+        return jsonify({"error": "forbidden"}), 403
+    vitals = store.vitals_for_patient(patient_id)
+    _audit("emr_vitals_read", actor=p.get("uid") or p.get("sub", ""),
+           target=patient_id, detail="", ip=request.remote_addr)
+    return jsonify(vitals), 200
+
+
 @emr_bp.route("/conditions", methods=["POST"])
 @_require_jwt_deco(roles=["doctor", "admin"])
 @_rate_limited(max_calls=20, window=60)
@@ -576,6 +786,8 @@ def list_patient_conditions(patient_id):
         return jsonify({"error": "forbidden"}), 403
     status_filter = request.args.get("status") or None
     conds = store.conditions_for_patient(patient_id, status=status_filter)
+    _audit("emr_conditions_read", actor=p.get("uid") or p.get("sub", ""),
+           target=patient_id, detail="", ip=request.remote_addr)
     return jsonify(conds), 200
 
 
@@ -667,6 +879,8 @@ def list_patient_encounters(patient_id):
     if p.get("role") == "patient" and p.get("uid") != patient_id:
         return jsonify({"error": "forbidden"}), 403
     encs = store.encounters_for_patient(patient_id)
+    _audit("emr_encounters_read", actor=p.get("uid") or p.get("sub", ""),
+           target=patient_id, detail="", ip=request.remote_addr)
     return jsonify(encs), 200
 
 
@@ -677,6 +891,8 @@ def list_doctor_encounters(doctor_id):
     if p.get("role") == "doctor" and (p.get("doctor_code") or p.get("uid", "")) != doctor_id:
         return jsonify({"error": "forbidden"}), 403
     encs = store.encounters_for_doctor(doctor_id)
+    _audit("emr_doctor_encounters_read", actor=p.get("uid") or p.get("sub", ""),
+           target=doctor_id, detail="", ip=request.remote_addr)
     return jsonify(encs), 200
 
 
@@ -693,6 +909,8 @@ def get_encounter(encounter_id):
         return jsonify({"error": "forbidden"}), 403
     if p.get("role") == "doctor" and doctor_id != enc["doctor_id"]:
         return jsonify({"error": "forbidden"}), 403
+    _audit("emr_encounter_read", actor=p.get("uid") or p.get("sub", ""),
+           target=encounter_id, detail="", ip=request.remote_addr)
     return jsonify(enc), 200
 
 
@@ -710,6 +928,8 @@ def get_encounter_bundle(encounter_id):
     if p.get("role") == "doctor" and doctor_id != enc["doctor_id"]:
         return jsonify({"error": "forbidden"}), 403
     bundle = store.get_encounter_bundle(encounter_id)
+    _audit("emr_encounter_bundle_read", actor=p.get("uid") or p.get("sub", ""),
+           target=encounter_id, detail="", ip=request.remote_addr)
     return jsonify(bundle), 200
 
 

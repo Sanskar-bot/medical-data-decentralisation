@@ -26,6 +26,10 @@
         <div class="skeleton" style="height:16px; width:50%;"></div>
       </div>
       <div id="vitals-content" style="display:none;"></div>
+      <div style="margin-top:var(--sp-5);">
+        <div class="type-label" style="font-weight:600; margin-bottom:var(--sp-3);">Vitals History</div>
+        <div id="vitals-history"></div>
+      </div>
     </div>
 
     <!-- Medical history -->
@@ -102,6 +106,31 @@
 <script>
 (function() {
   var profile = {};
+  var JWT = {{ session.get('jwt_token','') | tojson }};
+  var EMR_PID = {{ (session.get('user_id') or session.get('profile_code','')) | tojson }};
+
+  function authHeaders(extra) {
+    var h = extra || {};
+    if (JWT) h.Authorization = 'Bearer ' + JWT;
+    return h;
+  }
+
+  function escapeHtml(v) {
+    return String(v == null ? '' : v)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function normaliseProfile(p) {
+    var meta = p.patient_metadata || {};
+    Object.keys(meta).forEach(function(k) {
+      if (p[k] == null || p[k] === '') p[k] = meta[k];
+    });
+    return p;
+  }
 
   function showAlert(el, msg, type) {
     el.className = 'alert alert-' + (type||'error');
@@ -142,18 +171,62 @@
     }).join('');
   }
 
+  function formatDate(v) {
+    if (!v) return '';
+    var d = new Date(v);
+    if (isNaN(d.getTime())) return v;
+    return d.toLocaleString([], {year:'numeric', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+  }
+
+  function renderVitalsHistory(rows) {
+    rows = (rows || []).slice(0, 10);
+    if (!rows.length) {
+      return '<div style="color:var(--tx3); font-size:var(--t-sm);">No vitals history yet.</div>';
+    }
+    return '<table class="data-table" style="width:100%;" aria-label="Vitals history">' +
+      '<thead><tr><th>Date</th><th>Height</th><th>Weight</th><th>BP</th><th>Heart Rate</th></tr></thead>' +
+      '<tbody>' + rows.map(function(r) {
+        var bp = (r.bp_systolic && r.bp_diastolic) ? (r.bp_systolic + '/' + r.bp_diastolic) : '';
+        return '<tr>' +
+          '<td>' + escapeHtml(formatDate(r.recorded_at || r.created_at)) + '</td>' +
+          '<td>' + escapeHtml(r.height_cm ? r.height_cm + ' cm' : '') + '</td>' +
+          '<td>' + escapeHtml(r.weight_kg ? r.weight_kg + ' kg' : '') + '</td>' +
+          '<td>' + escapeHtml(bp) + '</td>' +
+          '<td>' + escapeHtml(r.heart_rate_bpm ? r.heart_rate_bpm + ' bpm' : '') + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  function loadVitalsHistory() {
+    if (!EMR_PID) return Promise.resolve();
+    return fetch('/api/emr/vitals/patient/' + encodeURIComponent(EMR_PID), {
+      headers: authHeaders({})
+    })
+    .then(function(r){ return r.ok ? r.json() : []; })
+    .then(function(rows) {
+      document.getElementById('vitals-history').innerHTML = renderVitalsHistory(rows);
+    })
+    .catch(function() {
+      document.getElementById('vitals-history').innerHTML =
+        '<div style="color:var(--tx3); font-size:var(--t-sm);">Vitals history unavailable.</div>';
+    });
+  }
+
   function load() {
-    fetch('/api/patient/emr-profile-direct')
-    .then(function(r){ return r.json(); })
+    fetch('/api/emr/patient/' + encodeURIComponent(EMR_PID) + '/profile', {
+      headers: authHeaders({})
+    })
+    .then(function(r){ return r.ok ? r.json() : {}; })
     .then(function(p) {
-      profile = p;
+      profile = normaliseProfile(p);
       document.getElementById('vitals-loading').style.display = 'none';
       document.getElementById('history-loading').style.display = 'none';
       var vc = document.getElementById('vitals-content');
       var hc = document.getElementById('history-content');
-      vc.innerHTML = renderVitals(p);
-      hc.innerHTML = renderHistory(p);
+      vc.innerHTML = renderVitals(profile);
+      hc.innerHTML = renderHistory(profile);
       vc.style.display = ''; hc.style.display = '';
+      loadVitalsHistory();
     })
     .catch(function() {
       var a = document.getElementById('page-alert');
@@ -185,9 +258,9 @@
   document.getElementById('save-btn').addEventListener('click', function() {
     var btn = this;
     btn.disabled = true; btn.textContent = 'Saving…';
-    fetch('/api/patient/emr-profile-direct', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
+    fetch('/api/emr/patient/' + encodeURIComponent(EMR_PID) + '/profile', {
+      method: 'PUT',
+      headers: authHeaders({'Content-Type':'application/json'}),
       body: JSON.stringify({
         blood_group:    document.getElementById('emr-blood').value,
         height:         document.getElementById('emr-height').value,

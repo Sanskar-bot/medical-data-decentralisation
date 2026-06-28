@@ -480,6 +480,51 @@ def conditions_for_patient(patient_id: str, status: str | None = None) -> list[d
 
 # ── Encounters ────────────────────────────────────────────────────────────────
 
+def add_vitals(vitals: dict):
+    with db_cursor() as cur:
+        cur.execute("""
+            INSERT INTO vitals
+                (id, patient_id, recorded_by, encounter_id,
+                 height_cm, weight_kg, bp_systolic, bp_diastolic,
+                 heart_rate_bpm, blood_sugar_mgdl, oxygen_saturation_pct,
+                 temperature_c, notes, recorded_at, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            vitals.get("id", str(__import__("uuid").uuid4())),
+            vitals["patient_id"],
+            vitals["recorded_by"],
+            vitals.get("encounter_id") or None,
+            vitals.get("height_cm"),
+            vitals.get("weight_kg"),
+            vitals.get("bp_systolic"),
+            vitals.get("bp_diastolic"),
+            vitals.get("heart_rate_bpm"),
+            vitals.get("blood_sugar_mgdl"),
+            vitals.get("oxygen_saturation_pct"),
+            vitals.get("temperature_c"),
+            vitals.get("notes", ""),
+            vitals.get("recorded_at"),
+            vitals.get("created_at"),
+        ))
+
+
+def vitals_for_patient(patient_id: str, limit: int | None = None) -> list[dict]:
+    with db_cursor(commit=False) as cur:
+        if limit:
+            cur.execute(
+                "SELECT * FROM vitals WHERE patient_id = %s "
+                "ORDER BY recorded_at DESC, created_at DESC LIMIT %s",
+                (patient_id, limit),
+            )
+        else:
+            cur.execute(
+                "SELECT * FROM vitals WHERE patient_id = %s "
+                "ORDER BY recorded_at DESC, created_at DESC",
+                (patient_id,),
+            )
+        return [_serial(dict(r)) for r in cur.fetchall()]
+
+
 def add_encounter(enc: dict):
     with db_cursor() as cur:
         cur.execute("""

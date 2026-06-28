@@ -120,6 +120,7 @@
   <button class="tab-btn active" data-tab="notes" type="button">Doctor Notes</button>
   <button class="tab-btn" data-tab="prescriptions" type="button">Prescriptions</button>
   <button class="tab-btn" data-tab="lab-reports" type="button">Lab Reports</button>
+  <button class="tab-btn" data-tab="vitals" type="button">Vitals</button>
 </div>
 
 <style>
@@ -178,6 +179,52 @@
         <div class="skeleton" style="height:120px; margin-bottom:var(--sp-3);"></div>
       </div>
       <div id="lr-list"></div>
+    </div>
+
+    <!-- Vitals Tab -->
+    <div id="tab-vitals" class="tab-content" style="display:none;">
+      <div class="section-header" style="margin-bottom:var(--sp-4);">
+        <h2 class="type-h3">Vitals</h2>
+        <button class="btn-secondary btn-sm" id="refresh-vitals-btn" type="button">Refresh</button>
+      </div>
+      <div class="card" style="margin-bottom:var(--sp-4);">
+        <div id="vitals-alert" style="display:none;"></div>
+        <div class="grid-2">
+          <div class="input-group">
+            <label class="input-label" for="vital-height">Height (cm)</label>
+            <input class="input-field" type="number" id="vital-height" placeholder="170">
+          </div>
+          <div class="input-group">
+            <label class="input-label" for="vital-weight">Weight (kg)</label>
+            <input class="input-field" type="number" id="vital-weight" placeholder="70">
+          </div>
+          <div class="input-group">
+            <label class="input-label" for="vital-bp-sys">BP Systolic</label>
+            <input class="input-field" type="number" id="vital-bp-sys" placeholder="120">
+          </div>
+          <div class="input-group">
+            <label class="input-label" for="vital-bp-dia">BP Diastolic</label>
+            <input class="input-field" type="number" id="vital-bp-dia" placeholder="80">
+          </div>
+          <div class="input-group">
+            <label class="input-label" for="vital-heart">Heart Rate</label>
+            <input class="input-field" type="number" id="vital-heart" placeholder="72">
+          </div>
+          <div class="input-group">
+            <label class="input-label" for="vital-oxygen">Oxygen Saturation (%)</label>
+            <input class="input-field" type="number" id="vital-oxygen" placeholder="98">
+          </div>
+        </div>
+        <div class="input-group">
+          <label class="input-label" for="vital-notes">Notes</label>
+          <input class="input-field" type="text" id="vital-notes" placeholder="Optional notes">
+        </div>
+        <button class="btn-primary btn-sm" id="add-vitals-btn" type="button">Record vitals</button>
+      </div>
+      <div id="vitals-loading" style="display:none;">
+        <div class="skeleton" style="height:120px; margin-bottom:var(--sp-3);"></div>
+      </div>
+      <div id="vitals-list"></div>
     </div>
   </div>
 
@@ -264,6 +311,7 @@
       document.getElementById('tab-' + tab).style.display = '';
       if (tab === 'prescriptions') loadPrescriptions();
       if (tab === 'lab-reports')   loadLabReports();
+      if (tab === 'vitals')        loadVitals();
     });
   });
 
@@ -401,6 +449,48 @@
   }
 
   // ── Add Note ──────────────────────────────────────────────────────
+  var vitalsLoaded = false;
+  function renderVitals(rows) {
+    rows = rows || [];
+    if (!rows.length) {
+      return '<div class="empty-state"><div class="empty-state-title">No vitals recorded yet</div></div>';
+    }
+    return '<div style="overflow:hidden; border-radius:var(--r-sm); border:1px solid var(--b1);">' +
+      '<table class="data-table" style="width:100%;" aria-label="Vitals history">' +
+      '<thead><tr><th>Date</th><th>Height</th><th>Weight</th><th>BP</th><th>Heart Rate</th><th>Oxygen</th></tr></thead>' +
+      '<tbody>' + rows.map(function(v) {
+        var bp = (v.bp_systolic && v.bp_diastolic) ? (v.bp_systolic + '/' + v.bp_diastolic) : 'â€”';
+        return '<tr>' +
+          '<td>' + fmt(v.recorded_at || v.created_at) + '</td>' +
+          '<td>' + (v.height_cm ? esc(v.height_cm + ' cm') : 'â€”') + '</td>' +
+          '<td>' + (v.weight_kg ? esc(v.weight_kg + ' kg') : 'â€”') + '</td>' +
+          '<td>' + esc(bp) + '</td>' +
+          '<td>' + (v.heart_rate_bpm ? esc(v.heart_rate_bpm + ' bpm') : 'â€”') + '</td>' +
+          '<td>' + (v.oxygen_saturation_pct ? esc(v.oxygen_saturation_pct + '%') : 'â€”') + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
+  function loadVitals() {
+    if (vitalsLoaded) return;
+    document.getElementById('vitals-loading').style.display = '';
+    fetch('/api/emr/vitals/patient/' + encodeURIComponent(PATIENT_CODE), {
+      headers: {'Authorization': 'Bearer ' + JWT}
+    })
+    .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+    .then(function(res) {
+      vitalsLoaded = true;
+      document.getElementById('vitals-loading').style.display = 'none';
+      var vl = document.getElementById('vitals-list');
+      if (!res.ok) {
+        vl.innerHTML = '<div class="empty-state"><div class="empty-state-title">Vitals unavailable</div></div>';
+        return;
+      }
+      vl.innerHTML = renderVitals(Array.isArray(res.data) ? res.data : []);
+    })
+    .catch(function() { document.getElementById('vitals-loading').style.display = 'none'; });
+  }
+
   document.getElementById('add-note-btn').addEventListener('click', function() {
     var noteText = (document.getElementById('note-text').value || '').trim();
     if (!noteText) { showAlert(document.getElementById('note-alert'), 'Note text is required.', 'error'); return; }
@@ -440,9 +530,57 @@
     });
   });
 
+  document.getElementById('add-vitals-btn').addEventListener('click', function() {
+    var payload = {
+      patient_id: PATIENT_CODE,
+      height_cm: document.getElementById('vital-height').value,
+      weight_kg: document.getElementById('vital-weight').value,
+      bp_systolic: document.getElementById('vital-bp-sys').value,
+      bp_diastolic: document.getElementById('vital-bp-dia').value,
+      heart_rate_bpm: document.getElementById('vital-heart').value,
+      oxygen_saturation_pct: document.getElementById('vital-oxygen').value,
+      notes: document.getElementById('vital-notes').value,
+    };
+    var hasValue = ['height_cm','weight_kg','bp_systolic','bp_diastolic','heart_rate_bpm','oxygen_saturation_pct']
+      .some(function(k) { return String(payload[k] || '').trim() !== ''; });
+    if (!hasValue) {
+      showAlert(document.getElementById('vitals-alert'), 'Enter at least one vital.', 'error');
+      return;
+    }
+    var self = this;
+    self.disabled = true;
+    self.textContent = 'Recording...';
+    fetch('/api/emr/vitals', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + JWT},
+      body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+    .then(function(res) {
+      self.disabled = false;
+      self.textContent = 'Record vitals';
+      if (!res.ok) {
+        showAlert(document.getElementById('vitals-alert'), res.data.error || 'Failed to record vitals.', 'error');
+        return;
+      }
+      ['vital-height','vital-weight','vital-bp-sys','vital-bp-dia','vital-heart','vital-oxygen','vital-notes'].forEach(function(id) {
+        document.getElementById(id).value = '';
+      });
+      showAlert(document.getElementById('page-alert'), 'Vitals recorded successfully.', 'success');
+      vitalsLoaded = false;
+      loadVitals();
+    })
+    .catch(function() {
+      self.disabled = false;
+      self.textContent = 'Record vitals';
+      showAlert(document.getElementById('vitals-alert'), 'Network error.', 'error');
+    });
+  });
+
   document.getElementById('refresh-notes-btn').addEventListener('click', loadNotes);
   document.getElementById('refresh-rx-btn').addEventListener('click', function() { rxLoaded = false; loadPrescriptions(); });
   document.getElementById('refresh-lr-btn').addEventListener('click', function() { lrLoaded = false; loadLabReports(); });
+  document.getElementById('refresh-vitals-btn').addEventListener('click', function() { vitalsLoaded = false; loadVitals(); });
 
   if (PATIENT_CODE) { loadNotes(); }
 })();
