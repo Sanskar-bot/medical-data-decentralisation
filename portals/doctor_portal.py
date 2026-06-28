@@ -274,18 +274,13 @@ def api_fetch_record():
     except Exception as e:
         return jsonify({"error":f"Cannot fetch wrapped key: {e}"}), 502
 
-    # find our wrapped key
+    # find our wrapped key for this doctor only.
     wrapped_key_b64 = None; expires_at = None
     wkmap = wk_data.get("wrapped_keys", wk_data)
-    if isinstance(wkmap, dict):
-        if doc_code in wkmap:
-            entry = wkmap[doc_code]
-            wrapped_key_b64 = entry.get("wrapped_key") if isinstance(entry, dict) else entry
-            expires_at      = entry.get("temp_key_expires_at") if isinstance(entry, dict) else None
-        elif len(wkmap) == 1:
-            entry = next(iter(wkmap.values()))
-            wrapped_key_b64 = entry.get("wrapped_key") if isinstance(entry, dict) else entry
-            expires_at      = entry.get("temp_key_expires_at") if isinstance(entry, dict) else None
+    if isinstance(wkmap, dict) and doc_code in wkmap:
+        entry = wkmap[doc_code]
+        wrapped_key_b64 = entry.get("wrapped_key") if isinstance(entry, dict) else entry
+        expires_at      = entry.get("temp_key_expires_at") if isinstance(entry, dict) else None
 
     if not wrapped_key_b64:
         return jsonify({"error":"No access key found. The patient may not have approved your request yet, or access has expired."}), 403

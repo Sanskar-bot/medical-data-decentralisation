@@ -17,7 +17,42 @@
   </div>
 </div>
 
-<!-- Locked panel -->
+{% if not key_available %}
+<!-- Bug 1: Key unavailable banner -->
+<div id="key-unavailable-banner" style="background:linear-gradient(135deg,#2d1f06,#3d2c0a);border:1px solid #a16207;border-radius:12px;padding:var(--sp-5) var(--sp-6);margin-bottom:var(--sp-6);display:flex;gap:var(--sp-4);align-items:flex-start;" role="alert">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.8" style="flex-shrink:0;margin-top:2px;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+  <div style="flex:1;">
+    <div style="font-weight:600;color:#fcd34d;font-size:var(--t-sm);margin-bottom:4px;">Encryption key not available on this device</div>
+    <div style="color:#fde68a;font-size:var(--t-xs);line-height:1.6;margin-bottom:var(--sp-3);">Your private key was registered on a different device. Encrypted features (access approvals, record sharing) are unavailable until you restore your key. Your health record data is still visible.</div>
+    <button class="btn-secondary btn-sm" id="open-key-recovery-btn" type="button" onclick="document.getElementById('key-recovery-modal').style.display='flex'">
+      <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+      Restore encryption key
+    </button>
+  </div>
+</div>
+
+<!-- Key recovery modal -->
+<div id="key-recovery-modal" role="dialog" aria-modal="true" aria-labelledby="key-modal-title" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9000;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:var(--sp-8);max-width:460px;width:90%;">
+    <h2 id="key-modal-title" style="margin-bottom:var(--sp-2);font-size:var(--t-lg);font-weight:600;">Restore Encryption Key</h2>
+    <p style="color:var(--tx3);font-size:var(--t-sm);margin-bottom:var(--sp-5);line-height:1.6;">Enter your account password to securely restore your encryption key on this device. Your password is never sent to the server &mdash; decryption happens entirely in your browser.</p>
+    <div id="key-recovery-alert" style="display:none;margin-bottom:var(--sp-4);"></div>
+    <div class="input-group" style="margin-bottom:var(--sp-4);">
+      <label class="input-label" for="kr-password">Account Password</label>
+      <input class="input-field" type="password" id="kr-password" placeholder="Your registration password" autocomplete="current-password">
+    </div>
+    <div style="display:flex;gap:var(--sp-3);">
+      <button class="btn-primary" id="kr-submit-btn" type="button" onclick="attemptKeyRecovery()" style="flex:1;">
+        <span id="kr-btn-text">Restore Key</span>
+        <span id="kr-spinner" class="spinner" style="display:none;"></span>
+      </button>
+      <button class="btn-secondary" type="button" onclick="document.getElementById('key-recovery-modal').style.display='none'" style="flex:1;">Cancel</button>
+    </div>
+    <p style="font-size:var(--t-xs);color:var(--tx4);margin-top:var(--sp-4);line-height:1.5;">If you forgot your password, contact support. The encryption key cannot be recovered without it.</p>
+  </div>
+</div>
+{% endif %}
+
 <div id="record-locked-panel">
   <div class="card-elevated" style="max-width:420px; margin:0 auto; padding:var(--sp-10); text-align:center;">
     <div style="width:56px;height:56px;background:var(--pa);border:1px solid var(--p4);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto var(--sp-6);">
@@ -62,6 +97,7 @@
         <!-- Read-only view -->
         <div id="view-personal">
           <div class="field-row" style="padding-top:0;"><div class="field-label">Full Name</div><div class="field-value" id="rec-name">—</div></div>
+          <div class="field-row"><div class="field-label">Date of Birth</div><div class="field-value" id="rec-dob">—</div></div>
           <div class="field-row"><div class="field-label">Age</div><div class="field-value" id="rec-age">—</div></div>
           <div class="field-row"><div class="field-label">Gender</div><div class="field-value" id="rec-gender">—</div></div>
           <div class="field-row"><div class="field-label">Blood Group</div><div class="field-value" id="rec-blood">—</div></div>
@@ -80,8 +116,9 @@
               <input class="input-field" id="e-name" type="text" placeholder="Sanskar Phougat">
             </div>
             <div class="input-group">
-              <label class="input-label" for="e-age">Age</label>
-              <input class="input-field" id="e-age" type="number" min="0" max="150" placeholder="23">
+              <label class="input-label" for="e-dob">Date of Birth</label>
+              <input class="input-field" id="e-dob" type="date" max="{{ today }}">
+              <span style="font-size:var(--t-xs);color:var(--tx3);margin-top:4px;display:block;">Age will be calculated automatically.</span>
             </div>
             <div class="input-group">
               <label class="input-label" for="e-gender">Gender</label>
