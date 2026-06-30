@@ -1046,6 +1046,23 @@ def _db_get_image(image_id: str) -> dict | None:
 # DB HELPERS — Access DB (JWT-based)
 # ════════════════════════════════════════════════════════════════════════════
 
+def _has_active_access(doctor_id: str, patient_id: str) -> bool:
+    """Return True only for an approved access_db row for this doctor/patient pair."""
+    if not doctor_id or not patient_id:
+        return False
+
+    with db_cursor(commit=False) as cur:
+        cur.execute("""
+            SELECT 1
+            FROM access_db
+            WHERE doctor_id = %s
+              AND patient_id = %s
+              AND status = 'approved'
+            LIMIT 1
+        """, (doctor_id, patient_id))
+        return cur.fetchone() is not None
+
+
 def _db_access_get_pending(doctor_id: str, patient_id: str) -> dict | None:
     with db_cursor(commit=False) as cur:
         cur.execute("""
@@ -1197,7 +1214,7 @@ def _db_appt_insert(entry: dict) -> dict:
 
 def _db_appts_for_patient(patient_id: str) -> list:
     with db_cursor(commit=False) as cur:
-        cur.execute("SELECT * FROM appointments WHERE patient_id = %s ORDER BY created_at DESC",
+        cur.execute("SELECT * FROM appointments_unified WHERE patient_id = %s ORDER BY created_at DESC",
                     (patient_id,))
         rows = cur.fetchall()
         result = []
@@ -1212,7 +1229,7 @@ def _db_appts_for_patient(patient_id: str) -> list:
 
 def _db_appts_for_doctor(doctor_username: str) -> list:
     with db_cursor(commit=False) as cur:
-        cur.execute("SELECT * FROM appointments WHERE doctor_username = %s ORDER BY created_at DESC",
+        cur.execute("SELECT * FROM appointments_unified WHERE doctor_username = %s ORDER BY created_at DESC",
                     (doctor_username,))
         rows = cur.fetchall()
         result = []
@@ -2297,6 +2314,11 @@ def get_report(record_id):
         return jsonify({"error": "not_found"}), 404
     if p["role"] == "patient" and p["uid"] != rec["patient_id"]:
         return jsonify({"error": "forbidden"}), 403
+    if p["role"] == "doctor" and not _has_active_access(p["uid"], rec["patient_id"]):
+        return jsonify({
+            "error": "forbidden",
+            "detail": "Doctor does not have approved access for this patient.",
+        }), 403
     audit("report_viewed", actor=p.get("uid") or p.get("sub", ""),
           target=record_id, detail="", ip=request.remote_addr)
     return jsonify(rec)
@@ -2361,9 +2383,20 @@ def upload_image():
 @app.route("/images/record/<record_id>", methods=["GET"])
 @_require_jwt()
 def get_images_for_record(record_id):
+    p = request.jwt_payload
+    rec = _db_get_record(record_id)
+    if not rec:
+        return jsonify({"error": "not_found"}), 404
+    if p["role"] == "patient" and p["uid"] != rec["patient_id"]:
+        return jsonify({"error": "forbidden"}), 403
+    if p["role"] == "doctor" and not _has_active_access(p["uid"], rec["patient_id"]):
+        return jsonify({
+            "error": "forbidden",
+            "detail": "Doctor does not have approved access for this patient.",
+        }), 403
     images = _db_get_images_for_record(record_id)
     audit("record_images_listed",
-          actor=request.jwt_payload.get("uid") or request.jwt_payload.get("sub", ""),
+          actor=p.get("uid") or p.get("sub", ""),
           target=record_id, detail="", ip=request.remote_addr)
     return jsonify(images)
 
@@ -2372,14 +2405,25 @@ def get_images_for_record(record_id):
 @_require_jwt()
 def download_image(image_id):
     from flask import send_file
+    p = request.jwt_payload
     img = _db_get_image(image_id)
     if not img:
         return jsonify({"error": "not_found"}), 404
+    rec = _db_get_record(img["record_id"])
+    if not rec:
+        return jsonify({"error": "record_not_found"}), 404
+    if p["role"] == "patient" and p["uid"] != rec["patient_id"]:
+        return jsonify({"error": "forbidden"}), 403
+    if p["role"] == "doctor" and not _has_active_access(p["uid"], rec["patient_id"]):
+        return jsonify({
+            "error": "forbidden",
+            "detail": "Doctor does not have approved access for this patient.",
+        }), 403
     path = os.path.join(UPLOADS_DIR, img["encrypted_image_path"])
     if not os.path.exists(path):
         return jsonify({"error": "file_missing"}), 404
     audit("image_downloaded",
-          actor=request.jwt_payload.get("uid") or request.jwt_payload.get("sub", ""),
+          actor=p.get("uid") or p.get("sub", ""),
           target=image_id, detail="", ip=request.remote_addr)
     return send_file(path, as_attachment=True,
                      download_name=f"encrypted_{image_id}.enc")

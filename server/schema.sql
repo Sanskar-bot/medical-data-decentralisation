@@ -264,22 +264,23 @@ SELECT
 FROM appointments
 UNION ALL
 SELECT
-    id::TEXT AS id,
+    ea.id::TEXT AS id,
     'emr'::TEXT AS source,
-    patient_id,
+    ea.patient_id,
     ''::TEXT AS patient_name,
     ''::TEXT AS patient_username,
-    ''::TEXT AS doctor_username,
-    doctor_id,
+    COALESCE(u.username, '')::TEXT AS doctor_username,
+    ea.doctor_id,
     ''::TEXT AS date,
     ''::TEXT AS time,
-    date_time,
-    reason,
-    notes,
-    status,
-    created_at,
-    updated_at
-FROM emr_appointments;
+    ea.date_time,
+    ea.reason,
+    ea.notes,
+    ea.status,
+    ea.created_at,
+    ea.updated_at
+FROM emr_appointments ea
+LEFT JOIN users u ON u.id = ea.doctor_id;
 
 -- ── EMR prescriptions ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS emr_prescriptions (

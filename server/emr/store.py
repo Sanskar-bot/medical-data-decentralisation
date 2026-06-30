@@ -10,6 +10,7 @@ admin_stats in emr/routes.py which calls store._read("appointments") etc.
 import sys
 import os
 import json
+from decimal import Decimal
 from datetime import datetime
 
 # Ensure server/ is on the path so we can import db
@@ -31,6 +32,14 @@ def _serial(row: dict) -> dict:
         else:
             out[k] = v
     return out
+
+
+def _metadata_value(value):
+    if isinstance(value, Decimal):
+        if value == value.to_integral_value():
+            return int(value)
+        return float(value)
+    return value
 
 
 # ── Patient Profiles ──────────────────────────────────────────────────────────
@@ -72,6 +81,26 @@ def get_profile(patient_id: str) -> dict | None:
                 d["patient_metadata"] = {}
         elif pm is None:
             d["patient_metadata"] = {}
+        cur.execute(
+            "SELECT * FROM vitals WHERE patient_id = %s ORDER BY recorded_at DESC LIMIT 1",
+            (patient_id,)
+        )
+        vitals_row = cur.fetchone()
+        if vitals_row:
+            vitals = dict(vitals_row)
+            reverse_aliases = {
+                "height_cm": "height",
+                "weight_kg": "weight",
+                "heart_rate_bpm": "heart_rate",
+                "blood_sugar_mgdl": "blood_sugar",
+                "oxygen_saturation_pct": "oxygen_saturation",
+            }
+            metadata = d["patient_metadata"]
+            for column, key in reverse_aliases.items():
+                if vitals.get(column) is not None:
+                    metadata[key] = _metadata_value(vitals[column])
+            if vitals.get("bp_systolic") is not None and vitals.get("bp_diastolic") is not None:
+                metadata["blood_pressure"] = f"{vitals['bp_systolic']}/{vitals['bp_diastolic']}"
         # Bug 2: always inject computed age from date_of_birth
         dob = d.get("date_of_birth")
         if dob:

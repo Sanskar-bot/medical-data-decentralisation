@@ -349,74 +349,24 @@ def parse_dosage(text: str) -> dict | None:
 
 def parse_frequency(text: str) -> dict | None:
     """
-    Parse a free-text frequency string into a structured dict.
-
-    Returns:
-        {"normalized": str, "times_per_day": float} on success
-        None if the string cannot be matched
-    """
-    if not text:
-        return None
-    key = text.strip().lower()
-    # Try exact match first
-    result = FREQUENCY_NORMALIZER.get(key)
-    if not result:
-        # Try with punctuation stripped
-        key_clean = key.replace(".", "").replace(" ", "")
-        result = FREQUENCY_NORMALIZER.get(key_clean)
-    if not result:
-        # Try prefix match for "every N hours" patterns
-        for k, v in FREQUENCY_NORMALIZER.items():
-            if key.startswith(k) or k.startswith(key):
-                result = v
-                break
-    if result:
-        return {"normalized": result[0], "times_per_day": result[1]}
-    return None
-
-
-def parse_duration(text: str) -> dict | None:
-    """
-    Parse a free-text duration string into a structured dict with days.
-
-    Examples:
-        "7 days"    -> {"days": 7,  "original": "7 days"}
-        "2 weeks"   -> {"days": 14, "original": "2 weeks"}
-        "1 month"   -> {"days": 30, "original": "1 month"}
-        "3 months"  -> {"days": 90, "original": "3 months"}
-        "10"        -> {"days": 10, "original": "10"}
-
-    Returns None if not parseable.
-    """
-    if not text:
-        return None
-    import re as _re
-    text = text.strip().lower()
-    # Pattern: optional number + optional unit
-    m = _re.search(r'(\d+(?:\.\d+)?)\s*(day|days|week|weeks|month|months|year|years)?', text)
-    if not m:
-        return None
-    value = float(m.group(1))
-    unit  = (m.group(2) or "day").rstrip("s")  # normalise plural
-    multipliers = {"day": 1, "week": 7, "month": 30, "year": 365}
-    days = int(value * multipliers.get(unit, 1))
-    return {"days": days, "original": text}
-
-
-def parse_frequency(text: str) -> dict | None:
-    """
     Normalize a frequency string to a canonical form.
 
     Returns:
         {"normalized": "twice_daily", "times_per_day": 2}
-    or None if not recognized.
+    or None if not recognized. Also falls back to punctuation/space-stripped
+    text for abbreviations like "b.d.".
     """
     if not text:
         return None
     key = text.strip().lower()
     # Remove trailing punctuation before lookup
     key_clean = key.rstrip(".").strip()
-    match = FREQUENCY_NORMALIZER.get(key_clean) or FREQUENCY_NORMALIZER.get(key)
+    key_stripped = key.replace(".", "").replace(" ", "")
+    match = (
+        FREQUENCY_NORMALIZER.get(key_clean)
+        or FREQUENCY_NORMALIZER.get(key)
+        or FREQUENCY_NORMALIZER.get(key_stripped)
+    )
     if match:
         return {"normalized": match[0], "times_per_day": match[1]}
     return None

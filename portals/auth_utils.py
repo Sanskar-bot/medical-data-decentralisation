@@ -110,8 +110,8 @@ def login_required(role: str | None = None):
     """
     Decorator that enforces Flask-session authentication.
 
-    Also accepts a valid ``X-API-Key`` header as proof of authentication
-    (used by landing.py when proxying requests to doctor_portal.py).
+    Also accepts a valid ``X-API-Key`` header as service-to-service
+    authentication, while preserving user role authorization checks.
 
     Usage::
 
@@ -130,7 +130,7 @@ def login_required(role: str | None = None):
     def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
-            # ── Allow API-key authenticated requests (from landing.py proxy) ──
+            api_key_authenticated = False
             api_key = request.headers.get("X-API-Key", "")
             if api_key:
                 # [C1] Prefer SERVER_API_KEY env var; fall back to api_key.txt only in dev mode
@@ -143,10 +143,13 @@ def login_required(role: str | None = None):
                     except FileNotFoundError:
                         stored_key = ""
                 if stored_key and api_key == stored_key:
-                    # Trusted internal call — skip session check
-                    return f(*args, **kwargs)
+                    # A valid API key authenticates the caller as a trusted
+                    # internal service, such as landing.py proxying a request.
+                    # It does not authenticate an end user or grant any role;
+                    # role authorization below must still come from the session.
+                    api_key_authenticated = True
 
-            if not session.get("logged_in"):
+            if not api_key_authenticated and not session.get("logged_in"):
                 if _is_json_request():
                     return jsonify({"error": "unauthenticated", "login_url": LANDING_URL}), 401
                 return redirect(LANDING_URL)

@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import time
+import uuid
 import pytest
 
 # ── Ensure the project root is importable ─────────────────────────────────────
@@ -232,6 +233,68 @@ class TestAppointments:
                        headers=_auth_headers(jwt_encode, role="patient", uid="PAT-010"))
         assert r.status_code == 200
         assert isinstance(r.get_json(), list)
+
+    def test_doctor_appointments_include_request_and_emr_sources(self, app):
+        from db import db_cursor
+        from server import _db_appts_for_doctor
+
+        doctor_id = "DOC-UNIFIED-001"
+        doctor_username = "doctor_unified_001"
+
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO users (id, email, username, name, role, password_hash)
+                VALUES (%s, %s, %s, %s, 'doctor', 'test-hash')
+                ON CONFLICT (id) DO UPDATE
+                    SET email = EXCLUDED.email,
+                        username = EXCLUDED.username,
+                        role = EXCLUDED.role
+                """,
+                (doctor_id, "doctor-unified-001@example.test", doctor_username, "Doctor Unified"),
+            )
+            cur.execute(
+                """
+                INSERT INTO appointments
+                    (id, patient_id, patient_username, patient_name,
+                     doctor_username, date, time, notes, status)
+                VALUES
+                    ('REQ-UNIFIED-001', 'PAT-UNIFIED-001', 'patient_unified',
+                     'Patient Unified', %s, '2026-09-01', '10:00',
+                     'Request appointment', 'pending')
+                ON CONFLICT (id) DO UPDATE
+                    SET doctor_username = EXCLUDED.doctor_username,
+                        patient_id = EXCLUDED.patient_id,
+                        notes = EXCLUDED.notes,
+                        status = EXCLUDED.status
+                """,
+                (doctor_username,),
+            )
+            cur.execute(
+                """
+                INSERT INTO emr_appointments
+                    (id, patient_id, doctor_id, date_time, reason, status, notes)
+                VALUES
+                    ('EMR-UNIFIED-001', 'PAT-UNIFIED-002', %s,
+                     '2026-09-02T11:00:00+00:00', 'EMR appointment',
+                     'scheduled', 'EMR note')
+                ON CONFLICT (id) DO UPDATE
+                    SET doctor_id = EXCLUDED.doctor_id,
+                        patient_id = EXCLUDED.patient_id,
+                        reason = EXCLUDED.reason,
+                        status = EXCLUDED.status,
+                        notes = EXCLUDED.notes
+                """,
+                (doctor_id,),
+            )
+
+        appts = _db_appts_for_doctor(doctor_username)
+        sources = {appt["source"] for appt in appts}
+        ids = {appt["id"] for appt in appts}
+
+        assert {"request", "emr"}.issubset(sources)
+        assert {"REQ-UNIFIED-001", "EMR-UNIFIED-001"}.issubset(ids)
+        assert all(appt["doctor_username"] == doctor_username for appt in appts)
 
     def test_update_appointment_status(self, client, jwt_encode):
         # Create
@@ -479,6 +542,43 @@ class TestVitals:
         assert rows[0]["bp_diastolic"] == 76
         assert rows[0]["recorded_by"] == "self"
 
+    def test_profile_get_uses_latest_vitals_from_direct_vitals_post(self, client, jwt_encode):
+        uid = "PAT-VITALS-CROSSPATH"
+        doctor_id = "DOC-VITALS-CROSSPATH"
+        self._approve_access(doctor_id, uid)
+
+        created = client.put(f"/emr/patient/{uid}/profile",
+                             headers=_auth_headers(jwt_encode, role="patient", uid=uid),
+                             json={
+                                 "height": 170,
+                                 "weight": 65,
+                                 "blood_pressure": "120/80",
+                                 "smoking": "Never",
+                                 "address": "42 Clinic Road",
+                             })
+        assert created.status_code == 201
+
+        vitals = client.post("/emr/vitals",
+                             headers=_auth_headers(jwt_encode, role="doctor", uid=doctor_id),
+                             json={
+                                 "patient_id": uid,
+                                 "height_cm": 172,
+                                 "bp_systolic": 118,
+                                 "bp_diastolic": 76,
+                                 "recorded_at": "2026-12-01T09:00:00+00:00",
+                             })
+        assert vitals.status_code == 201
+
+        profile = client.get(f"/emr/patient/{uid}/profile",
+                             headers=_auth_headers(jwt_encode, role="patient", uid=uid))
+        assert profile.status_code == 200
+        metadata = profile.get_json()["patient_metadata"]
+        assert metadata["height"] == 172
+        assert metadata["weight"] == 65
+        assert metadata["blood_pressure"] == "118/76"
+        assert metadata["smoking"] == "Never"
+        assert metadata["address"] == "42 Clinic Road"
+
 
 class TestReadAuditLogs:
     def test_patient_reports_read_writes_audit_log(self, client, jwt_encode):
@@ -698,7 +798,247 @@ class TestReadAuditLogs:
 #   ADMIN ENDPOINT TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+class TestReportImageAccessGrants:
+    def _insert_record(self, patient_id, doctor_id="DOC-UPLOADER"):
+        from db import db_cursor
+
+        record_id = f"REC-{uuid.uuid4()}"
+        with db_cursor() as cur:
+            cur.execute("""
+                INSERT INTO records
+                    (id, patient_id, doctor_id, doctor_email,
+                     encrypted_report_blob, encrypted_aes_key)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (
+                record_id,
+                patient_id,
+                doctor_id,
+                f"{doctor_id.lower()}@test.local",
+                json.dumps({"data": "secret"}),
+                "encrypted-key",
+            ))
+        return record_id
+
+    def _insert_image(self, record_id, doctor_id="DOC-UPLOADER"):
+        from db import db_cursor
+
+        image_id = f"IMG-{uuid.uuid4()}"
+        filename = f"{image_id}.enc"
+        with db_cursor() as cur:
+            cur.execute("""
+                INSERT INTO images
+                    (id, record_id, encrypted_image_path, encrypted_aes_key, doctor_id)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (
+                image_id,
+                record_id,
+                f"images/{filename}",
+                "encrypted-image-key",
+                doctor_id,
+            ))
+        return image_id, filename
+
+    def _approve_access(self, doctor_id, patient_id):
+        from db import db_cursor
+
+        with db_cursor() as cur:
+            cur.execute("""
+                INSERT INTO access_db (id, doctor_id, doctor_email, patient_id, status, responded_at)
+                VALUES (%s, %s, %s, %s, 'approved', now())
+                ON CONFLICT (doctor_id, patient_id) DO UPDATE SET
+                    status = 'approved',
+                    responded_at = now()
+            """, (
+                f"ACCESS-{uuid.uuid4()}",
+                doctor_id,
+                f"{doctor_id.lower()}@test.local",
+                patient_id,
+            ))
+
+    def test_doctor_without_access_cannot_get_report(self, client, jwt_encode):
+        patient_id = f"PAT-REPORT-{uuid.uuid4()}"
+        record_id = self._insert_record(patient_id)
+
+        r = client.get(
+            f"/reports/{record_id}",
+            headers=_auth_headers(jwt_encode, role="doctor", uid="DOC-NO-REPORT-ACCESS"),
+        )
+
+        assert r.status_code == 403
+        assert r.get_json()["detail"] == "Doctor does not have approved access for this patient."
+
+    def test_doctor_with_access_can_get_report(self, client, jwt_encode):
+        patient_id = f"PAT-REPORT-{uuid.uuid4()}"
+        doctor_id = "DOC-REPORT-ACCESS"
+        record_id = self._insert_record(patient_id)
+        self._approve_access(doctor_id, patient_id)
+
+        r = client.get(
+            f"/reports/{record_id}",
+            headers=_auth_headers(jwt_encode, role="doctor", uid=doctor_id),
+        )
+
+        assert r.status_code == 200
+        assert r.get_json()["patient_id"] == patient_id
+
+    def test_doctor_without_access_cannot_list_record_images(self, client, jwt_encode):
+        patient_id = f"PAT-IMAGES-{uuid.uuid4()}"
+        record_id = self._insert_record(patient_id)
+        self._insert_image(record_id)
+
+        r = client.get(
+            f"/images/record/{record_id}",
+            headers=_auth_headers(jwt_encode, role="doctor", uid="DOC-NO-IMAGE-ACCESS"),
+        )
+
+        assert r.status_code == 403
+        assert r.get_json()["detail"] == "Doctor does not have approved access for this patient."
+
+    def test_doctor_with_access_can_list_record_images(self, client, jwt_encode):
+        patient_id = f"PAT-IMAGES-{uuid.uuid4()}"
+        doctor_id = "DOC-IMAGE-ACCESS"
+        record_id = self._insert_record(patient_id)
+        image_id, _ = self._insert_image(record_id)
+        self._approve_access(doctor_id, patient_id)
+
+        r = client.get(
+            f"/images/record/{record_id}",
+            headers=_auth_headers(jwt_encode, role="doctor", uid=doctor_id),
+        )
+
+        assert r.status_code == 200
+        assert {img["id"] for img in r.get_json()} == {image_id}
+
+    def test_doctor_without_access_cannot_download_image(self, client, jwt_encode):
+        patient_id = f"PAT-DOWNLOAD-{uuid.uuid4()}"
+        record_id = self._insert_record(patient_id)
+        image_id, _ = self._insert_image(record_id)
+
+        r = client.get(
+            f"/images/download/{image_id}",
+            headers=_auth_headers(jwt_encode, role="doctor", uid="DOC-NO-DOWNLOAD-ACCESS"),
+        )
+
+        assert r.status_code == 403
+        assert r.get_json()["detail"] == "Doctor does not have approved access for this patient."
+
+    def test_doctor_with_access_can_download_image(self, client, jwt_encode):
+        import server
+
+        patient_id = f"PAT-DOWNLOAD-{uuid.uuid4()}"
+        doctor_id = "DOC-DOWNLOAD-ACCESS"
+        record_id = self._insert_record(patient_id)
+        image_id, filename = self._insert_image(record_id)
+        self._approve_access(doctor_id, patient_id)
+
+        image_dir = os.path.join(server.UPLOADS_DIR, "images")
+        os.makedirs(image_dir, exist_ok=True)
+        with open(os.path.join(image_dir, filename), "wb") as fh:
+            fh.write(b"encrypted-image")
+
+        r = client.get(
+            f"/images/download/{image_id}",
+            headers=_auth_headers(jwt_encode, role="doctor", uid=doctor_id),
+        )
+
+        assert r.status_code == 200
+        assert r.data == b"encrypted-image"
+
+    def test_patient_can_access_own_report_and_images_but_not_others(self, client, jwt_encode):
+        import server
+
+        patient_id = f"PAT-OWN-{uuid.uuid4()}"
+        other_patient_id = f"PAT-OTHER-{uuid.uuid4()}"
+        own_record_id = self._insert_record(patient_id)
+        other_record_id = self._insert_record(other_patient_id)
+        own_image_id, own_filename = self._insert_image(own_record_id)
+        other_image_id, other_filename = self._insert_image(other_record_id)
+
+        image_dir = os.path.join(server.UPLOADS_DIR, "images")
+        os.makedirs(image_dir, exist_ok=True)
+        for filename in (own_filename, other_filename):
+            with open(os.path.join(image_dir, filename), "wb") as fh:
+                fh.write(b"encrypted-image")
+
+        headers = _auth_headers(jwt_encode, role="patient", uid=patient_id)
+
+        own_report = client.get(f"/reports/{own_record_id}", headers=headers)
+        own_images = client.get(f"/images/record/{own_record_id}", headers=headers)
+        own_download = client.get(f"/images/download/{own_image_id}", headers=headers)
+
+        other_report = client.get(f"/reports/{other_record_id}", headers=headers)
+        other_images = client.get(f"/images/record/{other_record_id}", headers=headers)
+        other_download = client.get(f"/images/download/{other_image_id}", headers=headers)
+
+        assert own_report.status_code == 200
+        assert own_images.status_code == 200
+        assert own_download.status_code == 200
+        assert other_report.status_code == 403
+        assert other_images.status_code == 403
+        assert other_download.status_code == 403
+
+
 class TestAccessRequests:
+    def test_has_active_access_returns_true_for_approved_pair(self, app):
+        from db import db_cursor
+        from server import _has_active_access
+
+        with db_cursor() as cur:
+            cur.execute("""
+                INSERT INTO access_db (id, doctor_id, doctor_email, patient_id, status)
+                VALUES (%s, %s, %s, %s, 'approved')
+            """, (
+                "access-helper-approved",
+                "DOC-ACTIVE-001",
+                "doc-active-001@test.local",
+                "PAT-ACTIVE-001",
+            ))
+
+        assert _has_active_access("DOC-ACTIVE-001", "PAT-ACTIVE-001") is True
+
+    @pytest.mark.parametrize("status", ["pending", "denied", "revoked"])
+    def test_has_active_access_rejects_non_approved_statuses(self, app, status):
+        from db import db_cursor
+        from server import _has_active_access
+
+        with db_cursor() as cur:
+            cur.execute("""
+                INSERT INTO access_db (id, doctor_id, doctor_email, patient_id, status)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (
+                f"access-helper-{status}",
+                "DOC-INACTIVE-001",
+                "doc-inactive-001@test.local",
+                "PAT-INACTIVE-001",
+                status,
+            ))
+
+        assert _has_active_access("DOC-INACTIVE-001", "PAT-INACTIVE-001") is False
+
+    def test_has_active_access_requires_exact_pair(self, app):
+        from db import db_cursor
+        from server import _has_active_access
+
+        with db_cursor() as cur:
+            cur.execute("""
+                INSERT INTO access_db (id, doctor_id, doctor_email, patient_id, status)
+                VALUES (%s, %s, %s, %s, 'approved')
+            """, (
+                "access-helper-exact-pair",
+                "DOC-EXACT-001",
+                "doc-exact-001@test.local",
+                "PAT-EXACT-001",
+            ))
+
+        assert _has_active_access("DOC-EXACT-001", "PAT-OTHER-001") is False
+        assert _has_active_access("DOC-OTHER-001", "PAT-EXACT-001") is False
+
+    def test_has_active_access_rejects_missing_ids(self, app):
+        from server import _has_active_access
+
+        assert _has_active_access("", "PAT-ACTIVE-001") is False
+        assert _has_active_access("DOC-ACTIVE-001", "") is False
+
     def test_duplicate_pending_access_request_returns_existing(self, client, jwt_encode):
         headers = _auth_headers(jwt_encode, role="doctor", uid="DOC-DUP-PENDING")
         first = client.post("/access/request", headers=headers, json={"patient_id": "PAT-DUP-PENDING"})
@@ -824,6 +1164,31 @@ class TestNormAllergyList:
 # ═══════════════════════════════════════════════════════════════════════════════
 #   UNIT TESTS - check_allergy_conflicts
 # ═══════════════════════════════════════════════════════════════════════════════
+
+class TestMedicationParsers:
+    """Pure unit tests - no DB or HTTP needed."""
+
+    def setup_method(self):
+        from emr.models import parse_frequency, parse_duration
+        self.parse_frequency = parse_frequency
+        self.parse_duration = parse_duration
+
+    def test_parse_frequency_strips_punctuation_for_bd(self):
+        bd = self.parse_frequency("bd")
+        dotted = self.parse_frequency("b.d.")
+        assert bd == {"normalized": "twice_daily", "times_per_day": 2}
+        assert dotted == bd
+
+    def test_parse_frequency_unknown_returns_none(self):
+        assert self.parse_frequency("nonsense_value") is None
+
+    def test_parse_duration_days_and_weeks(self):
+        assert self.parse_duration("7 days") == {"days": 7}
+        assert self.parse_duration("2 weeks") == {"days": 14}
+
+    def test_parse_duration_garbage_returns_none(self):
+        assert self.parse_duration("garbage") is None
+
 
 class TestVitalsModel:
     """Pure unit tests - no DB or HTTP needed."""
