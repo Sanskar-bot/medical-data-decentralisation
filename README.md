@@ -6,6 +6,8 @@
 ![Security](https://img.shields.io/badge/Encryption-AES--256--GCM%20%2B%20RSA-orange)
 ![Status](https://img.shields.io/badge/Status-Active-blue)
 
+Maintained as an active development project.
+
 ---
 
 ## 📘 Overview
