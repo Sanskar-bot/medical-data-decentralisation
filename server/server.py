@@ -228,13 +228,13 @@ def _db_upsert_user(email: str, user_data: dict) -> str:
             INSERT INTO users (
                 id, email, username, name, phone, role,
                 password_hash, public_key, encrypted_private_key,
-                profile_code, doctor_code, profile_photo_url,
+                profile_code, doctor_code, must_change_password, profile_photo_url,
                 locked, failed_attempts, created_at, last_login
             ) VALUES (
                 %(id)s, %(email)s, %(username)s, %(name)s,
                 %(phone)s, %(role)s, %(password_hash)s,
                 %(public_key)s, %(encrypted_private_key)s,
-                %(profile_code)s, %(doctor_code)s,
+                %(profile_code)s, %(doctor_code)s, %(must_change_password)s,
                 %(profile_photo_url)s, %(locked)s,
                 %(failed_attempts)s, %(created_at)s, %(last_login)s
             )
@@ -248,6 +248,7 @@ def _db_upsert_user(email: str, user_data: dict) -> str:
                 encrypted_private_key = EXCLUDED.encrypted_private_key,
                 profile_code          = EXCLUDED.profile_code,
                 doctor_code           = EXCLUDED.doctor_code,
+                must_change_password  = EXCLUDED.must_change_password,
                 profile_photo_url     = EXCLUDED.profile_photo_url,
                 locked                = EXCLUDED.locked,
                 failed_attempts       = EXCLUDED.failed_attempts,
@@ -266,6 +267,7 @@ def _db_upsert_user(email: str, user_data: dict) -> str:
             "profile_code": user_data.get("profile_code", ""),
             "doctor_code": user_data.get("doctor_code", ""),
             "profile_photo_url": user_data.get("profile_photo_url", ""),
+            "must_change_password": user_data.get("must_change_password", False),
             "locked": user_data.get("locked", False),
             "failed_attempts": user_data.get("failed_attempts", 0),
             "created_at": created_at,
@@ -280,7 +282,7 @@ def _db_update_user_field(email: str, field: str, value):
         "password_hash", "locked", "failed_attempts",
         "last_login", "profile_photo_url", "public_key",
         "encrypted_private_key", "role", "doctor_code", "profile_code",
-        "username", "name", "phone",
+        "must_change_password", "username", "name", "phone",
     }
     if field not in ALLOWED_FIELDS:
         raise ValueError(f"Field '{field}' not in update whitelist")
@@ -384,8 +386,10 @@ def audit(action, actor="", target="", detail="", ip=""):
                 INSERT INTO audit_log (action, actor, target, detail, ip)
                 VALUES (%s, %s, %s, %s, %s)
             """, (action, actor, target, detail, ip))
+        return True
     except Exception as _ae:
         print(f"[Audit] DB write failed: {_ae}")
+        return False
 
 
 # ════════════════════════════════════════════════════════════════════════════

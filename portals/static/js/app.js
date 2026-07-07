@@ -29,6 +29,39 @@
     });
   }
 
+  /* ── Mobile sidebar toggle ─────────────────────────────────────── */
+  function initMobileNav() {
+    var toggle = document.getElementById('sidebar-toggle');
+    var overlay = document.getElementById('page-overlay');
+    if (!toggle) return;
+
+    function closeNav() {
+      document.body.classList.remove('sidebar-open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+
+    function openNav() {
+      document.body.classList.add('sidebar-open');
+      toggle.setAttribute('aria-expanded', 'true');
+    }
+
+    toggle.addEventListener('click', function () {
+      if (document.body.classList.contains('sidebar-open')) {
+        closeNav();
+      } else {
+        openNav();
+      }
+    });
+
+    if (overlay) {
+      overlay.addEventListener('click', closeNav);
+    }
+
+    window.addEventListener('resize', function () {
+      if (window.innerWidth > 960) closeNav();
+    });
+  }
+
   /* ── Fade-in stagger for stat cards ─────────────────────────────── */
   function initFadeIn() {
     var delay = 0;
@@ -191,6 +224,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     initFlashDismiss();
     initSidebarActive();
+    initMobileNav();
     initFadeIn();
     initTabs();
     initAuthTabs();

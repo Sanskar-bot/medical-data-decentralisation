@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#07090F">
+  <meta name="theme-color" content="#f8fafc">
   <meta name="description" content="MedVault — Patient-owned encrypted medical records platform">
   <title>{% block title %}MedVault{% endblock %} — MedVault</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,6 +17,7 @@
 
   {% if session.get('logged_in') %}
     {% include 'partials/sidebar.html' %}
+    <div class="page-overlay" id="page-overlay" aria-hidden="true"></div>
   {% endif %}
 
   <div class="{% if session.get('logged_in') %}page-main{% endif %}">
@@ -81,7 +82,7 @@
               window._showSessionExpiredToast();
             } else {
               var b = document.createElement('div');
-              b.style.cssText = 'position:fixed;top:16px;right:16px;background:#ef4444;color:#fff;padding:12px 20px;border-radius:8px;z-index:9999;font-size:14px;';
+              b.className = 'toast toast-error';
               b.textContent = 'Session expired — please log in again.';
               document.body.appendChild(b);
               setTimeout(function() { window.location.href = '/logout'; }, 3000);

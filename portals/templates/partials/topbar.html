@@ -1,7 +1,11 @@
 <header class="topbar" role="banner">
+  <button class="nav-toggle btn-ghost btn-sm" id="sidebar-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false">
+    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
   <span class="topbar-title" id="page-title">{% block topbar_title %}Dashboard{% endblock %}</span>
   <div class="topbar-actions">
     {% if session.get('logged_in') %}
+      <span class="badge badge-encrypted">Encrypted</span>
       <span class="type-caption" style="letter-spacing:0.04em;">
         {{ session.get('email', '') }}
       </span>

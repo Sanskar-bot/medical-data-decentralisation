@@ -5,29 +5,24 @@
 {% endblock %}
 
 {% block content %}
+{% if role != 'patient' %}
 <div class="page-header">
   <div class="page-header-text">
     <span class="page-eyebrow">
-      {% if role == 'doctor' %}Doctor Dashboard{% elif role == 'patient' %}Patient Dashboard{% else %}Administration{% endif %}
+      {% if role == 'doctor' %}Doctor Dashboard{% else %}Administration{% endif %}
     </span>
     <h1 class="type-h1" id="dashboard-greeting">
       {% set hour = now.hour if now is defined else 12 %}
       {% if hour < 12 %}Good morning{% elif hour < 18 %}Good afternoon{% else %}Good evening{% endif %},
       {{ name.split(' ')[0] }}
     </h1>
-    <p class="type-label" style="color:var(--tx3);">
+    <p class="type-label text-muted">
       {% if role == 'doctor' %}{{ specialization }}{% if hospital %} · {{ hospital }}{% endif %}
-      {% elif role == 'patient' %}Your health records are encrypted and secure.
       {% endif %}
     </p>
   </div>
-  <div class="topbar-actions">
-    {% if role == 'patient' %}
-      <button class="btn-secondary" id="refresh-btn" type="button">
-        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-        Refresh
-      </button>
-    {% elif role == 'doctor' %}
+  <div class="page-header-actions">
+    {% if role == 'doctor' %}
       <button class="btn-primary" id="request-access-btn" type="button">
         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
         Request Patient Access
@@ -35,123 +30,176 @@
     {% endif %}
   </div>
 </div>
+{% endif %}
 
 <!-- ════════════════════════════════════════════════════
      PATIENT DASHBOARD
 ═══════════════════════════════════════════════════════ -->
 {% if role == 'patient' %}
 
-  <!-- Stat cards -->
-  <div class="grid-4 section">
-    <div class="stat-card fade-in" style="animation-delay:0ms">
-      <div class="stat-card-header">
-        <span class="stat-card-label">Health Record</span>
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--tx3)" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-      </div>
-      <div id="record-status">
-        <span class="badge badge-encrypted">Encrypted</span>
-      </div>
-      <div class="stat-card-label">Your record is secured</div>
+  <div class="dashboard-hero fade-in" id="dashboard-hero" style="animation-delay:0ms">
+    <div class="dashboard-hero-copy">
+      <span class="page-eyebrow">Patient Dashboard</span>
+      <h1 class="type-h1" id="dashboard-greeting">
+        {% set hour = now.hour if now is defined else 12 %}
+        {% if hour < 12 %}Good morning{% elif hour < 18 %}Good afternoon{% else %}Good evening{% endif %},
+        {{ name.split(' ')[0] }}
+      </h1>
+      <p class="type-label text-muted" id="dashboard-hero-status">Your health records remain protected and private.</p>
+      <p class="dashboard-hero-meta" id="dashboard-hero-meta">Checking your recent activity…</p>
     </div>
+    <button class="btn-secondary" id="refresh-btn" type="button">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      Refresh
+    </button>
+  </div>
 
-    <div class="stat-card fade-in" style="animation-delay:60ms">
+  <div class="grid-4 section">
+    <article class="stat-card stat-card-feature fade-in" style="animation-delay:0ms">
       <div class="stat-card-header">
-        <span class="stat-card-label">Active Doctor Access</span>
+        <span class="stat-card-label">Security Status</span>
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--tx3)" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 11V7m0 0a2 2 0 100-4 2 2 0 000 4zm-6 4h12a2 2 0 012 2v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5a2 2 0 012-2z"/></svg>
+      </div>
+      <div class="stat-card-value stat-card-accent" id="stat-security">Protected</div>
+      <div class="stat-card-label">Encrypted in transit and at rest with zero-trust access controls.</div>
+      <a class="dashboard-link" href="#security-details-card">View security details</a>
+    </article>
+
+    <article class="stat-card fade-in" style="animation-delay:60ms">
+      <div class="stat-card-header">
+        <span class="stat-card-label">Doctor Access</span>
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--tx3)" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
       </div>
       <div class="stat-card-value stat-card-accent" id="stat-approved">—</div>
-      <div class="stat-card-label">active doctor access</div>
-    </div>
+      <div class="micro-avatar-row" id="access-chip-row" aria-label="Doctors with active access"></div>
+      <div class="stat-card-label">active access grants</div>
+    </article>
 
-    <div class="stat-card fade-in" style="animation-delay:120ms">
+    <article class="stat-card fade-in" style="animation-delay:120ms">
       <div class="stat-card-header">
-        <span class="stat-card-label">Pending Requests</span>
+        <span class="stat-card-label">Needs Your Attention</span>
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--tx3)" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-5-5.917V4a1 1 0 10-2 0v1.083A6 6 0 006 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
       </div>
-      <div class="stat-card-value" style="color:var(--g5);" id="stat-pending">—</div>
-      <div class="stat-card-label">awaiting your approval</div>
-    </div>
+      <div class="stat-card-value stat-card-accent" id="stat-pending">—</div>
+      <div class="stat-card-subcopy" id="pending-preview">No action required right now.</div>
+      <a class="dashboard-link" href="#requests">Review access requests</a>
+    </article>
 
-    <div class="stat-card fade-in" style="animation-delay:180ms">
+    <article class="stat-card fade-in" style="animation-delay:180ms">
       <div class="stat-card-header">
-        <span class="stat-card-label">Audit Events</span>
+        <span class="stat-card-label">Security Activity</span>
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--tx3)" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
       </div>
       <div class="stat-card-value stat-card-teal" id="stat-audit">—</div>
-      <div class="stat-card-label">recorded events</div>
-    </div>
+      <div class="stat-card-label" id="stat-audit-label">events in the last 7 days</div>
+      <a class="dashboard-link" href="/audit">View audit log</a>
+    </article>
   </div>
 
-  <!-- Activity + Quick Actions -->
-  <div class="grid-sidebar section" id="requests">
-    <div>
-      <div class="section-header">
-        <h2 class="type-h3">Access Requests</h2>
-        <span class="type-caption" id="requests-count"></span>
-      </div>
+  <div class="dashboard-grid section" id="requests">
+    <div class="stack-6">
+      <section class="card dashboard-panel">
+        <div class="section-header">
+          <div>
+            <h2 class="type-h3">Access Requests</h2>
+            <p class="dashboard-section-sub">Review who can see your care data.</p>
+          </div>
+          <span class="type-caption" id="requests-count"></span>
+        </div>
 
-      <!-- Tabs -->
-      <div class="tabs" role="tablist" aria-label="Request status filter" data-tab-group="requests">
-        <button class="tab-item active" role="tab" data-tab="pending" type="button">
-          Pending <span class="tab-count" id="tab-count-pending">0</span>
-        </button>
-        <button class="tab-item" role="tab" data-tab="approved" type="button">
-          Approved <span class="tab-count" id="tab-count-approved">0</span>
-        </button>
-        <button class="tab-item" role="tab" data-tab="denied" type="button">
-          Denied <span class="tab-count" id="tab-count-denied">0</span>
-        </button>
-      </div>
+        <div class="tabs" role="tablist" aria-label="Request status filter" data-tab-group="requests">
+          <button class="tab-item active" role="tab" data-tab="pending" type="button">
+            Pending <span class="tab-count" id="tab-count-pending">0</span>
+          </button>
+          <button class="tab-item" role="tab" data-tab="approved" type="button">
+            Approved <span class="tab-count" id="tab-count-approved">0</span>
+          </button>
+          <button class="tab-item" role="tab" data-tab="denied" type="button">
+            Denied <span class="tab-count" id="tab-count-denied">0</span>
+          </button>
+        </div>
 
-      <!-- Pending -->
-      <div data-tab-panel="pending">
-        <div id="pending-list">
-          <div class="empty-state">
-            <div class="empty-state-title">No pending requests</div>
-            <div class="empty-state-desc">When a doctor requests access to your record, it will appear here.</div>
+        <div data-tab-panel="pending">
+          <div id="pending-list">
+            <div class="empty-state">
+              <div class="empty-state-title">No pending requests</div>
+              <div class="empty-state-desc">When a doctor requests access to your record, it will appear here.</div>
+            </div>
           </div>
         </div>
-      </div>
-      <!-- Approved -->
-      <div data-tab-panel="approved" class="hidden">
-        <div id="approved-list">
-          <div class="empty-state"><div class="empty-state-title">No approved requests</div></div>
+        <div data-tab-panel="approved" class="hidden">
+          <div id="approved-list">
+            <div class="empty-state"><div class="empty-state-title">No approved requests</div></div>
+          </div>
         </div>
-      </div>
-      <!-- Denied -->
-      <div data-tab-panel="denied" class="hidden">
-        <div id="denied-list">
-          <div class="empty-state"><div class="empty-state-title">No denied requests</div></div>
+        <div data-tab-panel="denied" class="hidden">
+          <div id="denied-list">
+            <div class="empty-state"><div class="empty-state-title">No denied requests</div></div>
+          </div>
         </div>
-      </div>
+      </section>
+
+      <section class="card dashboard-panel" id="medical-timeline">
+        <div class="section-header">
+          <div>
+            <h2 class="type-h3">Medical Timeline</h2>
+            <p class="dashboard-section-sub">A calm view of recent access and care updates.</p>
+          </div>
+        </div>
+        <div id="timeline-list">
+          <div class="empty-state"><div class="empty-state-title">Loading recent activity…</div></div>
+        </div>
+      </section>
     </div>
 
-    <!-- Quick Actions -->
-    <div class="stack-4">
-      <div class="card" id="record">
-        <div class="section-header" style="margin-bottom:var(--sp-4);">
-          <h2 class="type-label" style="font-weight:600; color:var(--tx1);">Quick Actions</h2>
+    <div class="stack-6">
+      <section class="card dashboard-panel" id="record">
+        <div class="section-header">
+          <div>
+            <h2 class="type-h3">Quick Actions</h2>
+            <p class="dashboard-section-sub">Jump back into the most common patient tasks.</p>
+          </div>
         </div>
-        <div class="stack-2">
-          <button class="quick-action-item" id="unlock-record-btn" type="button">
+        <div class="quick-actions-grid" id="quick-actions-grid">
+          <button class="quick-action-card" id="unlock-record-btn" type="button">
             <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
-            Unlock health record
+            <span class="quick-action-title">Unlock Health Record</span>
+            <span class="quick-action-desc">Open your personal record securely.</span>
           </button>
-          <button class="quick-action-item" id="view-notes-btn" type="button">
+          <button class="quick-action-card" id="view-notes-btn" type="button">
             <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-            View doctor notes
+            <span class="quick-action-title">View Doctor Notes</span>
+            <span class="quick-action-desc">Review recent clinical updates.</span>
           </button>
-          <button class="quick-action-item" id="view-history-btn" type="button">
+          <button class="quick-action-card" id="view-history-btn" type="button">
             <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Login history
+            <span class="quick-action-title">Login History</span>
+            <span class="quick-action-desc">See when your account was used.</span>
           </button>
+          <a class="quick-action-card" href="/access-requests">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            <span class="quick-action-title">Manage Access</span>
+            <span class="quick-action-desc">Review doctors who can reach your record.</span>
+          </a>
+          <a class="quick-action-card" href="/appointments">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            <span class="quick-action-title">Book Appointment</span>
+            <span class="quick-action-desc">See upcoming care visits.</span>
+          </a>
+          <a class="quick-action-card" href="/lab-reports">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            <span class="quick-action-title">View Reports</span>
+            <span class="quick-action-desc">Open recent lab and diagnostic updates.</span>
+          </a>
         </div>
-      </div>
+      </section>
 
-      <!-- Encryption status -->
-      <div class="card">
-        <div style="margin-bottom:var(--sp-3);">
-          <span class="badge badge-encrypted">Encrypted</span>
+      <section class="card dashboard-panel" id="security-details-card">
+        <div class="section-header">
+          <div>
+            <h2 class="type-h3">Security Details</h2>
+            <p class="dashboard-section-sub">The technical safeguards behind your private care record.</p>
+          </div>
         </div>
         <div class="field-row" style="padding-top:0;">
           <div class="field-label">Encryption</div>
@@ -159,15 +207,53 @@
         </div>
         <div class="field-row">
           <div class="field-label">Key Storage</div>
-          <div class="field-value">Device-local (PBKDF2)</div>
+          <div class="field-value">Device-local key protection</div>
         </div>
         <div class="field-row">
-          <div class="field-label">Zero-Trust</div>
-          <div class="field-value">No server-side keys</div>
+          <div class="field-label">Access Model</div>
+          <div class="field-value">Zero-trust, review-first approvals</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="card dashboard-panel section" id="health-snapshot">
+    <div class="section-header">
+      <div>
+        <h2 class="type-h3">Your Health at a Glance</h2>
+        <p class="dashboard-section-sub">Recent care updates from your connected records.</p>
+      </div>
+    </div>
+    <div class="grid-3">
+      <div class="health-snapshot-card">
+        <div class="health-snapshot-header">
+          <h3 class="type-label">Recent Prescriptions</h3>
+          <a class="dashboard-link" href="/prescriptions">View all</a>
+        </div>
+        <div id="prescriptions-list">
+          <div class="empty-state compact"><div class="empty-state-title">Loading prescriptions…</div></div>
+        </div>
+      </div>
+      <div class="health-snapshot-card">
+        <div class="health-snapshot-header">
+          <h3 class="type-label">Latest Lab Reports</h3>
+          <a class="dashboard-link" href="/lab-reports">View all</a>
+        </div>
+        <div id="lab-reports-list">
+          <div class="empty-state compact"><div class="empty-state-title">Loading reports…</div></div>
+        </div>
+      </div>
+      <div class="health-snapshot-card">
+        <div class="health-snapshot-header">
+          <h3 class="type-label">Upcoming Appointments</h3>
+          <a class="dashboard-link" href="/appointments">View all</a>
+        </div>
+        <div id="appointments-list">
+          <div class="empty-state compact"><div class="empty-state-title">Loading appointments…</div></div>
         </div>
       </div>
     </div>
-  </div>
+  </section>
 
   <!-- Health Record unlock panel -->
   <div class="section" id="record-panel" style="display:none;">
@@ -263,7 +349,7 @@
     <div class="section-header">
       <h2 class="type-h3">Request Patient Access</h2>
     </div>
-    <div class="card" style="max-width:560px;">
+    <div class="card panel-card--compact">
       <div id="request-alert" style="display:none;"></div>
       <div class="input-group">
         <label class="input-label" for="patient-code-input">Patient username <span style="color:var(--tx3); font-weight:400;">or profile code</span></label>
@@ -391,7 +477,15 @@
 
   /* ── PATIENT LOGIC ──────────────────────────────────────────── */
   if (ROLE === 'patient') {
-    loadRequests();
+    var EMR_PID = {{ (session.get('user_id') or profile_code or '') | tojson }};
+
+    function refreshPatientDashboard() {
+      loadRequests();
+      loadAuditCount();
+      loadHealthSnapshot();
+      loadHistory();
+      loadTimeline();
+    }
 
     // Quick action buttons
     var unlockBtn = document.getElementById('unlock-record-btn');
@@ -413,7 +507,7 @@
       panel.style.display = 'block';
       loadHistory();
     });
-    if (refreshBtn) refreshBtn.addEventListener('click', loadRequests);
+    if (refreshBtn) refreshBtn.addEventListener('click', refreshPatientDashboard);
 
     var closeNotes = document.getElementById('close-notes-btn');
     if (closeNotes) closeNotes.addEventListener('click', function() {
@@ -455,6 +549,36 @@
       });
     });
 
+    function updateHeroStatus(pending, active, historyItems) {
+      var statusEl = document.getElementById('dashboard-hero-status');
+      var metaEl = document.getElementById('dashboard-hero-meta');
+      if (statusEl) {
+        if (pending > 0) {
+          var names = [];
+          var preview = [];
+          if (window._patientRequestPreview && window._patientRequestPreview.length) {
+            window._patientRequestPreview.slice(0, 2).forEach(function(item) {
+              if (item.doctor_name) preview.push(item.doctor_name);
+            });
+          }
+          names = preview.length ? preview : ['a doctor'];
+          statusEl.textContent = pending + ' request' + (pending === 1 ? '' : 's') + ' are waiting for your decision from ' + names.join(', ') + '.';
+        } else if (active > 0) {
+          statusEl.textContent = 'Your records stay protected and ' + active + ' doctor' + (active === 1 ? '' : 's') + ' currently have access.';
+        } else {
+          statusEl.textContent = 'Your records stay protected and no one currently has access.';
+        }
+      }
+      if (metaEl) {
+        if (historyItems && historyItems.length) {
+          var latest = historyItems[0];
+          metaEl.textContent = 'Last activity: ' + formatDate(latest.timestamp || latest.ts || latest.created_at || latest.requested_at);
+        } else {
+          metaEl.textContent = 'Recent login and access activity will appear here.';
+        }
+      }
+    }
+
     function loadRequests() {
       fetch('/patient/requests', {headers: authHeaders()})
       .then(function(r) { return r.json(); })
@@ -464,22 +588,34 @@
         var approved = reqs.filter(function(r) { return r.status === 'approved'; });
         var denied   = reqs.filter(function(r) { return r.status === 'denied'; });
 
-        // Count only non-expired approved entries for the Active Doctor Access stat
         var now = Date.now();
         var activeCount = approved.filter(function(r) {
-          if (!r.responded_at) return true; // assume active if no responded_at
+          if (!r.responded_at) return true;
           return (new Date(r.responded_at).getTime() + 24 * 3600 * 1000) > now;
         }).length;
 
         document.getElementById('stat-pending').textContent  = pending.length;
         document.getElementById('stat-approved').textContent = activeCount;
+        document.getElementById('pending-preview').textContent = pending.length ? (pending[0].doctor_name || 'A doctor') + ' is waiting for your decision.' : 'No action required right now.';
         document.getElementById('tab-count-pending').textContent  = pending.length;
         document.getElementById('tab-count-approved').textContent = approved.length;
         document.getElementById('tab-count-denied').textContent   = denied.length;
+        document.getElementById('requests-count').textContent = pending.length + ' needing review';
 
+        var chips = document.getElementById('access-chip-row');
+        if (chips) {
+          var latestApprovals = approved.slice(0, 3);
+          chips.innerHTML = latestApprovals.length ? latestApprovals.map(function(r) {
+            var initials = (r.doctor_name || 'DR').split(/\s+/).slice(0, 2).map(function(part) { return part.charAt(0).toUpperCase(); }).join('');
+            return '<span class="micro-avatar-chip" title="' + (r.doctor_name || 'Doctor') + '">' + initials + '</span>';
+          }).join('') : '<span class="micro-avatar-empty">No active doctors yet</span>';
+        }
+
+        window._patientRequestPreview = pending.slice(0, 3);
         renderRequests('pending-list', pending, 'pending');
         renderRequests('approved-list', approved, 'approved');
         renderRequests('denied-list', denied, 'denied');
+        updateHeroStatus(pending.length, activeCount, window._patientHistory || []);
       })
       .catch(function() {});
     }
@@ -491,14 +627,14 @@
       var diff = exp - now;
       if (diff > 0) {
         var h = Math.round(diff / 3600000);
-        var sub = h < 1 ? 'Expires in &lt;1 h' : ('Expires in ' + h + ' h');
-        return '<span class="badge badge-approved" style="margin-left:var(--sp-2);">Active</span>' +
-               '<div style="font-size:var(--t-xs);color:var(--tx3);margin-top:2px;">' + sub + '</div>';
+        var sub = h < 1 ? 'Expires in <1 h' : ('Expires in ' + h + ' h');
+        return '<span class="badge badge-approved">Active</span>' +
+               '<div class="request-meta">' + sub + '</div>';
       } else {
         var d = Math.round(-diff / 86400000);
         var sub2 = d < 1 ? 'Expired today' : ('Expired ' + d + ' day' + (d > 1 ? 's' : '') + ' ago');
-        return '<span class="badge badge-denied" style="margin-left:var(--sp-2);">Expired</span>' +
-               '<div style="font-size:var(--t-xs);color:var(--tx3);margin-top:2px;">' + sub2 + '</div>';
+        return '<span class="badge badge-denied">Expired</span>' +
+               '<div class="request-meta">' + sub2 + '</div>';
       }
     }
 
@@ -509,31 +645,31 @@
         el.innerHTML = '<div class="empty-state"><div class="empty-state-title">' + (msgs[status] || 'None') + '</div></div>';
         return;
       }
-      var rows = reqs.map(function(r) {
+      el.innerHTML = '<div class="request-list">' + reqs.map(function(r) {
         var actions = '';
         if (status === 'pending') {
           actions =
-            '<button class="btn-primary btn-sm" onclick="approveRequest(\'' + r.request_id + '\',\'' + r.doctor_code + '\')" type="button">Approve</button> ' +
+            '<button class="btn-primary btn-sm" onclick="approveRequest(\'' + r.request_id + '\',\'' + r.doctor_code + '\')" type="button">Approve</button>' +
             '<button class="btn-danger btn-sm" onclick="denyRequest(\'' + r.request_id + '\',\'' + r.doctor_code + '\')" type="button">Deny</button>';
         } else if (status === 'approved') {
           actions = expiryBadge(r.responded_at);
         } else {
           actions = '<span class="badge badge-denied">Denied</span>';
         }
-        return '<tr>' +
-          '<td><strong style="color:var(--tx1);">' + (r.doctor_name || '—') + '</strong></td>' +
-          '<td>' + formatDate(r.requested_at) + '</td>' +
-          '<td class="cluster-2">' + actions + '</td>' +
-          '</tr>';
-      }).join('');
-      var headers = status === 'approved'
-        ? '<th>Doctor</th><th>Requested</th><th>Access Status</th>'
-        : '<th>Doctor</th><th>Requested</th><th>Actions</th>';
-      el.innerHTML =
-        '<div class="card" style="padding:0;overflow:hidden;">' +
-        '<table class="data-table" aria-label="' + status + ' requests">' +
-        '<thead><tr>' + headers + '</tr></thead>' +
-        '<tbody>' + rows + '</tbody></table></div>';
+        var initials = (r.doctor_name || 'Doctor').split(/\s+/).slice(0, 2).map(function(p) { return p.charAt(0).toUpperCase(); }).join('');
+        return '<div class="request-card">' +
+          '<div class="request-card-main">' +
+            '<div class="request-card-identity">' +
+              '<div class="request-avatar">' + initials + '</div>' +
+              '<div>' +
+                '<div class="request-name">' + (r.doctor_name || 'Medical professional') + '</div>' +
+                '<div class="request-meta">Requested ' + formatDate(r.requested_at) + '</div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="request-card-actions">' + actions + '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('') + '</div>';
     }
 
     window.approveRequest = function(requestId, doctorCode) {
@@ -590,23 +726,151 @@
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var hist = d.history || [];
-        if (!hist.length) {
-          body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:var(--sp-8);color:var(--tx3);">No login history found.</td></tr>';
-          return;
+        window._patientHistory = hist;
+        if (body) {
+          if (!hist.length) {
+            body.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:var(--sp-8);color:var(--tx3);">No login history found.</td></tr>';
+            return;
+          }
+          body.innerHTML = hist.map(function(h) {
+            return '<tr>' +
+              '<td class="type-mono" style="font-size:var(--t-xs);">' + formatDate(h.timestamp||h.ts) + '</td>' +
+              '<td>' + (h.event||'login') + '</td>' +
+              '<td class="type-mono" style="font-size:var(--t-xs);">' + (h.ip||'—') + '</td>' +
+              '<td><span class="badge badge-' + (h.success||h.status==='success'?'approved':'denied') + '">' + (h.success||h.status==='success'?'Success':'Failed') + '</span></td>' +
+              '</tr>';
+          }).join('');
         }
-        body.innerHTML = hist.map(function(h) {
-          return '<tr>' +
-            '<td class="type-mono" style="font-size:var(--t-xs);">' + formatDate(h.timestamp||h.ts) + '</td>' +
-            '<td>' + (h.event||'login') + '</td>' +
-            '<td class="type-mono" style="font-size:var(--t-xs);">' + (h.ip||'—') + '</td>' +
-            '<td><span class="badge badge-' + (h.success||h.status==='success'?'approved':'denied') + '">' + (h.success||h.status==='success'?'Success':'Failed') + '</span></td>' +
-            '</tr>';
-        }).join('');
+        updateHeroStatus(window._patientPendingCount || 0, window._patientActiveCount || 0, hist);
       });
     }
 
-    // Audit count (approximate from history)
-    document.getElementById('stat-audit').textContent = '—';
+    function loadAuditCount() {
+      var el = document.getElementById('stat-audit');
+      var labelEl = document.getElementById('stat-audit-label');
+      fetch('/api/audit_log', {headers: authHeaders()})
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var entries = Array.isArray(d) ? d : (d.logs || d.audit || d.entries || d.events || []);
+        var sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+        var count = entries.filter(function(item) {
+          var ts = item.timestamp || item.created_at || item.time || item.date;
+          if (!ts) return false;
+          var parsed = new Date(ts);
+          return !isNaN(parsed.getTime()) && parsed.getTime() >= sevenDaysAgo;
+        }).length;
+        if (el) el.textContent = count;
+        if (labelEl) labelEl.textContent = count === 1 ? 'event in the last 7 days' : 'events in the last 7 days';
+      })
+      .catch(function() {
+        if (el) el.textContent = '—';
+        if (labelEl) labelEl.textContent = 'recent security activity';
+      });
+    }
+
+    function loadHealthSnapshot() {
+      var containers = {
+        prescriptions: document.getElementById('prescriptions-list'),
+        labs: document.getElementById('lab-reports-list'),
+        appointments: document.getElementById('appointments-list')
+      };
+      if (!EMR_PID) {
+        Object.keys(containers).forEach(function(key) {
+          if (containers[key]) containers[key].innerHTML = '<div class="empty-state compact"><div class="empty-state-title">No connected records yet</div></div>';
+        });
+        return;
+      }
+      var requests = [
+        fetch('/api/emr/prescriptions/patient/' + encodeURIComponent(EMR_PID), {headers: authHeaders()}),
+        fetch('/api/emr/lab-reports/patient/' + encodeURIComponent(EMR_PID), {headers: authHeaders()}),
+        fetch('/api/emr/appointments/patient/' + encodeURIComponent(EMR_PID), {headers: authHeaders()})
+      ];
+      Promise.all(requests)
+      .then(function(responses) { return Promise.all(responses.map(function(r) { return r.json(); })); })
+      .then(function(data) {
+        var prescriptions = data[0] && Array.isArray(data[0]) ? data[0] : (data[0].prescriptions || data[0].items || []);
+        var labs = data[1] && Array.isArray(data[1]) ? data[1] : (data[1].lab_reports || data[1].items || []);
+        var appointments = data[2] && Array.isArray(data[2]) ? data[2] : (data[2].appointments || data[2].items || []);
+        renderHealthList(containers.prescriptions, prescriptions.slice(0, 2), 'prescription', '/prescriptions');
+        renderHealthList(containers.labs, labs.slice(0, 2), 'lab', '/lab-reports');
+        renderHealthList(containers.appointments, appointments.filter(function(item) {
+          var when = item.date || item.appointment_date || item.start_time || item.timestamp;
+          if (!when) return true;
+          return new Date(when).getTime() >= Date.now();
+        }).slice(0, 2), 'appointment', '/appointments');
+      })
+      .catch(function() {
+        Object.keys(containers).forEach(function(key) {
+          if (containers[key]) containers[key].innerHTML = '<div class="empty-state compact"><div class="empty-state-title">No connected records yet</div></div>';
+        });
+      });
+    }
+
+    function renderHealthList(container, items, kind, link) {
+      if (!container) return;
+      if (!items || !items.length) {
+        var text = kind === 'prescription' ? 'No prescriptions recorded yet.' : (kind === 'lab' ? 'No lab reports yet.' : 'No upcoming appointments.');
+        container.innerHTML = '<div class="empty-state compact"><div class="empty-state-title">' + text + '</div></div>';
+        return;
+      }
+      container.innerHTML = '<div class="health-list">' + items.map(function(item) {
+        var title = item.title || item.name || item.medication || item.report_name || item.type || item.reason || 'Care update';
+        var subtitle = item.description || item.notes || item.summary || item.status || item.diagnosis || item.provider || 'Recent update';
+        var stamp = item.date || item.created_at || item.updated_at || item.timestamp || item.appointment_date || item.start_time || '';
+        return '<div class="health-list-item">' +
+          '<div class="health-list-title">' + title + '</div>' +
+          '<div class="health-list-subtitle">' + subtitle + '</div>' +
+          '<div class="health-list-meta">' + (stamp ? formatDate(stamp) : 'Recently added') + '</div>' +
+        '</div>';
+      }).join('') + '</div>';
+    }
+
+    function loadTimeline() {
+      var el = document.getElementById('timeline-list');
+      if (!el) return;
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-title">Loading recent activity…</div></div>';
+      fetch('/patient/notes', {headers: authHeaders()})
+      .then(function(r) { return r.json(); })
+      .then(function(noteData) {
+        var notes = noteData.notes || [];
+        return fetch('/patient/requests', {headers: authHeaders()})
+          .then(function(r) { return r.json(); })
+          .then(function(requestData) {
+            var requests = requestData.requests || [];
+            var events = [];
+            requests.forEach(function(item) {
+              if (item.status === 'approved' || item.status === 'denied' || item.status === 'pending') {
+                events.push({type:'request', timestamp:item.requested_at || item.responded_at, title:(item.status === 'approved' ? 'Access approved' : (item.status === 'denied' ? 'Access denied' : 'Access requested')), description:(item.doctor_name || 'Doctor') + ' · ' + item.status});
+              }
+            });
+            notes.forEach(function(note) {
+              events.push({type:'note', timestamp:note.created_at || note.visit_date, title:(note.note_type || 'Medical note'), description:(note.doctor_name || 'Doctor') + ' added a note'});
+            });
+            events.sort(function(a, b) {
+              return new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime();
+            });
+            if (!events.length) {
+              el.innerHTML = '<div class="empty-state"><div class="empty-state-title">No recent activity yet</div><div class="empty-state-desc">Access changes and medical notes will show up here.</div></div>';
+              return;
+            }
+            el.innerHTML = '<div class="timeline-list">' + events.slice(0, 6).map(function(event) {
+              return '<div class="timeline-item">' +
+                '<div class="timeline-dot"></div>' +
+                '<div class="timeline-card">' +
+                  '<div class="timeline-title">' + event.title + '</div>' +
+                  '<div class="timeline-desc">' + event.description + '</div>' +
+                  '<div class="timeline-meta">' + (event.timestamp ? formatDate(event.timestamp) : 'Recently updated') + '</div>' +
+                '</div>' +
+              '</div>';
+            }).join('') + '</div>';
+          });
+      })
+      .catch(function() {
+        el.innerHTML = '<div class="empty-state"><div class="empty-state-title">No recent activity yet</div></div>';
+      });
+    }
+
+    refreshPatientDashboard();
   }
 
   /* ── DOCTOR LOGIC ───────────────────────────────────────────── */
