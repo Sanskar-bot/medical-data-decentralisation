@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # With network_mode: host, tell Postgres to listen on this port
+      # explicitly, matching DATABASE_URL's :5432 in .env.
+      PGPORT: 5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    volumes:
+      - .:/app
+    working_dir: /app/server
+    command: gunicorn --bind 0.0.0.0:5000 server:app --workers 3 --timeout 60
+
+  patient_portal:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - backend
+    env_file: .env
+    volumes:
+      - .:/app
+    working_dir: /app/portals
+    command: gunicorn --bind 0.0.0.0:5001 patient_portal:app --workers 2 --timeout 60
+
+  doctor_portal:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - backend
+    env_file: .env
+    volumes:
+      - .:/app
+    working_dir: /app/portals
+    command: gunicorn --bind 0.0.0.0:5002 doctor_portal:app --workers 2 --timeout 60
+
+  landing:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - doctor_portal
+    env_file: .env
+    volumes:
+      - .:/app
+    working_dir: /app/portals
+    command: gunicorn --bind 0.0.0.0:5003 landing:app --workers 2 --timeout 60
+
+volumes:
+  pgdata:

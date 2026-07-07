@@ -242,6 +242,39 @@ def profile():
     return render_template("profile.html", **_page_context())
 
 
+@app.route("/admin/doctors")
+def admin_create_doctor_page():
+    guard = _require_session()
+    if guard: return guard
+    if session.get("role") not in ("admin", "receptionist"):
+        return redirect(url_for("dashboard"))
+    return render_template("admin_create_doctor.html", **_page_context())
+
+
+@app.route("/admin/doctors", methods=["POST"])
+def admin_create_doctor_proxy():
+    if not session.get("logged_in"):
+        return jsonify({"error": "unauthenticated"}), 401
+    if session.get("role") not in ("admin", "receptionist"):
+        return jsonify({"error": "Only verified team members can create doctor accounts."}), 403
+    jwt_tok = session.get("jwt_token", "")
+    if not jwt_tok:
+        return jsonify({"error": "Session expired. Please sign in again."}), 401
+    try:
+        r = http.post(
+            f"{BACKEND}/admin/doctors",
+            json=request.get_json(force=True) or {},
+            headers={**_headers(), "Authorization": f"Bearer {jwt_tok}"},
+            timeout=20,
+        )
+        try:
+            return jsonify(r.json()), r.status_code
+        except Exception:
+            return jsonify({"error": "Backend returned an unreadable response."}), r.status_code
+    except Exception as e:
+        return jsonify({"error": f"Cannot reach backend: {e}"}), 502
+
+
 @app.route("/encounter/<encounter_id>")
 def encounter_detail(encounter_id):
     """Render the read-only encounter detail page.
@@ -308,8 +341,15 @@ def login():
             return jsonify({
                 "upgrade_required": True,
                 "identifier": identifier,
-                "old_hash": sha_hash,
+                "old_hash": hashlib.sha256(password.encode()).hexdigest(),
                 "message": "Your account uses an outdated password format. Set a new password to continue.",
+            }), 403
+
+        if r.status_code == 403 and data.get("error") == "password_change_required":
+            return jsonify({
+                "password_change_required": True,
+                "temp_token": data.get("temp_token", ""),
+                "message": "Welcome to MedVault. Choose your own password to finish setting up your account.",
             }), 403
 
         if not r.ok:
@@ -375,6 +415,57 @@ def login():
 
 
 # â”€â”€ Password upgrade proxy (legacy SHA-256 â†’ werkzeug pbkdf2) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+@app.route("/auth/set_initial_password", methods=["POST"])
+def set_initial_password():
+    try:
+        d = request.get_json(force=True) or {}
+        temp_token = (d.get("temp_token") or "").strip()
+        new_pw = d.get("new_password") or ""
+        if not temp_token or not new_pw:
+            return jsonify({"error": "Missing fields."}), 400
+        if len(new_pw) < 8:
+            return jsonify({"error": "Password must be at least 8 characters."}), 400
+
+        try:
+            r = http.post(
+                f"{BACKEND}/auth/set_initial_password",
+                json={"temp_token": temp_token, "new_password": new_pw},
+                headers=_headers(),
+                timeout=10,
+            )
+            data = r.json()
+        except Exception as e:
+            return jsonify({"error": f"Cannot reach backend: {e}"}), 502
+
+        if not r.ok:
+            human = {
+                "invalid_or_expired_token": "This setup session expired. Please sign in with the temporary password again.",
+                "password_too_short": "Password must be at least 8 characters.",
+                "password_already_set": "This account already has its password set. Please sign in normally.",
+            }.get(data.get("error"), data.get("error", "Could not set password."))
+            return jsonify({"error": human}), r.status_code
+
+        session.clear()
+        role = data.get("role", "patient")
+        pcode = data.get("profile_code", "")
+        dcode = data.get("doctor_code", "") or (pcode if role == "doctor" else "")
+        session["logged_in"] = True
+        session["role"] = role
+        session["name"] = data.get("name", "")
+        session["email"] = data.get("email", "")
+        session["username"] = data.get("username", "")
+        session["user_id"] = data.get("user_id", "")
+        session["profile_code"] = pcode if role == "patient" else ""
+        session["doctor_code"] = dcode if role == "doctor" else ""
+        session["jwt_token"] = data.get("access_token", "")
+        session["_pw_cache"] = new_pw
+        session.permanent = True
+        return jsonify({"message": "ok", "redirect": "/dashboard"})
+    except Exception as e:
+        app.logger.exception("set_initial_password error")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/login/upgrade", methods=["POST"])
 def login_upgrade():
     """Transparently upgrades a legacy-hash account to werkzeug pbkdf2 and logs in."""
@@ -570,7 +661,6 @@ def register_patient():
 
 
 # â”€â”€ REGISTER DOCTOR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-@app.route("/register/doctor", methods=["POST"])
 def register_doctor():
     try:
         import uuid as _uuid
@@ -3649,6 +3739,6 @@ def doctor_view_patient():
 
 if __name__ == "__main__":
     print("  ðŸŒ  Landing Page â†’ http://127.0.0.1:5003")
-    app.run(host="127.0.0.1", port=5003, debug=True, use_reloader=False, threaded=True)
+    app.run(host="127.0.0.1", port=5003, debug=False, use_reloader=False, threaded=True)
 
 

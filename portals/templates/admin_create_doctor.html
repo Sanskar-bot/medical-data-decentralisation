@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+{% block title %}Create Doctor{% endblock %}
+{% block topbar_title %}Create Doctor Account{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <span class="page-eyebrow">Administration</span>
+    <h1 class="type-h1">Create Doctor Account</h1>
+    <p class="type-label text-muted">Create an account only after the doctor's identity and credentials have been verified.</p>
+  </div>
+</div>
+
+<div class="grid-sidebar" style="align-items:start;">
+  <section class="card">
+    <div id="create-doctor-alert" style="display:none; margin-bottom:var(--sp-5);"></div>
+    <form id="create-doctor-form" class="stack-4" novalidate>
+      <div class="input-group">
+        <label class="input-label" for="doc-name">Full name</label>
+        <input class="input-field" id="doc-name" name="name" type="text" autocomplete="name" required>
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="doc-email">Email address</label>
+        <input class="input-field" id="doc-email" name="email" type="email" autocomplete="email" required>
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="doc-username">Username</label>
+        <input class="input-field" id="doc-username" name="username" type="text" autocomplete="username" required>
+        <span class="input-hint">Lowercase letters, numbers, dot, underscore only</span>
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="doc-specialization">Specialization</label>
+        <input class="input-field" id="doc-specialization" name="specialization" type="text" required>
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="doc-hospital">Hospital / Clinic</label>
+        <input class="input-field" id="doc-hospital" name="hospital" type="text" required>
+      </div>
+      <button class="btn-primary" id="create-doctor-submit" type="submit">
+        <span id="create-doctor-text">Create account</span>
+        <span id="create-doctor-spinner" class="spinner" style="display:none;"></span>
+      </button>
+    </form>
+  </section>
+
+  <aside class="card">
+    <h2 class="type-h3" style="margin-bottom:var(--sp-3);">Verification First</h2>
+    <p class="type-label text-muted" style="line-height:1.7;">Doctor accounts can request access to patient records. Create this account only after the MedVault team has confirmed the doctor's credentials through your approved process.</p>
+  </aside>
+</div>
+
+<section id="temporary-password-panel" class="card section" style="display:none; border-color:var(--g4);">
+  <div class="section-header" style="margin-bottom:var(--sp-4);">
+    <div>
+      <h2 class="type-h3">Temporary password</h2>
+      <p class="type-label text-muted">Copy this now. It will not be shown again.</p>
+    </div>
+    <button class="btn-secondary btn-sm" id="copy-temp-password" type="button" data-copy="">Copy</button>
+  </div>
+  <div class="field-row" style="padding-top:0;">
+    <div class="field-label">Doctor code</div>
+    <div class="field-value type-mono" id="created-doctor-code"></div>
+  </div>
+  <div class="field-row">
+    <div class="field-label">Temporary password</div>
+    <div class="field-value type-mono" id="created-temp-password" style="word-break:break-all;"></div>
+  </div>
+  <div class="alert alert-info" style="margin-top:var(--sp-5);">
+    Relay this password through the verified channel used during credential review. The doctor will choose their own password on first sign-in.
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var form = document.getElementById('create-doctor-form');
+  var alertEl = document.getElementById('create-doctor-alert');
+  var submit = document.getElementById('create-doctor-submit');
+  var text = document.getElementById('create-doctor-text');
+  var spinner = document.getElementById('create-doctor-spinner');
+  var panel = document.getElementById('temporary-password-panel');
+  var copyBtn = document.getElementById('copy-temp-password');
+
+  function showAlert(msg, type) {
+    alertEl.className = 'alert alert-' + (type || 'error');
+    alertEl.textContent = msg;
+    alertEl.style.display = 'flex';
+  }
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var payload = {
+      name: document.getElementById('doc-name').value.trim(),
+      email: document.getElementById('doc-email').value.trim(),
+      username: document.getElementById('doc-username').value.trim(),
+      specialization: document.getElementById('doc-specialization').value.trim(),
+      hospital: document.getElementById('doc-hospital').value.trim()
+    };
+    if (!payload.name || !payload.email || !payload.username || !payload.specialization || !payload.hospital) {
+      showAlert('All fields are required.', 'error');
+      return;
+    }
+    submit.disabled = true;
+    text.textContent = 'Creating account';
+    spinner.style.display = 'inline-block';
+    alertEl.style.display = 'none';
+    fetch('/admin/doctors', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+    .then(function(res) {
+      submit.disabled = false;
+      text.textContent = 'Create account';
+      spinner.style.display = 'none';
+      if (!res.ok) {
+        showAlert(res.data.error || 'Could not create the doctor account.', 'error');
+        return;
+      }
+      document.getElementById('created-doctor-code').textContent = res.data.doctor_code || '';
+      document.getElementById('created-temp-password').textContent = res.data.temporary_password || '';
+      copyBtn.dataset.copy = res.data.temporary_password || '';
+      panel.style.display = 'block';
+      form.reset();
+      panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+    })
+    .catch(function() {
+      submit.disabled = false;
+      text.textContent = 'Create account';
+      spinner.style.display = 'none';
+      showAlert('Network error. Please try again.', 'error');
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -273,6 +273,13 @@
             <button class="auth-tab active" data-role="login" role="tab" aria-selected="true" id="tab-login" type="button">Sign in</button>
             <button class="auth-tab" data-role="register" role="tab" aria-selected="false" id="tab-register" type="button">Register</button>
           </div>
+          <div class="alert alert-info" style="margin-bottom:var(--sp-5); align-items:flex-start;">
+            <div>
+              <strong>Are you a doctor?</strong>
+              Doctor accounts are created by the MedVault team after credential verification to protect patient trust and safety.
+              Contact <a href="mailto:doctors@medvault.example">doctors@medvault.example</a> to begin. This placeholder address should be replaced with the team's real process.
+            </div>
+          </div>
 
           <!-- LOGIN FORM -->
           <div id="role-login" class="auth-role-panel">
@@ -325,18 +332,37 @@
             <button class="btn-ghost w-full" id="upgrade-back-btn" type="button" style="margin-top:var(--sp-2); color:var(--tx3);">← Back to sign in</button>
           </div>
 
+          <!-- FIRST SIGN-IN PASSWORD PANEL -->
+          <div id="role-initial-password" class="auth-role-panel hidden">
+            <div style="width:48px;height:48px;background:var(--ga);border:1px solid var(--g4);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:var(--sp-5);">
+              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="var(--g5)" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            </div>
+            <h1 class="auth-form-title" style="margin-bottom:var(--sp-2);">Set your password</h1>
+            <p class="auth-form-sub" style="margin-bottom:var(--sp-5);">Welcome to MedVault. Choose your own password to finish setting up your account.</p>
+            <div id="initial-password-alert" style="display:none;"></div>
+            <input type="hidden" id="initial-temp-token">
+            <div class="input-group">
+              <label class="input-label" for="initial-new-pw">New password</label>
+              <input class="input-field" type="password" id="initial-new-pw" placeholder="Min. 8 characters" autocomplete="new-password">
+              <span class="input-hint" id="initial-password-strength"></span>
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="initial-confirm-pw">Confirm new password</label>
+              <input class="input-field" type="password" id="initial-confirm-pw" placeholder="Repeat new password" autocomplete="new-password">
+            </div>
+            <button class="btn-primary w-full" id="initial-password-submit-btn" type="button">
+              <span id="initial-password-btn-text">Set password &amp; sign in</span>
+              <span id="initial-password-spinner" class="spinner" style="display:none;"></span>
+            </button>
+            <button class="btn-ghost w-full" id="initial-password-back-btn" type="button" style="margin-top:var(--sp-2); color:var(--tx3);">Back to sign in</button>
+          </div>
+
           <!-- REGISTER FORM -->
           <div id="role-register" class="auth-role-panel hidden">
             <h1 class="auth-form-title">Create your vault</h1>
-            <p class="auth-form-sub">Register as a patient or doctor.</p>
+            <p class="auth-form-sub">Register as a patient and keep your records under your control.</p>
             <div id="register-alert" style="display:none;"></div>
-            <!-- Role selector -->
-            <div class="auth-tab-switcher" role="tablist" aria-label="Account type" style="margin-bottom:var(--sp-5);">
-              <button class="auth-tab active" data-reg-role="patient" role="tab" aria-selected="true" id="reg-tab-patient" type="button">Patient</button>
-              <button class="auth-tab" data-reg-role="doctor" role="tab" aria-selected="false" id="reg-tab-doctor" type="button">Doctor</button>
-            </div>
             <form id="register-form" novalidate>
-              <input type="hidden" id="reg-role" value="patient">
               <div class="input-group">
                 <label class="input-label" for="reg-name">Full name</label>
                 <input class="input-field" type="text" id="reg-name" name="name" autocomplete="name" placeholder="Jane Smith" required>
@@ -349,17 +375,6 @@
                 <label class="input-label" for="reg-username">Username</label>
                 <input class="input-field" type="text" id="reg-username" name="username" autocomplete="username" placeholder="janesmith" required>
                 <span class="input-hint">Lowercase letters, numbers, dot, underscore only</span>
-              </div>
-              <!-- Doctor-only fields -->
-              <div id="doctor-fields" class="hidden">
-                <div class="input-group">
-                  <label class="input-label" for="reg-specialization">Specialization</label>
-                  <input class="input-field" type="text" id="reg-specialization" name="specialization" placeholder="Cardiology">
-                </div>
-                <div class="input-group">
-                  <label class="input-label" for="reg-hospital">Hospital / Clinic</label>
-                  <input class="input-field" type="text" id="reg-hospital" name="hospital" placeholder="City General Hospital">
-                </div>
               </div>
               <div class="input-group">
                 <label class="input-label" for="reg-password">Password</label>
@@ -428,17 +443,6 @@
     });
 
     // ── Register role tabs ────────────────────────────────────────
-    document.querySelectorAll('[data-reg-role]').forEach(function(tab) {
-      tab.addEventListener('click', function() {
-        document.querySelectorAll('[data-reg-role]').forEach(function(t) { t.classList.remove('active'); });
-        tab.classList.add('active');
-        document.getElementById('reg-role').value = tab.dataset.regRole;
-        var df = document.getElementById('doctor-fields');
-        if (tab.dataset.regRole === 'doctor') { df.classList.remove('hidden'); }
-        else { df.classList.add('hidden'); }
-      });
-    });
-
     // ── Alert helper ──────────────────────────────────────────────
     function showAlert(el, msg, type) {
       el.className = 'alert alert-' + (type || 'error');

@@ -16,6 +16,7 @@ import json
 import uuid
 import base64
 import time
+import sys
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
@@ -28,6 +29,9 @@ from cryptography.fernet import Fernet
 # Server base directories (paths used by handlers)
 # -----------------------
 SERVER_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SERVER_BASE_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 # PATIENTS_DIR: still used for encrypted_data.json file uploads & migration bridge
 PATIENTS_DIR = os.path.join(SERVER_BASE_DIR, "Patients")
@@ -36,6 +40,8 @@ os.makedirs(PATIENTS_DIR, exist_ok=True)
 # DOCTORS_DIR: kept for any PEM file fallback
 DOCTORS_DIR = os.path.join(SERVER_BASE_DIR, "Doctors")
 os.makedirs(DOCTORS_DIR, exist_ok=True)
+PORTAL_DOCTORS_DIR = os.path.join(PROJECT_ROOT, "doctor", "Doctors")
+os.makedirs(PORTAL_DOCTORS_DIR, exist_ok=True)
 
 # Legacy user folder (kept for compatibility)
 USER_FOLDER = os.path.join(SERVER_BASE_DIR, "users")
@@ -1381,6 +1387,195 @@ def register_user():
 # DOCTOR REGISTRATION
 # ════════════════════════════════════════════════════════════════════════════
 
+_initial_pw_tokens = {}
+_initial_pw_lock = threading.Lock()
+
+
+def _issue_initial_password_token(email: str) -> str:
+    token = _secrets.token_urlsafe(32)
+    with _initial_pw_lock:
+        _initial_pw_tokens[token] = {"email": email, "exp": time.time() + 900}
+    return token
+
+
+def _consume_initial_password_token(token: str) -> str | None:
+    with _initial_pw_lock:
+        rec = _initial_pw_tokens.pop(token, None)
+    if not rec or rec.get("exp", 0) < time.time():
+        return None
+    return rec.get("email")
+
+
+def _login_response_for_user(user: dict, email: str):
+    jwt_uid = user["id"]
+    access_token = _jwt_encode({
+        "sub": email, "uid": jwt_uid, "role": user["role"],
+        "profile_code": user.get("profile_code", ""),
+        "doctor_code": user.get("doctor_code", ""),
+        "exp": time.time() + 28800,
+    })
+    refresh_token = _jwt_encode({
+        "sub": email, "uid": jwt_uid, "role": user["role"],
+        "profile_code": user.get("profile_code", ""),
+        "doctor_code": user.get("doctor_code", ""),
+        "purpose": "refresh", "exp": time.time() + 604800,
+    })
+    resp = jsonify({
+        "message": "ok",
+        "role": user["role"],
+        "name": user["name"],
+        "email": email,
+        "user_id": user["id"],
+        "username": user.get("username", ""),
+        "profile_code": user.get("profile_code", ""),
+        "doctor_code": (user.get("doctor_code", "") or user.get("profile_code", ""))
+                       if user["role"] == "doctor" else "",
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "public_key": user["public_key"],
+        "encrypted_private_key": user["encrypted_private_key"],
+    })
+    resp.set_cookie("access_token", access_token, httponly=True, samesite="Strict", max_age=3600)
+    resp.set_cookie("refresh_token", refresh_token, httponly=True, samesite="Strict", max_age=604800)
+    return resp
+
+
+def _generate_temporary_password(length: int = 18) -> str:
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    while True:
+        pw = "".join(_secrets.choice(alphabet) for _ in range(length))
+        if (any(c.islower() for c in pw) and any(c.isupper() for c in pw)
+                and any(c.isdigit() for c in pw) and any(c in "!@#$%^&*" for c in pw)):
+            return pw
+
+
+def _create_doctor_account(name, email, username, specialization, hospital, initial_password):
+    from base64 import b64encode as _b64encode
+    from werkzeug.security import generate_password_hash as _wz_gen
+    from common.crypto_utils import (
+        generate_rsa_keypair, rsa_serialize_private, rsa_serialize_public,
+        derive_kek_from_password, wrap_key_with_kek,
+    )
+    from common.secure_key_store import SecureKeyStore
+
+    name = (name or "").strip()
+    email = (email or "").strip().lower()
+    username = (username or "").strip().lower()
+    specialization = (specialization or "").strip()
+    hospital = (hospital or "").strip()
+
+    if not name or not email or not username or not initial_password:
+        return None, (jsonify({"error": "missing_fields"}), 400)
+    if not re.match(r"^[a-z0-9_\.]+$", username):
+        return None, (jsonify({"error": "invalid_username"}), 400)
+
+    with _users_db_lock:
+        existing_email = _db_get_user_by_email(email)
+        if existing_email:
+            return None, (jsonify({"error": "email_taken"}), 409)
+        existing_un = _db_get_user_by_username(username)
+        if existing_un:
+            return None, (jsonify({"error": "username_taken"}), 409)
+
+        priv, pub = generate_rsa_keypair()
+        doctor_id = str(uuid.uuid4())
+        doctor_code = doctor_id.replace("-", "")[:10].upper()
+        priv_pem = rsa_serialize_private(priv)
+        pub_pem = rsa_serialize_public(pub)
+        kek, salt = derive_kek_from_password(initial_password)
+        wrapped = wrap_key_with_kek(kek, priv_pem)
+
+        folder = os.path.join(PORTAL_DOCTORS_DIR, doctor_id)
+        os.makedirs(folder, exist_ok=True)
+        SecureKeyStore.store_private_key(
+            f"doctor__{doctor_code}", wrapped.encode("utf-8")
+        )
+        with open(os.path.join(folder, "key_protection.json"), "w", encoding="utf-8") as f:
+            json.dump({"salt_b64": _b64encode(salt).decode("utf-8")}, f, indent=2)
+        with open(os.path.join(folder, "doctor_public.pem"), "wb") as f:
+            f.write(pub_pem)
+        with open(os.path.join(folder, "doctor_data.json"), "w", encoding="utf-8") as f:
+            json.dump({
+                "doctor_id": doctor_id,
+                "doctor_code": doctor_code,
+                "name": name,
+                "specialization": specialization,
+                "hospital": hospital,
+                "email": email,
+            }, f, indent=2)
+
+        _db_upsert_doctor(doctor_code, {
+            "doctor_id": doctor_id,
+            "public_pem": pub_pem.decode("utf-8"),
+            "encrypted_profile": None,
+        })
+
+        uid = str(uuid.uuid4())
+        _db_upsert_user(email, {
+            "id": uid,
+            "name": name,
+            "email": email,
+            "username": username,
+            "phone": "",
+            "role": "doctor",
+            "password_hash": _wz_gen(initial_password, method="pbkdf2:sha256", salt_length=16),
+            "public_key": pub_pem.decode("utf-8"),
+            "encrypted_private_key": "",
+            "profile_code": doctor_code,
+            "doctor_code": doctor_code,
+            "must_change_password": True,
+            "profile_photo_url": "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "last_login": "",
+            "locked": False,
+            "failed_attempts": 0,
+        })
+
+    return {
+        "doctor_id": doctor_id,
+        "doctor_code": doctor_code,
+        "user_id": uid,
+        "public_key": pub_pem.decode("utf-8"),
+    }, None
+
+
+@app.route("/admin/doctors", methods=["POST"])
+@rate_limited(max_calls=5, window=300)
+@_require_jwt(roles=["admin", "receptionist"])
+def admin_create_doctor():
+    body = request.get_json(force=True) or {}
+    temp_password = _generate_temporary_password()
+    created, err = _create_doctor_account(
+        body.get("name"),
+        body.get("email"),
+        body.get("username"),
+        body.get("specialization"),
+        body.get("hospital"),
+        temp_password,
+    )
+    if err:
+        return err
+
+    actor = request.jwt_payload.get("sub") or request.jwt_payload.get("uid") or "admin"
+    admin_name = request.jwt_payload.get("name") or actor
+    ok = audit(
+        "doctor_account_created",
+        actor=actor,
+        target=(body.get("email") or "").strip().lower(),
+        detail=f"Created by {admin_name} after manual verification",
+        ip=request.remote_addr,
+    )
+    if not ok:
+        return jsonify({"error": "audit_write_failed"}), 500
+
+    return jsonify({
+        "message": "ok",
+        "doctor_code": created["doctor_code"],
+        "user_id": created["user_id"],
+        "temporary_password": temp_password,
+    }), 201
+
+
 @app.route("/register_doctor", methods=["POST"])
 def register_doctor():
     auth_err = _require_api_key()
@@ -1940,6 +2135,7 @@ def internal_register_user_db():
     role     = body.get("role", "patient")
     pub_key  = body.get("public_key", "")
     enc_priv = body.get("encrypted_private_key", "")
+    must_change_password = bool(body.get("must_change_password", False))
     if not email or not name or not pw_hash or not username:
         return jsonify({"error": "missing_fields"}), 400
 
@@ -1965,6 +2161,8 @@ def internal_register_user_db():
                 updates["profile_code"] = profile_code
             if doctor_code:
                 updates["doctor_code"] = doctor_code
+            if "must_change_password" in body:
+                updates["must_change_password"] = must_change_password
             for field, value in updates.items():
                 _db_update_user_field(email, field, value)
             audit("register_via_legacy", actor=email, detail=role)
@@ -1978,6 +2176,7 @@ def internal_register_user_db():
             "profile_code": profile_code, "doctor_code": doctor_code,
             "profile_photo_url": "", "created_at": datetime.now(timezone.utc).isoformat(),
             "last_login": "", "locked": False, "failed_attempts": 0,
+            "must_change_password": must_change_password,
         })
     audit("register_via_legacy", actor=email, detail=role)
     return jsonify({"message": "created", "user_id": uid})
@@ -2031,6 +2230,15 @@ def auth_login():
                 audit("account_locked", actor=email)
             return jsonify({"error": "invalid_credentials"}), 401
 
+        if user.get("must_change_password"):
+            _db_update_user_field(email, "failed_attempts", 0)
+            temp_token = _issue_initial_password_token(email)
+            return jsonify({
+                "error": "password_change_required",
+                "temp_token": temp_token,
+                "message": "Please choose your own password to finish setting up your account.",
+            }), 403
+
         last_login_ts = datetime.now(timezone.utc).isoformat()
         _db_update_user_field(email, "failed_attempts", 0)
         _db_update_user_field(email, "last_login", datetime.now(timezone.utc))
@@ -2039,31 +2247,43 @@ def auth_login():
     user = _db_get_user_by_email(email)
     _append_login_history({"email": email, "ts": last_login_ts, "ip": request.remote_addr})
 
-    jwt_uid = user["id"]  # Always use stable UUID as uid
-    access_token  = _jwt_encode({"sub": email, "uid": jwt_uid, "role": user["role"],
-                                  "profile_code": user.get("profile_code", ""),
-                                  "doctor_code": user.get("doctor_code", ""),
-                                  "exp": time.time() + 28800})  # 8 hours
-    refresh_token = _jwt_encode({"sub": email, "uid": jwt_uid, "role": user["role"],
-                                  "profile_code": user.get("profile_code", ""),
-                                  "doctor_code": user.get("doctor_code", ""),
-                                  "purpose": "refresh", "exp": time.time() + 604800})
-
     audit("login", actor=email)
-    resp = jsonify({
-        "message": "ok", "role": user["role"],
-        "name": user["name"], "user_id": user["id"],
-        "username": user.get("username", ""),
-        "profile_code": user.get("profile_code", ""),
-        "doctor_code": user.get("doctor_code", "") or user.get("profile_code", "")
-                       if user["role"] == "doctor" else "",
-        "access_token": access_token, "refresh_token": refresh_token,
-        "public_key": user["public_key"],
-        "encrypted_private_key": user["encrypted_private_key"],
-    })
-    resp.set_cookie("access_token", access_token, httponly=True, samesite="Strict", max_age=3600)
-    resp.set_cookie("refresh_token", refresh_token, httponly=True, samesite="Strict", max_age=604800)
-    return resp
+    return _login_response_for_user(user, email)
+
+
+@app.route("/auth/set_initial_password", methods=["POST"])
+@rate_limited(max_calls=5, window=300)
+def auth_set_initial_password():
+    body = request.get_json(force=True) or {}
+    temp_token = (body.get("temp_token") or "").strip()
+    new_pw = body.get("new_password") or ""
+    if not temp_token or not new_pw:
+        return jsonify({"error": "missing_fields"}), 400
+    if len(new_pw) < 8:
+        return jsonify({"error": "password_too_short"}), 400
+
+    email = _consume_initial_password_token(temp_token)
+    if not email:
+        return jsonify({"error": "invalid_or_expired_token"}), 401
+
+    from werkzeug.security import generate_password_hash as _wz_gen
+
+    with _users_db_lock:
+        user = _db_get_user_by_email(email)
+        if not user:
+            return jsonify({"error": "invalid_or_expired_token"}), 401
+        if not user.get("must_change_password"):
+            return jsonify({"error": "password_already_set"}), 400
+        _db_update_user_field(email, "password_hash", _wz_gen(new_pw, method="pbkdf2:sha256", salt_length=16))
+        _db_update_user_field(email, "must_change_password", False)
+        _db_update_user_field(email, "failed_attempts", 0)
+        _db_update_user_field(email, "last_login", datetime.now(timezone.utc))
+
+    user = _db_get_user_by_email(email)
+    _append_login_history({"email": email, "ts": datetime.now(timezone.utc).isoformat(), "ip": request.remote_addr})
+    audit("initial_password_set", actor=email)
+    audit("login", actor=email)
+    return _login_response_for_user(user, email)
 
 
 @app.route("/auth/upgrade_password", methods=["POST"])
@@ -3227,4 +3447,4 @@ _schedule_cleanup()
 
 # ── Entry point — MUST be last so every route above is registered ────────────
 if __name__ == "__main__":
-    app.run(debug=True, port=5000, use_reloader=False)
+    app.run(debug=False, port=5000, use_reloader=False)

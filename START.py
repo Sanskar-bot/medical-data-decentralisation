@@ -104,6 +104,11 @@ print("""
 ╚══════════════════════════════════════════════════════╝
 """, flush=True)
 
+if not os.path.exists(os.path.join(ROOT, ".env")):
+    print("❌ Error: .env file is missing.", flush=True)
+    print("Please copy .env.example to .env and fill in the DATABASE_URL.", flush=True)
+    sys.exit(1)
+
 pids = {}
 services = [
     ("Backend API",   os.path.join(ROOT, "server",  "server.py"),          5000),
@@ -121,10 +126,23 @@ for label, script, port in services:
     p = start_background(label, script, port)
     pids[label] = p.pid
 
-    # Backend must be ready before portals start
-    if port == 5000:
-        if wait_for(5000, 20):
-            print(f"  ✅  {label} ready", flush=True)
+    if wait_for(port, 20):
+        print(f"  ✅  {label} ready", flush=True)
+    else:
+        if getattr(p, "poll", lambda: None)() is not None:
+            print(f"\n❌ {label} failed to start — last log lines:", flush=True)
+            log_path = os.path.join(ROOT, f"logs_{label.replace(' ', '_')}.log")
+            if os.path.exists(log_path):
+                try:
+                    with open(log_path, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                        for line in lines[-15:]:
+                            print("   " + line.rstrip(), flush=True)
+                except Exception as e:
+                    print(f"   [Could not read log file: {e}]", flush=True)
+            else:
+                print("   [Log file not found]", flush=True)
+            sys.exit(1)
         else:
             print(f"  ⚠  {label} slow to start — continuing anyway", flush=True)
 

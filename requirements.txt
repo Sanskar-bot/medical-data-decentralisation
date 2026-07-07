@@ -54,3 +54,4 @@ wheel==0.45.1
 # [M3] Argon2id for password/key derivation (replaces PBKDF2 for new keys)
 argon2-cffi==23.1.0
 psycopg2-binary==2.9.9
+gunicorn==26.0.0
