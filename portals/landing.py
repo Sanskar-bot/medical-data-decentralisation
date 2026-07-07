@@ -15,7 +15,7 @@ try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except Exception:
     pass
-from auth_utils import hash_password, check_password, cors_after_request
+from auth_utils import hash_password, check_password, cors_after_request, get_server_api_key
 try:
     import psycopg2
     import psycopg2.extras
@@ -77,8 +77,7 @@ os.makedirs(DOCTORS_DIR, exist_ok=True)
 
 # â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _api_key():
-    kf = os.path.join(ROOT, "server", "api_key.txt")
-    return open(kf).read().strip() if os.path.exists(kf) else ""
+    return get_server_api_key()
 
 def _headers():
     return {"X-API-Key": _api_key(), "Content-Type": "application/json"}
@@ -138,6 +137,10 @@ def _refresh_jwt():
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #   ROUTES
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+@app.route("/health")
+def health_check():
+    return jsonify({"status": "ok"}), 200
 
 @app.route("/")
 def landing():

@@ -78,14 +78,21 @@ def start_background(label, script, port):
     return p
 
 
+import urllib.request
+import urllib.error
+
 def wait_for(port, timeout=20):
     t0 = time.time()
     while time.time() - t0 < timeout:
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=1):
-                return True
-        except OSError:
-            time.sleep(0.4)
+                req = urllib.request.Request(f"http://127.0.0.1:{port}/health")
+                with urllib.request.urlopen(req, timeout=1) as response:
+                    if response.status == 200:
+                        return True
+        except (OSError, urllib.error.URLError):
+            pass
+        time.sleep(0.4)
     return False
 
 

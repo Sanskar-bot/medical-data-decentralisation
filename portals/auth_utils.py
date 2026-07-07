@@ -16,7 +16,7 @@ from flask import session, redirect, url_for, jsonify, request
 from werkzeug.security import generate_password_hash, check_password_hash as wz_check
 import hashlib
 
-LANDING_URL = "http://127.0.0.1:5003"
+LANDING_URL = os.environ.get("LANDING_URL", "http://127.0.0.1:5003")
 
 
 # ── CORS configuration ─────────────────────────────────────────────────────────
@@ -41,6 +41,23 @@ else:
     ALLOWED_ORIGINS: set = _DEFAULT_ORIGINS
 
 
+def get_server_api_key() -> str:
+    """
+    Single source of truth for the shared backend API key.
+    Prefers the SERVER_API_KEY environment variable. Falls back to
+    server/api_key.txt only when FLASK_ENV=development, matching the
+    backend's own fallback behavior in server/server.py.
+    """
+    key = os.environ.get("SERVER_API_KEY", "")
+    if key:
+        return key
+    if os.environ.get("FLASK_ENV", "production") == "development":
+        _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        _kf = os.path.join(_root, "server", "api_key.txt")
+        if os.path.exists(_kf):
+            with open(_kf, "r") as _f:
+                return _f.read().strip()
+    return ""
 def cors_after_request(response):
     """
     Centralized CORS after_request hook for all MedVault portals.
@@ -133,15 +150,7 @@ def login_required(role: str | None = None):
             api_key_authenticated = False
             api_key = request.headers.get("X-API-Key", "")
             if api_key:
-                # [C1] Prefer SERVER_API_KEY env var; fall back to api_key.txt only in dev mode
-                stored_key = os.environ.get("SERVER_API_KEY", "")
-                if not stored_key:
-                    _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                    _kf = os.path.join(_ROOT, "server", "api_key.txt")
-                    try:
-                        stored_key = open(_kf).read().strip()
-                    except FileNotFoundError:
-                        stored_key = ""
+                stored_key = get_server_api_key()
                 if stored_key and api_key == stored_key:
                     # A valid API key authenticates the caller as a trusted
                     # internal service, such as landing.py proxying a request.

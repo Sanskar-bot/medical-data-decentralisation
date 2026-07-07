@@ -21,7 +21,7 @@ from common.secure_key_store import SecureKeyStore
 _PORTALS_DIR = os.path.dirname(__file__)
 if _PORTALS_DIR not in sys.path:
     sys.path.insert(0, _PORTALS_DIR)
-from auth_utils import login_required, hash_password, cors_after_request  # noqa: E402
+from auth_utils import login_required, hash_password, cors_after_request, get_server_api_key  # noqa: E402
 
 BACKEND   = os.environ.get("SERVER_BASE", "http://127.0.0.1:5000")
 USERS_DIR = os.path.join(ROOT, "client", "Users")
@@ -48,12 +48,11 @@ def cors(r):
     # Whitelist-based CORS - replaces the old wildcard
     return cors_after_request(r)
 
-def api_key():
-    kf = os.path.join(ROOT, "server", "api_key.txt")
-    return open(kf).read().strip() if os.path.exists(kf) else ""
+def _api_key():
+    return get_server_api_key()
 
 def bh(token=""):
-    h = {"X-API-Key": api_key(), "Content-Type": "application/json"}
+    h = {"X-API-Key": _api_key(), "Content-Type": "application/json"}
     if token: h["Authorization"] = f"Bearer {token}"
     return h
 

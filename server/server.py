@@ -99,6 +99,8 @@ if not _SERVER_API_KEY:
         print("[WARN] Reading API key from api_key.txt (dev mode). "
               "Set SERVER_API_KEY env var in production.")
     else:
+        if _FLASK_ENV != "development":
+            raise RuntimeError("SERVER_API_KEY must be set in production mode.")
         _SERVER_API_KEY = _secrets.token_hex(32)
         with open(_API_KEY_FILE, "w") as _f:
             _f.write(_SERVER_API_KEY)
@@ -159,8 +161,20 @@ try:
     init_db()
     print("[DB] PostgreSQL connected ✓")
 except RuntimeError as _db_err:
-    print(f"[DB] WARNING: {_db_err}")
-    print("[DB] Server will start but DB operations will fail until DATABASE_URL is set.")
+    if os.environ.get("FLASK_ENV", "production") == "development":
+        print(f"[DB] WARNING: {_db_err}")
+        print("[DB] Server will start but DB operations will fail until DATABASE_URL is set.")
+    else:
+        raise
+
+@app.route("/health")
+def health_check():
+    try:
+        with db_cursor(commit=False) as cur:
+            cur.execute("SELECT 1")
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "detail": str(e)}), 503
 
 # ════════════════════════════════════════════════════════════════════════════
 # DB HELPERS — Users
@@ -464,7 +478,13 @@ def _get_jwt_secret() -> str:
     if secret:
         return secret
     if os.path.exists(_JWT_SECRET_FILE):
+        if os.environ.get("FLASK_ENV", "production") != "development":
+            raise RuntimeError("jwt_secret.txt must not exist in production. Set JWT_SECRET env var instead.")
         return open(_JWT_SECRET_FILE).read().strip()
+    
+    if os.environ.get("FLASK_ENV", "production") != "development":
+        raise RuntimeError("JWT_SECRET must be set in production mode.")
+        
     new_secret = _secrets.token_hex(64)
     with open(_JWT_SECRET_FILE, "w") as _jf:
         _jf.write(new_secret)
@@ -473,6 +493,8 @@ def _get_jwt_secret() -> str:
 
 
 if not os.environ.get("JWT_SECRET"):
+    if os.environ.get("FLASK_ENV", "production") != "development":
+        raise RuntimeError("JWT_SECRET must be set in production mode.")
     print("[WARN] JWT_SECRET env var is not set. Using auto-generated jwt_secret.txt (dev mode).")
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -2961,7 +2983,7 @@ def security_headers(resp):
         f"script-src 'self' 'nonce-{nonce}'; "
         f"style-src 'self' 'unsafe-inline'; "
         f"img-src 'self' data: blob:; "
-        f"connect-src 'self' http://127.0.0.1:5000; "
+        f"connect-src 'self' {os.environ.get('BACKEND_PUBLIC_URL', 'http://127.0.0.1:5000')}; "
         f"frame-ancestors 'none';"
     )
     resp.headers["Content-Security-Policy"] = csp
