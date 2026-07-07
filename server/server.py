@@ -195,6 +195,13 @@ def _db_get_user_by_email(email: str) -> dict | None:
         return dict(row) if row else None
 
 
+def _db_get_user_by_phone(phone: str) -> dict | None:
+    with db_cursor(commit=False) as cur:
+        cur.execute("SELECT * FROM users WHERE phone = %s", (phone,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
 def _db_get_user_by_username(username: str) -> dict | None:
     with db_cursor(commit=False) as cur:
         cur.execute(
@@ -461,6 +468,46 @@ def _otp_update_attempts(email: str, attempts: int):
 def _otp_delete(email: str):
     with db_cursor() as cur:
         cur.execute("DELETE FROM otp_store WHERE email = %s", (email,))
+
+
+# ── Phone OTP Helpers ──
+def _phone_otp_get(phone: str) -> dict | None:
+    with db_cursor(commit=False) as cur:
+        cur.execute("""
+            SELECT otp,
+                   EXTRACT(EPOCH FROM expires_at)::FLOAT AS expires,
+                   attempts
+            FROM phone_otp_store
+            WHERE phone = %s AND expires_at > now()
+        """, (phone,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {"otp": row["otp"], "expires": float(row["expires"]), "attempts": row["attempts"]}
+
+
+def _phone_otp_set(phone: str, otp: str, expires: float, attempts: int = 0):
+    exp_dt = datetime.fromtimestamp(expires, tz=timezone.utc)
+    with db_cursor() as cur:
+        cur.execute("""
+            INSERT INTO phone_otp_store (phone, otp, expires_at, attempts)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (phone) DO UPDATE SET
+                otp        = EXCLUDED.otp,
+                expires_at = EXCLUDED.expires_at,
+                attempts   = EXCLUDED.attempts
+        """, (phone, otp, exp_dt, attempts))
+
+
+def _phone_otp_update_attempts(phone: str, attempts: int):
+    with db_cursor() as cur:
+        cur.execute("UPDATE phone_otp_store SET attempts = %s WHERE phone = %s", (attempts, phone))
+
+
+def _phone_otp_delete(phone: str):
+    with db_cursor() as cur:
+        cur.execute("DELETE FROM phone_otp_store WHERE phone = %s", (phone,))
+
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -2057,7 +2104,8 @@ def _schedule_cleanup():
 @app.route("/auth/otp/send", methods=["POST"])
 @rate_limited(max_calls=5, window=300)
 def auth_otp_send():
-    """Send (simulated) OTP to email."""
+    """Send OTP to email."""
+    from email_utils import send_email_otp
     body  = request.get_json(force=True) or {}
     email = (body.get("email", "") or "").strip().lower()
     if not email or "@" not in email:
@@ -2066,11 +2114,31 @@ def auth_otp_send():
     exp = time.time() + 300  # 5 minutes
     with _otp_lock:
         _otp_set(email, otp, exp, attempts=0)
-    # [L3] Only log OTP in development environment
-    if os.environ.get("FLASK_ENV") == "development":
-        print(f"[DEV OTP] {email} → {otp}")
+    
+    send_email_otp(email, otp)
+    
     audit("otp_sent", actor=email)
     return jsonify({"message": "OTP sent", "expires_in": 300})
+
+@app.route("/auth/otp/send_sms", methods=["POST"])
+@rate_limited(max_calls=5, window=300)
+def auth_otp_send_sms():
+    """Send OTP to phone."""
+    from sms_utils import send_sms_otp
+    body  = request.get_json(force=True) or {}
+    phone = (body.get("phone", "") or "").strip()
+    if not phone:
+        return jsonify({"error": "invalid_phone"}), 400
+    otp = _gen_otp()
+    exp = time.time() + 300
+    with _otp_lock:
+        _phone_otp_set(phone, otp, exp, attempts=0)
+
+    send_sms_otp(phone, otp)
+
+    audit("sms_otp_sent", actor=phone)
+    return jsonify({"message": "SMS OTP sent", "expires_in": 300})
+
 
 
 @app.route("/auth/otp/verify", methods=["POST"])
@@ -2098,24 +2166,64 @@ def auth_otp_verify():
     vtoken = _jwt_encode({"sub": email, "purpose": "otp_verified", "exp": time.time() + 600})
     return jsonify({"verified": True, "verification_token": vtoken})
 
+@app.route("/auth/otp/verify_sms", methods=["POST"])
+@rate_limited(max_calls=10, window=60)
+def auth_otp_verify_sms():
+    body  = request.get_json(force=True) or {}
+    phone = (body.get("phone", "") or "").strip()
+    otp   = (body.get("otp", "") or "").strip()
+    with _otp_lock:
+        rec = _phone_otp_get(phone)
+        if not rec:
+            return jsonify({"error": "no_otp_found"}), 400
+        if rec["attempts"] >= 5:
+            _phone_otp_delete(phone)
+            return jsonify({"error": "too_many_attempts"}), 429
+        if time.time() > rec["expires"]:
+            _phone_otp_delete(phone)
+            return jsonify({"error": "otp_expired"}), 400
+        if rec["otp"] != otp:
+            _phone_otp_update_attempts(phone, rec["attempts"] + 1)
+            return jsonify({"error": "wrong_otp",
+                            "attempts_left": 5 - rec["attempts"] - 1}), 400
+        _phone_otp_delete(phone)
+    audit("sms_otp_verified", actor=phone)
+    vtoken = _jwt_encode({"sub": phone, "purpose": "phone_otp_verified", "exp": time.time() + 600})
+    return jsonify({"verified": True, "verification_token": vtoken})
+
+
 
 @app.route("/auth/register", methods=["POST"])
 @rate_limited(max_calls=5, window=300)
 def auth_register():
     body   = request.get_json(force=True) or {}
-    vtoken = body.get("verification_token", "")
-    payload = _jwt_decode(vtoken)
-    if not payload or payload.get("purpose") != "otp_verified":
-        return jsonify({"error": "email_not_verified"}), 403
+    
+    phone_vtoken = body.get("phone_verification_token", "")
+    phone_payload = _jwt_decode(phone_vtoken)
+    if not phone_payload or phone_payload.get("purpose") != "phone_otp_verified":
+        return jsonify({"error": "phone_not_verified"}), 403
+    phone = phone_payload["sub"]
 
-    email    = payload["sub"]
+    email = (body.get("email", "") or "").strip().lower()
+    if email:
+        email_vtoken = body.get("email_verification_token", "")
+        email_payload = _jwt_decode(email_vtoken)
+        if not email_payload or email_payload.get("purpose") != "otp_verified" or email_payload["sub"] != email:
+            return jsonify({"error": "email_not_verified"}), 403
+    else:
+        email = None
+
     name     = (body.get("name", "") or "").strip()
     username = (body.get("username", "") or "").strip().lower()
     role     = body.get("role", "patient")
     pw_hash  = body.get("password_hash", "")
     pub_key  = body.get("public_key", "")
     enc_priv = body.get("encrypted_private_key", "")
-    phone    = body.get("phone", "")
+    
+    # Check for raw password to hash server-side
+    raw_password = body.get("password")
+    if raw_password and not pw_hash:
+        pw_hash = hash_password(raw_password)
 
     if not name or not pw_hash or not pub_key or not username:
         return jsonify({"error": "missing_fields"}), 400
@@ -2123,16 +2231,21 @@ def auth_register():
         return jsonify({"error": "invalid_role"}), 400
 
     with _users_db_lock:
-        existing = _db_get_user_by_email(email)
-        if existing:
-            return jsonify({"error": "email_already_registered"}), 409
+        if email:
+            existing = _db_get_user_by_email(email)
+            if existing:
+                return jsonify({"error": "email_already_registered"}), 409
+
+        existing_phone = _db_get_user_by_phone(phone)
+        if existing_phone:
+            return jsonify({"error": "phone_already_registered"}), 409
 
         existing_un = _db_get_user_by_username(username)
         if existing_un and existing_un["email"] != email:
             return jsonify({"error": "username_taken"}), 409
 
         uid = str(uuid.uuid4())
-        _db_upsert_user(email, {
+        _db_upsert_user(email if email else uid, {
             "id": uid, "name": name, "email": email, "username": username,
             "phone": phone, "role": role, "password_hash": pw_hash,
             "public_key": pub_key, "encrypted_private_key": enc_priv,
@@ -2140,8 +2253,9 @@ def auth_register():
             "last_login": "", "locked": False, "failed_attempts": 0,
         })
 
-    audit("register", actor=email, detail=role)
+    audit("register", actor=phone, detail=role)
     return jsonify({"message": "registered", "user_id": uid, "role": role})
+
 
 
 @app.route("/internal/register_user_db", methods=["POST"])
@@ -2169,26 +2283,22 @@ def internal_register_user_db():
         if existing_un and existing_un["email"] != email:
             return jsonify({"error": "username_taken",
                             "message": "Username is already taken"}), 409
+        
+        # In internal_register_user_db, we also check if a user is trying to overwrite a duplicate email or phone when creating a NEW account
+        if email:
+            existing_email = _db_get_user_by_email(email)
+            if existing_email:
+                return jsonify({"error": "email_already_registered"}), 409
+        
+        # Note: phone is rarely provided to internal_register_user_db for old clients, but we check if we have it
+        phone = (body.get("phone", "") or "").strip()
+        if phone:
+            existing_phone = _db_get_user_by_phone(phone)
+            if existing_phone:
+                return jsonify({"error": "phone_already_registered"}), 409
+        
+        # Since we shouldn't overwrite existing users via registration any more, we just create the new user
 
-        existing = _db_get_user_by_email(email)
-        if existing:
-            # Update existing
-            updates = {
-                "role": role, "username": username,
-                "password_hash": pw_hash,
-            }
-            if pub_key:
-                updates["public_key"] = pub_key
-            if profile_code:
-                updates["profile_code"] = profile_code
-            if doctor_code:
-                updates["doctor_code"] = doctor_code
-            if "must_change_password" in body:
-                updates["must_change_password"] = must_change_password
-            for field, value in updates.items():
-                _db_update_user_field(email, field, value)
-            audit("register_via_legacy", actor=email, detail=role)
-            return jsonify({"message": "updated", "user_id": existing["id"]}), 200
 
         uid = str(uuid.uuid4())
         _db_upsert_user(email, {

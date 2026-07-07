@@ -505,11 +505,11 @@ def login_upgrade():
             human = {
                 "invalid_credentials": "The original password didn't match. Try again.",
                 "account_locked": "Account locked. Contact support.",
-                "not_legacy": "Account already upgraded â€” just sign in normally.",
+                "not_legacy": "Account already upgraded — just sign in normally.",
             }.get(err, err)
             return jsonify({"error": human}), r.status_code
 
-        # Upgrade succeeded â€” now log the user in by re-using the new token from the response
+        # Upgrade succeeded — now log the user in by re-using the new token from the response
         # Immediately call login with the new password to populate session
         r2 = http.post(
             f"{BACKEND}/auth/login",
@@ -540,23 +540,56 @@ def login_upgrade():
         return jsonify({"error": str(e)}), 500
 
 
+# ── OTP PROXY ROUTES ──────────────────────────────────────────────────────────
+@app.route("/auth/otp/send", methods=["POST"])
+def proxy_otp_send():
+    resp = http.post(f"{BACKEND}/auth/otp/send", json=request.get_json(force=True), headers=_headers(), timeout=10)
+    return jsonify(resp.json()), resp.status_code
+
+@app.route("/auth/otp/verify", methods=["POST"])
+def proxy_otp_verify():
+    resp = http.post(f"{BACKEND}/auth/otp/verify", json=request.get_json(force=True), headers=_headers(), timeout=10)
+    return jsonify(resp.json()), resp.status_code
+
+@app.route("/auth/otp/send_sms", methods=["POST"])
+def proxy_otp_send_sms():
+    resp = http.post(f"{BACKEND}/auth/otp/send_sms", json=request.get_json(force=True), headers=_headers(), timeout=10)
+    return jsonify(resp.json()), resp.status_code
+
+@app.route("/auth/otp/verify_sms", methods=["POST"])
+def proxy_otp_verify_sms():
+    resp = http.post(f"{BACKEND}/auth/otp/verify_sms", json=request.get_json(force=True), headers=_headers(), timeout=10)
+    return jsonify(resp.json()), resp.status_code
 
 
-# â”€â”€ REGISTER PATIENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-@app.route("/register/patient", methods=["POST"])
-def register_patient():
+# ── UNIFIED REGISTER PROXY ────────────────────────────────────────────────────
+@app.route("/auth/register", methods=["POST"])
+def auth_register():
     try:
+        import uuid as _uuid
         d        = request.get_json(force=True) or {}
+        role     = d.get("role", "patient")
         name     = (d.get("name") or "").strip()
         email    = (d.get("email") or "").strip().lower()
+        phone    = (d.get("phone") or "").strip()
         username = (d.get("username") or "").strip().lower()
+        password = d.get("password") or ""
+        
+        # Patient specific
         age      = (d.get("age") or "").strip()
         notes    = d.get("notes", "")
-        password = d.get("password") or ""
+        
+        # Doctor specific
+        spec     = (d.get("specialization") or "").strip()
+        hosp     = (d.get("hospital") or "").strip()
+        
+        phone_vtoken = d.get("phone_verification_token", "")
+        email_vtoken = d.get("email_verification_token", "")
 
         if not name:     return jsonify({"error": "Name is required"}), 400
-        if not email:    return jsonify({"error": "Email is required"}), 400
+        if not phone:    return jsonify({"error": "Phone is required"}), 400
         if not username: return jsonify({"error": "Username is required"}), 400
+        
         import re
         if not re.match(r"^[a-z0-9_\.]+$", username):
             return jsonify({"error": "Username can only contain lowercase letters, numbers, dot, or underscore"}), 400
@@ -564,89 +597,169 @@ def register_patient():
         if len(password) < 8:
             return jsonify({"error": "Password must be at least 8 characters"}), 400
 
-        # â”€â”€ Generate RSA keypair + encrypt record â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Generate RSA keypair for decentralized data 
         priv, pub  = generate_rsa_keypair()
-        K_data     = generate_aes_key()
-        record     = {"name": name, "age": age, "email": email, "notes": notes}
-        plain      = json.dumps(record, ensure_ascii=False).encode()
-        enc        = aesgcm_encrypt(K_data, plain)   # returns {nonce:str, ciphertext:str}
-        sig        = rsa_sign(priv, (enc["nonce"] + "|" + enc["ciphertext"]).encode())
-        kek, salt  = derive_kek_from_password(password)
-        wrapped_k  = wrap_key_with_kek(kek, K_data)   # returns str (base64)
-        priv_pem   = rsa_serialize_private(priv)        # bytes
-        pub_pem    = rsa_serialize_public(pub)           # bytes
+        priv_pem   = rsa_serialize_private(priv)
+        pub_pem    = rsa_serialize_public(pub)
 
-        # Unique profile code â€” MUST be alphanumeric only (Windows CredWrite rejects '+', '/', etc.)
-        _CHARS = string.ascii_uppercase + string.digits
-        profile_code = ''.join(secrets.choice(_CHARS) for _ in range(10))
-        pdir = os.path.join(USERS_DIR, profile_code)
-        os.makedirs(pdir, exist_ok=True)
-
-        # Local user data â€” all values are JSON-serializable (strings/dicts)
-        local = {
-            "profile_code":       profile_code,
-            "patient_details":    record,
-            "patient_public_pem": pub_pem.decode("utf-8"),
-            "encrypted_record":   enc,
-            "signature":          sig,
-            "key_protection": {
-                "wrapped_k": wrapped_k,              # str (base64)
-                "salt_b64":  b64encode(salt).decode("utf-8"),
-            },
-            "password_hash": hash_password(password),
-            "jwt_token": "",
+        # ── Backend Registration (Primary Auth) ──
+        backend_payload = {
+            "name": name,
+            "email": email,
+            "phone": phone,
+            "username": username,
+            "password": password,
+            "role": role,
+            "public_key": pub_pem.decode("utf-8"),
+            "encrypted_private_key": "", # Legacy param
+            "phone_verification_token": phone_vtoken,
+            "email_verification_token": email_vtoken
         }
-        with open(_user_json_path(profile_code), "w", encoding="utf-8") as f:
-            json.dump(local, f, indent=2, ensure_ascii=False)
-
-        # Store private key in Windows Credential Manager (DPAPI-backed)
-        SecureKeyStore.store_private_key(f"patient__{profile_code}", priv_pem)
-
-        with open(os.path.join(pdir, "patient_public.pem"), "wb") as f:
-            f.write(pub_pem)
-
-        # â”€â”€ Register on backend (best-effort â€” don't crash if backend is slow) â”€
-        try:
-            http.post(
-                f"{BACKEND}/register_user",
-                json={"profile_code": profile_code, "encrypted_record": enc,
-                      "signature": sig, "patient_public_pem": pub_pem.decode("utf-8")},
-                headers=_headers(), timeout=10,
-            )
-        except Exception as e:
-            app.logger.warning("backend /register_user failed: %s", e)
-
-        # â”€â”€ Create users_db entry (enables /auth/login after logout) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        
         try:
             resp = http.post(
-                f"{BACKEND}/internal/register_user_db",
-                json={"email": email, "username": username, "name": name, "role": "patient",
-                      "password_hash": hash_password(password),
-                      "profile_code": profile_code,
-                      "public_key": pub_pem.decode("utf-8")},
+                f"{BACKEND}/auth/register",
+                json=backend_payload,
                 headers=_headers(), timeout=10,
             )
-            if resp.status_code == 409:
-                return jsonify({"error": resp.json().get("error", "Username or email is already taken. Try a different username.")}), 409
+            if resp.status_code != 200:
+                return jsonify({"error": resp.json().get("error", "Registration failed.")}), resp.status_code
+            uid = resp.json().get("user_id", "")
         except Exception as e:
-            app.logger.warning("backend /internal/register_user_db failed: %s", e)
+            app.logger.warning("backend /auth/register failed: %s", e)
+            return jsonify({"error": "Backend registration failed"}), 500
 
-        # â”€â”€ Set session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── Role Specific Local Profile Logic ──
+        if role == "patient":
+            K_data     = generate_aes_key()
+            record     = {"name": name, "age": age, "email": email, "notes": notes}
+            plain      = json.dumps(record, ensure_ascii=False).encode()
+            enc        = aesgcm_encrypt(K_data, plain)
+            sig        = rsa_sign(priv, (enc["nonce"] + "|" + enc["ciphertext"]).encode())
+            kek, salt  = derive_kek_from_password(password)
+            wrapped_k  = wrap_key_with_kek(kek, K_data)
+            
+            _CHARS = string.ascii_uppercase + string.digits
+            profile_code = ''.join(secrets.choice(_CHARS) for _ in range(10))
+            pdir = os.path.join(USERS_DIR, profile_code)
+            os.makedirs(pdir, exist_ok=True)
+            
+            local = {
+                "profile_code":       profile_code,
+                "patient_details":    record,
+                "patient_public_pem": pub_pem.decode("utf-8"),
+                "encrypted_record":   enc,
+                "signature":          sig,
+                "key_protection": {
+                    "wrapped_k": wrapped_k,
+                    "salt_b64":  b64encode(salt).decode("utf-8"),
+                },
+                "password_hash": hash_password(password),
+                "jwt_token": "",
+            }
+            with open(_user_json_path(profile_code), "w", encoding="utf-8") as f:
+                json.dump(local, f, indent=2, ensure_ascii=False)
+                
+            SecureKeyStore.store_private_key(f"patient__{profile_code}", priv_pem)
+            with open(os.path.join(pdir, "patient_public.pem"), "wb") as f:
+                f.write(pub_pem)
+                
+            try:
+                http.post(
+                    f"{BACKEND}/register_user",
+                    json={"profile_code": profile_code, "encrypted_record": enc,
+                          "signature": sig, "patient_public_pem": pub_pem.decode("utf-8")},
+                    headers=_headers(), timeout=10,
+                )
+            except Exception as e:
+                app.logger.warning("backend /register_user failed: %s", e)
+                
+            # Also sync profile code to DB using the old internal route since auth/register doesn't handle decentralized codes
+            try:
+                http.post(
+                    f"{BACKEND}/internal/register_user_db",
+                    json={"email": uid, "username": username, "name": name, "role": role,
+                          "password_hash": hash_password(password), "profile_code": profile_code,
+                          "public_key": pub_pem.decode("utf-8")},
+                    headers=_headers(), timeout=10,
+                )
+            except Exception:
+                pass
+                
+            doctor_code = ""
+
+        elif role == "doctor":
+            doctor_id   = str(_uuid.uuid4())
+            doctor_code = doctor_id.replace('-', '')[:10].upper()
+            kek, salt = derive_kek_from_password(password)
+            wrapped   = wrap_key_with_kek(kek, priv_pem)
+            
+            folder = os.path.join(DOCTORS_DIR, doctor_id)
+            os.makedirs(folder, exist_ok=True)
+            
+            SecureKeyStore.store_private_key(f"doctor__{doctor_code}", wrapped.encode("utf-8"))
+            with open(os.path.join(folder, "key_protection.json"), "w") as f:
+                json.dump({"salt_b64": b64encode(salt).decode("utf-8")}, f, indent=2)
+            with open(os.path.join(folder, "doctor_public.pem"), "wb") as f:
+                f.write(pub_pem)
+                
+            meta = {
+                "doctor_id":       doctor_id,
+                "doctor_code":     doctor_code,
+                "name":            name,
+                "specialization":  spec,
+                "hospital":        hosp,
+                "email":           email,
+            }
+            with open(os.path.join(folder, "doctor_data.json"), "w") as f:
+                json.dump(meta, f, indent=2)
+                
+            try:
+                http.post(
+                    f"{BACKEND}/register_doctor",
+                    json={"doctor_id": doctor_id, "doctor_code": doctor_code,
+                          "public_pem": pub_pem.decode("utf-8")},
+                    headers=_headers(), timeout=10,
+                )
+            except Exception as e:
+                app.logger.warning("backend /register_doctor failed: %s", e)
+                
+            try:
+                http.post(
+                    f"{BACKEND}/internal/register_user_db",
+                    json={"email": uid, "username": username, "name": name, "role": role,
+                          "password_hash": hash_password(password), "doctor_code": doctor_code,
+                          "public_key": pub_pem.decode("utf-8")},
+                    headers=_headers(), timeout=10,
+                )
+            except Exception:
+                pass
+                
+            profile_code = ""
+            
+        else:
+            return jsonify({"error": "Invalid role"}), 400
+
+
+        # ── Set session ──
         session.clear()
         session["logged_in"]    = True
-        session["role"]         = "patient"
+        session["role"]         = role
         session["name"]         = name
         session["email"]        = email
         session["username"]     = username
         session["profile_code"] = profile_code
-        session["doctor_code"]  = ""
+        session["doctor_code"]  = doctor_code
+        if role == "doctor":
+            session["specialization"] = spec
+            session["hospital"]       = hosp
         session.permanent       = True
 
-        # â”€â”€ Fetch JWT immediately so EMR endpoints work right away â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Fetch JWT immediately
         try:
             _lr = http.post(
                 f"{BACKEND}/auth/login",
-                json={"email": email, "password": password},
+                json={"phone": phone, "email": email, "password": password},
                 headers=_headers(), timeout=10,
             )
             if _lr.ok:
@@ -661,50 +774,11 @@ def register_patient():
         return jsonify({
             "message":      "ok",
             "profile_code": profile_code,
+            "doctor_code":  doctor_code,
             "redirect":     "/dashboard",
         })
 
     except Exception as e:
-        app.logger.exception("Patient registration error")
-        return jsonify({"error": f"Registration failed: {e}"}), 500
-
-
-# â”€â”€ REGISTER DOCTOR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-def register_doctor():
-    try:
-        import uuid as _uuid
-
-        d        = request.get_json(force=True) or {}
-        name     = (d.get("name") or "").strip()
-        email    = (d.get("email") or "").strip().lower()
-        username = (d.get("username") or "").strip().lower()
-        spec     = (d.get("specialization") or "").strip()
-        hosp     = (d.get("hospital") or "").strip()
-        password = d.get("password") or ""
-
-        if not name:     return jsonify({"error": "Name is required"}), 400
-        if not email:    return jsonify({"error": "Email is required"}), 400
-        if not username: return jsonify({"error": "Username is required"}), 400
-        import re
-        if not re.match(r"^[a-z0-9_\.]+$", username):
-            return jsonify({"error": "Username can only contain lowercase letters, numbers, dot, or underscore"}), 400
-        if not password: return jsonify({"error": "Password is required"}), 400
-        if len(password) < 8:
-            return jsonify({"error": "Password must be at least 8 characters"}), 400
-
-        # â”€â”€ Generate RSA keypair â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        priv, pub   = generate_rsa_keypair()
-        doctor_id   = str(_uuid.uuid4())
-        # doctor_code from UUID is already hex (alphanumeric), safe for CredWrite
-        doctor_code = doctor_id.replace('-', '')[:10].upper()
-
-        priv_pem = rsa_serialize_private(priv)   # bytes
-        pub_pem  = rsa_serialize_public(pub)      # bytes
-
-        # KEK-wrap the private key for local storage (same as doctor_portal)
-        kek, salt = derive_kek_from_password(password)
-        wrapped   = wrap_key_with_kek(kek, priv_pem)   # str (base64)
-
         folder = os.path.join(DOCTORS_DIR, doctor_id)
         os.makedirs(folder, exist_ok=True)
 

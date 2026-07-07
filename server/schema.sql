@@ -436,4 +436,17 @@ CREATE INDEX IF NOT EXISTS idx_emr_lab_encounter
 CREATE INDEX IF NOT EXISTS idx_notes_encounter
     ON doctor_notes(encounter_id);
 
+-- ── Mandatory phone verification additions ────────────────────────────────────
+ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_unique
+    ON users(phone) WHERE phone <> '';
+
+CREATE TABLE IF NOT EXISTS phone_otp_store (
+    phone       TEXT PRIMARY KEY,
+    otp         TEXT NOT NULL,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    attempts    INTEGER DEFAULT 0
+);
+
 COMMIT;
