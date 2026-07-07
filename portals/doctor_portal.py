@@ -59,9 +59,16 @@ def cors(r):
 def _api_key():
     return get_server_api_key()
 
-def bh(token=""):
+def bh(token=None):
+    """Headers for backend calls. If no token is explicitly passed, tries to
+    forward the Authorization header from the incoming request automatically
+    — so a caller can no longer forget to attach it."""
+    if token is None:
+        auth_hdr = request.headers.get("Authorization", "")
+        token = auth_hdr.replace("Bearer ", "").strip() if auth_hdr.startswith("Bearer ") else ""
     h = {"X-API-Key": _api_key(), "Content-Type": "application/json"}
-    if token: h["Authorization"] = f"Bearer {token}"
+    if token:
+        h["Authorization"] = f"Bearer {token}"
     return h
 def doc_dir(code):
     # find by doctor_code inside any subfolder

@@ -51,9 +51,16 @@ def cors(r):
 def _api_key():
     return get_server_api_key()
 
-def bh(token=""):
+def bh(token=None):
+    """Headers for backend calls. If no token is explicitly passed, tries to
+    forward the Authorization header from the incoming request automatically
+    — so a caller can no longer forget to attach it."""
+    if token is None:
+        auth_hdr = request.headers.get("Authorization", "")
+        token = auth_hdr.replace("Bearer ", "").strip() if auth_hdr.startswith("Bearer ") else ""
     h = {"X-API-Key": _api_key(), "Content-Type": "application/json"}
-    if token: h["Authorization"] = f"Bearer {token}"
+    if token:
+        h["Authorization"] = f"Bearer {token}"
     return h
 
 def user_dir(code):  return os.path.join(USERS_DIR, code)
@@ -519,8 +526,9 @@ def _save_notes_locally(patient_code, notes):
 def api_patient_notes(patient_code):
     """Fetch doctor notes from server and cache them in local user_data.json."""
     try:
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
         r = http.get(f"{BACKEND}/doctor_notes/patient/{patient_code}",
-                     headers=bh(), timeout=8)
+                     headers=bh(token), timeout=8)
         data  = r.json() if r.ok else {}
         notes = data.get("notes", []) if isinstance(data, dict) else []
         # Write-through to local device

@@ -80,7 +80,13 @@ def _api_key():
     return get_server_api_key()
 
 def _headers():
-    return {"X-API-Key": _api_key(), "Content-Type": "application/json"}
+    """Headers for backend calls. Auto-forwards the session JWT if one
+    exists, so a caller can no longer forget to attach it."""
+    h = {"X-API-Key": _api_key(), "Content-Type": "application/json"}
+    jwt_token = session.get("jwt_token", "")
+    if jwt_token:
+        h["Authorization"] = f"Bearer {jwt_token}"
+    return h
 
 def _user_json_path(profile_code):
     return os.path.join(USERS_DIR, profile_code, "user_data.json")
@@ -1297,7 +1303,7 @@ def patient_notes():
             if img_filename:
                 try:
                     ri = http.get(f"{BACKEND}/note_images/{img_filename}",
-                                  headers=_headers(), timeout=15)
+                                  headers=_jwt_headers(), timeout=15)
                     if ri.ok:
                         local_img_path = os.path.join(images_dir, img_filename)
                         with open(local_img_path, "wb") as fimg:
@@ -1472,7 +1478,7 @@ def patient_list_doctors():
 #   DOCTOR API ROUTES  (called by dashboard.html via fetch)
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-DOCTOR_PORTAL = "http://127.0.0.1:5002"
+DOCTOR_PORTAL = os.environ.get("DOCTOR_PORTAL_URL", "http://127.0.0.1:5002")
 
 def _doctor_session_check():
     if not session.get("logged_in") or session.get("role") != "doctor":
@@ -2582,12 +2588,9 @@ def api_emr_proxy(subpath):
 
 # â”€â”€ Appointment proxy helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _jwt_headers():
-    """Headers with the session JWT for forwarding to the backend."""
-    h = {**_headers()}
-    jwt_token = session.get("jwt_token", "")
-    if jwt_token:
-        h["Authorization"] = f"Bearer {jwt_token}"
-    return h
+    """Kept as an alias for readability at call sites — _headers() now
+    does this automatically too."""
+    return _headers()
 
 
 # Patient: submit an appointment request
