@@ -1266,7 +1266,7 @@ def patient_notes():
         # as except Exception -> server_notes = []), so notes were never fetched.
         try:
             r = http.get(f"{BACKEND}/doctor_notes/patient/{profile_code}",
-                         headers=_headers(), timeout=8)
+                         headers=_jwt_headers(), timeout=8)
             if r.ok:
                 body = r.json()
                 server_notes = body if isinstance(body, list) else body.get("notes", [])
@@ -1356,7 +1356,7 @@ def patient_local_note_image(filename):
                 return send_file(candidate, mimetype=mime)
         # Fallback: try fetching from server
         try:
-            r = http.get(f"{BACKEND}/note_images/{filename}", headers=_headers(), timeout=10)
+            r = http.get(f"{BACKEND}/note_images/{filename}", headers=_jwt_headers(), timeout=10)
             if r.ok:
                 from flask import Response
                 return Response(r.content, content_type=r.headers.get("Content-Type", "image/jpeg"))
@@ -1368,7 +1368,7 @@ def patient_local_note_image(filename):
         # Fallback: try fetching from server (image not yet synced)
         try:
             r = http.get(f"{BACKEND}/note_images/{filename}",
-                         headers=_headers(), timeout=10)
+                         headers=_jwt_headers(), timeout=10)
             if r.ok:
                 from flask import Response
                 return Response(r.content,
@@ -1866,7 +1866,7 @@ def _fetch_timeline_for(pat_code):
     notes = []
     try:
         rn = http.get(f"{BACKEND}/doctor_notes/patient/{pat_code}",
-                      headers=_headers(), timeout=8)
+                      headers=_jwt_headers(), timeout=8)
         if rn.ok:
             nd = rn.json()
             notes = nd.get("notes", nd) if isinstance(nd, dict) else nd
@@ -2096,7 +2096,7 @@ def note_image_proxy(filename):
     try:
         r = http.get(
             f"{BACKEND}/note_images/{filename}",
-            headers=_headers(), timeout=10, stream=True,
+            headers=_jwt_headers(), timeout=10, stream=True,
         )
         if not r.ok:
             return "Not found", 404

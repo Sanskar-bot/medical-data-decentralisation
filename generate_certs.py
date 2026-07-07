@@ -27,6 +27,13 @@ def generate_self_signed_cert():
         datetime.datetime.utcnow()
     ).not_valid_after(
         datetime.datetime.utcnow() + datetime.timedelta(days=365)
+    ).add_extension(
+        x509.SubjectAlternativeName([
+            x509.DNSName(u"medvault.local"),
+            x509.DNSName(u"patient.medvault.local"),
+            x509.DNSName(u"doctor.medvault.local"),
+        ]),
+        critical=False,
     ).sign(private_key, hashes.SHA256())
     
     with open("certs/privkey.pem", "wb") as f:

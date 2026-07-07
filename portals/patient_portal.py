@@ -25,7 +25,7 @@ from auth_utils import login_required, hash_password, cors_after_request, get_se
 
 BACKEND   = os.environ.get("SERVER_BASE", "http://127.0.0.1:5000")
 USERS_DIR = os.path.join(ROOT, "client", "Users")
-LANDING   = "http://127.0.0.1:5003"
+LANDING     = os.environ.get("LANDING_URL", "http://127.0.0.1:5003")
 os.makedirs(USERS_DIR, exist_ok=True)
 
 app = Flask(__name__)
@@ -65,6 +65,10 @@ def get_html():
     if os.path.exists(ui):
         return open(ui, encoding="utf-8").read()
     return "<h1>patient_ui.html not found</h1>"
+
+@app.route("/health")
+def health_check():
+    return jsonify({"status": "ok"}), 200
 
 @app.route("/")
 def index():
@@ -541,8 +545,9 @@ def api_patient_notes(patient_code):
 def api_note_image(filename):
     """Proxy note images from the backend server."""
     try:
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
         r = http.get(f"{BACKEND}/note_images/{filename}",
-                     headers={"X-API-Key": api_key()}, timeout=10, stream=True)
+                     headers=bh(token), timeout=10, stream=True)
         if not r.ok:
             return jsonify({"error": "image not found"}), 404
         return Response(r.content, content_type=r.headers.get("Content-Type", "image/jpeg"))

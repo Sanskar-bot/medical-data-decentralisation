@@ -2715,6 +2715,24 @@ def get_profile_photo(uid):
     auth_err = _require_api_key()
     if auth_err:
         return auth_err
+    
+    auth_hdr = request.headers.get("Authorization", "")
+    token = auth_hdr.replace("Bearer ", "").strip() if auth_hdr.startswith("Bearer ") else ""
+    if not token:
+        token = request.cookies.get("access_token", "")
+    if token:
+        jwt_payload = _jwt_decode(token)
+        if jwt_payload:
+            caller_uid = jwt_payload.get("uid", "")
+            role = jwt_payload.get("role", "")
+            if role == "patient" and caller_uid != uid:
+                return jsonify({"error": "forbidden"}), 403
+            if role == "doctor" and not _doctor_has_active_access(uid, caller_uid):
+                return jsonify({"error": "forbidden"}), 403
+        else:
+            return jsonify({"error": "invalid_or_expired_token"}), 401
+    else:
+        return jsonify({"error": "missing_token"}), 401
     for ext in ("jpg", "jpeg", "png", "webp"):
         path = os.path.join(UPLOADS_DIR, "profiles", f"{uid}_profile.{ext}")
         if os.path.exists(path):
@@ -3283,6 +3301,8 @@ def serve_note_image(filename):
                         return jsonify({"error": "forbidden"}), 403
                 else:
                     return jsonify({"error": "invalid_or_expired_token"}), 401
+            else:
+                return jsonify({"error": "missing_token"}), 401
 
     img_path = os.path.join(NOTE_IMAGES_DIR, filename)
     if not os.path.exists(img_path):
@@ -3428,6 +3448,8 @@ def doctor_notes_for_patient(patient_code):
                                 "detail": "No active access for this patient."}), 403
         else:
             return jsonify({"error": "invalid_or_expired_token"}), 401
+    else:
+        return jsonify({"error": "missing_token"}), 401
 
     doc_filter = (request.args.get("doctor_code") or "").strip()
     notes = _db_get_notes(patient_code, doctor_code=doc_filter if doc_filter else None)

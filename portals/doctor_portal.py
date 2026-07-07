@@ -28,7 +28,7 @@ from auth_utils import login_required, cors_after_request, get_server_api_key  #
 
 BACKEND     = os.environ.get("SERVER_BASE", "http://127.0.0.1:5000")
 DOCTORS_DIR = os.path.join(ROOT, "doctor", "Doctors")
-LANDING     = "http://127.0.0.1:5003"
+LANDING     = os.environ.get("LANDING_URL", "http://127.0.0.1:5003")
 os.makedirs(DOCTORS_DIR, exist_ok=True)
 
 
@@ -326,7 +326,8 @@ def api_fetch_record():
     # fetch all doctor notes for this patient
     notes = []
     try:
-        rn = http.get(f"{BACKEND}/doctor_notes/patient/{pat_code}", headers=bh(), timeout=8)
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        rn = http.get(f"{BACKEND}/doctor_notes/patient/{pat_code}", headers=bh(token), timeout=8)
         if rn.ok:
             nd = rn.json()
             notes = nd.get("notes", nd) if isinstance(nd, dict) else nd
@@ -492,8 +493,9 @@ def api_doctor_notes_list(patient_code):
     """Fetch all notes for a patient; returns filtered list for this doctor."""
     doc_code = request.args.get("doctor_code", "")
     try:
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
         r = http.get(f"{BACKEND}/doctor_notes/patient/{patient_code}",
-                     headers=bh(), timeout=8)
+                     headers=bh(token), timeout=8)
         # Server returns a JSON list directly (not a dict with "notes" key)
         notes = r.json() if r.ok else []
         if isinstance(notes, dict):
@@ -542,8 +544,9 @@ def api_delete_note(note_id):
 def api_note_image(filename):
     """Proxy note images from the backend server for display in the doctor portal."""
     try:
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
         r = http.get(f"{BACKEND}/note_images/{filename}",
-                     headers={"X-API-Key": api_key()}, timeout=10, stream=True)
+                     headers=bh(token), timeout=10, stream=True)
         if not r.ok:
             return jsonify({"error": "image not found"}), 404
         from flask import Response
