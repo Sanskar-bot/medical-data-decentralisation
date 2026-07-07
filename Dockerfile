@@ -16,8 +16,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# The actual application code is bind-mounted in by docker-compose.yml at
-# runtime (see §2 for why) — nothing else needs to be copied here.
+# Copy the application code into the image. Docker Compose deployments
+# (docker-compose.yml) override this at runtime with a bind mount for fast
+# local iteration — see that file's `volumes:` entries — but the image
+# itself must be self-contained for platforms without a host bind mount,
+# such as Railway.
+COPY . .
 
 # No CMD here on purpose — each service in docker-compose.yml specifies its
 # own command, since server.py/landing.py/patient_portal.py/doctor_portal.py
