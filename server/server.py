@@ -33,6 +33,15 @@ PROJECT_ROOT = os.path.dirname(SERVER_BASE_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+# portals/auth_utils.py provides hash_password/check_password — add the
+# portals dir to sys.path so it's importable as a sibling module, same
+# pattern used by portals/patient_portal.py.
+PORTALS_DIR = os.path.join(PROJECT_ROOT, "portals")
+if PORTALS_DIR not in sys.path:
+    sys.path.insert(0, PORTALS_DIR)
+
+from auth_utils import hash_password  # noqa: E402
+
 # PATIENTS_DIR: still used for encrypted_data.json file uploads & migration bridge
 PATIENTS_DIR = os.path.join(SERVER_BASE_DIR, "Patients")
 os.makedirs(PATIENTS_DIR, exist_ok=True)
