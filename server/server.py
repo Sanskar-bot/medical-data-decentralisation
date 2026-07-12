@@ -2136,8 +2136,13 @@ def auth_otp_send_sms():
         return jsonify({"error": "invalid_phone"}), 400
     otp = _gen_otp()
     exp = time.time() + 300
+    print(f"[OTP-DEBUG] send_sms: phone={phone!r}, otp={otp}, exp={exp}")
     with _otp_lock:
         _phone_otp_set(phone, otp, exp, attempts=0)
+    # Verify it was actually stored
+    with _otp_lock:
+        check = _phone_otp_get(phone)
+    print(f"[OTP-DEBUG] send_sms: stored check={check}")
 
     try:
         send_sms_otp(phone, otp)
@@ -2182,8 +2187,10 @@ def auth_otp_verify_sms():
     body  = request.get_json(force=True) or {}
     phone = (body.get("phone", "") or "").strip()
     otp   = (body.get("otp", "") or "").strip()
+    print(f"[OTP-DEBUG] verify_sms: phone={phone!r}, otp_input={otp!r}")
     with _otp_lock:
         rec = _phone_otp_get(phone)
+        print(f"[OTP-DEBUG] verify_sms: rec={rec}")
         if not rec:
             return jsonify({"error": "no_otp_found"}), 400
         if rec["attempts"] >= 5:
