@@ -39,7 +39,10 @@ os.makedirs(DOCTORS_DIR, exist_ok=True)
 app = Flask(__name__)
 # Shared secret key — same file as landing.py so cross-app sessions work
 _SK_FILE = os.path.join(ROOT, "server", "flask_secret.key")
-if os.path.exists(_SK_FILE):
+_env_key = os.environ.get("FLASK_SECRET_KEY", "")
+if _env_key:
+    app.secret_key = _env_key.encode("utf-8")
+elif os.path.exists(_SK_FILE):
     app.secret_key = open(_SK_FILE, "rb").read()
 else:
     app.secret_key = secrets.token_bytes(32)

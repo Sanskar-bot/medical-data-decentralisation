@@ -30,8 +30,17 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: password, update: partial }),
     })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
+      .then(function (r) {
+        return r.json().then(function (d) { return { status: r.status, body: d }; });
+      })
+      .then(function (res) {
+        var d = res.body;
+        if (d.error === 'unauthenticated' || res.status === 401) {
+          if (typeof onDone === 'function') {
+            onDone(false, null, 'Your session expired. Please refresh the page and log in again.');
+          }
+          return;
+        }
         if (d.error) {
           if (typeof onDone === 'function') onDone(false, null, d.error);
           return;
@@ -55,8 +64,15 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: status }),
     })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
+      .then(function (r) {
+        return r.json().then(function (d) { return { status: r.status, body: d }; });
+      })
+      .then(function (res) {
+        var d = res.body;
+        if (d.error === 'unauthenticated' || res.status === 401) {
+          if (typeof onDone === 'function') onDone(false);
+          return;
+        }
         if (typeof onDone === 'function') onDone(!d.error);
       })
       .catch(function () {
@@ -71,8 +87,15 @@
    */
   MV.getOnboardingStatus = function (onDone) {
     fetch('/patient/onboarding/status')
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
+      .then(function (r) {
+        return r.json().then(function (d) { return { status: r.status, body: d }; });
+      })
+      .then(function (res) {
+        var d = res.body;
+        if (d.error === 'unauthenticated' || res.status === 401) {
+          if (typeof onDone === 'function') onDone('pending');
+          return;
+        }
         if (typeof onDone === 'function') onDone(d.status || 'pending');
       })
       .catch(function () {
