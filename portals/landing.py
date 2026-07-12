@@ -604,6 +604,14 @@ def proxy_otp_verify_sms():
     return jsonify(resp.json()), resp.status_code
 
 
+@app.route("/auth/check_availability", methods=["GET"])
+def proxy_check_availability():
+    field = request.args.get("field", "")
+    value = request.args.get("value", "")
+    resp = http.get(f"{BACKEND}/auth/check_availability", params={"field": field, "value": value}, headers=_headers(), timeout=10)
+    return jsonify(resp.json()), resp.status_code
+
+
 # ── UNIFIED REGISTER PROXY ────────────────────────────────────────────────────
 @app.route("/auth/register", methods=["POST"])
 def auth_register():

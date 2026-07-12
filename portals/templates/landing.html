@@ -368,24 +368,56 @@
                 <div class="input-group">
                   <label class="input-label" for="reg-name">Full name</label>
                   <input class="input-field" type="text" id="reg-name" name="name" autocomplete="name" placeholder="Jane Smith" required>
+                  <div class="input-error" id="err-reg-name" style="display:none; color:var(--r5); font-size:var(--t-xs); margin-top:var(--sp-1);"></div>
                 </div>
                 <div class="input-group">
                   <label class="input-label" for="reg-phone">Phone number</label>
-                  <input class="input-field" type="tel" id="reg-phone" name="phone" autocomplete="tel" placeholder="+1234567890" required>
+                  <div style="display:flex; gap:var(--sp-2);">
+                    <select class="input-field" id="reg-country-code" style="flex:0 0 110px;">
+                      <option value="+91" selected>🇮🇳 +91</option>
+                      <option value="+1">🇺🇸 +1</option>
+                      <option value="+44">🇬🇧 +44</option>
+                      <option value="+61">🇦🇺 +61</option>
+                      <option value="+971">🇦🇪 +971</option>
+                    </select>
+                    <input class="input-field" type="tel" id="reg-phone" name="phone" autocomplete="tel" placeholder="98765 43210" style="flex:1;" required>
+                  </div>
+                  <div class="input-error" id="err-reg-phone" style="display:none; color:var(--r5); font-size:var(--t-xs); margin-top:var(--sp-1);"></div>
                 </div>
                 <div class="input-group">
                   <label class="input-label" for="reg-email">Email address (Optional)</label>
                   <input class="input-field" type="email" id="reg-email" name="email" autocomplete="email" placeholder="you@example.com">
+                  <div class="input-error" id="err-reg-email" style="display:none; color:var(--r5); font-size:var(--t-xs); margin-top:var(--sp-1);"></div>
                 </div>
                 <div class="input-group">
                   <label class="input-label" for="reg-username">Username</label>
                   <input class="input-field" type="text" id="reg-username" name="username" autocomplete="username" placeholder="janesmith" required>
                   <span class="input-hint">Lowercase letters, numbers, dot, underscore only</span>
+                  <div class="input-error" id="err-reg-username" style="display:none; color:var(--r5); font-size:var(--t-xs); margin-top:var(--sp-1);"></div>
                 </div>
                 <div class="input-group">
                   <label class="input-label" for="reg-password">Password</label>
-                  <input class="input-field" type="password" id="reg-password" name="password" autocomplete="new-password" placeholder="Min. 8 characters" required>
-                  <span class="input-hint" id="password-strength"></span>
+                  <div style="position:relative;">
+                    <input class="input-field" type="password" id="reg-password" name="password" autocomplete="new-password" placeholder="Min. 8 characters" style="padding-right: 40px;" required>
+                    <button type="button" onclick="togglePasswordVisibility('reg-password')" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:var(--tx3);" tabindex="-1">👁</button>
+                  </div>
+                  <div id="password-strength-container" style="display:none; margin-top:var(--sp-2);">
+                    <div style="height:4px; background:var(--b2); border-radius:2px; display:flex; gap:2px; overflow:hidden;">
+                      <div id="pw-str-1" style="flex:1; background:transparent; transition:background .3s;"></div>
+                      <div id="pw-str-2" style="flex:1; background:transparent; transition:background .3s;"></div>
+                      <div id="pw-str-3" style="flex:1; background:transparent; transition:background .3s;"></div>
+                    </div>
+                    <div id="password-strength-text" style="font-size:var(--t-xs); color:var(--tx3); margin-top:4px; text-align:right;"></div>
+                  </div>
+                  <div class="input-error" id="err-reg-password" style="display:none; color:var(--r5); font-size:var(--t-xs); margin-top:var(--sp-1);"></div>
+                </div>
+                <div class="input-group">
+                  <label class="input-label" for="reg-password-confirm">Confirm password</label>
+                  <div style="position:relative;">
+                    <input class="input-field" type="password" id="reg-password-confirm" autocomplete="new-password" placeholder="Re-enter your password" style="padding-right: 40px;" required>
+                    <button type="button" onclick="togglePasswordVisibility('reg-password-confirm')" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:var(--tx3);" tabindex="-1">👁</button>
+                  </div>
+                  <div class="input-error" id="err-reg-password-confirm" style="display:none; color:var(--r5); font-size:var(--t-xs); margin-top:var(--sp-1);"></div>
                 </div>
                 <div class="input-group hidden" id="doctor-fields">
                   <label class="input-label" for="reg-specialization">Specialization</label>
@@ -393,6 +425,12 @@
                   <label class="input-label" for="reg-hospital" style="margin-top:var(--sp-3);">Hospital</label>
                   <input class="input-field" type="text" id="reg-hospital" placeholder="General Hospital">
                 </div>
+                
+                <div class="input-group" style="display:flex; align-items:center; gap:var(--sp-2); margin-bottom:var(--sp-4);">
+                  <input type="checkbox" id="reg-terms" required style="width:16px; height:16px; accent-color:var(--p5); cursor:pointer;">
+                  <label for="reg-terms" style="font-size:var(--t-sm); color:var(--tx2); cursor:pointer; user-select:none;">I agree to the <a href="/terms" style="color:var(--p5);">Terms of Service</a> and <a href="/privacy" style="color:var(--p5);">Privacy Policy</a>.</label>
+                </div>
+                
                 <button class="btn-primary w-full" type="button" id="register-next-btn">
                   <span id="register-btn-text">Continue</span>
                   <span id="register-spinner" class="spinner" style="display:none;"></span>
@@ -436,6 +474,13 @@
 
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
   <script>
+  function togglePasswordVisibility(id) {
+    var el = document.getElementById(id);
+    if (el) {
+      el.type = el.type === 'password' ? 'text' : 'password';
+    }
+  }
+
   (function() {
     var modal    = document.getElementById('auth-modal');
     var closeBtn = document.getElementById('auth-modal-close');
@@ -565,16 +610,107 @@
       });
     });
 
+    // ── Live Validation & Formatting ──────────────────────────────
+    var fieldAvailability = { username: null, email: null, phone: null };
+    var debounceTimers = {};
+
+    function showError(id, msg) {
+      var errEl = document.getElementById('err-' + id);
+      if (errEl) { errEl.textContent = msg; errEl.style.display = msg ? 'block' : 'none'; errEl.style.color = 'var(--r5)'; }
+    }
+
+    function checkAvailability(field, value, elId) {
+      if (!value) {
+        fieldAvailability[field] = null;
+        showError(elId, '');
+        return;
+      }
+      var queryVal = value;
+      if (field === 'phone') {
+        queryVal = document.getElementById('reg-country-code').value + value.replace(/\D/g, '');
+      }
+      if (debounceTimers[field]) clearTimeout(debounceTimers[field]);
+      debounceTimers[field] = setTimeout(function() {
+        fetch('/auth/check_availability?field=' + field + '&value=' + encodeURIComponent(queryVal))
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (res.available === false) {
+              fieldAvailability[field] = false;
+              showError(elId, field.charAt(0).toUpperCase() + field.slice(1) + ' is already registered');
+            } else if (res.available === true) {
+              fieldAvailability[field] = true;
+              var errEl = document.getElementById('err-' + elId);
+              if (errEl) { errEl.textContent = 'Available'; errEl.style.color = 'var(--g5)'; errEl.style.display = 'block'; }
+            }
+          })
+          .catch(function() {});
+      }, 400);
+    }
+
+    document.getElementById('reg-username').addEventListener('input', function(e) {
+      e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9_\.]/g, '');
+      checkAvailability('username', e.target.value, 'reg-username');
+    });
+
+    document.getElementById('reg-email').addEventListener('input', function(e) {
+      checkAvailability('email', e.target.value, 'reg-email');
+    });
+
+    document.getElementById('reg-phone').addEventListener('input', function(e) {
+      e.target.value = e.target.value.replace(/[^\d\s-]/g, '');
+      checkAvailability('phone', e.target.value, 'reg-phone');
+    });
+    document.getElementById('reg-country-code').addEventListener('change', function(e) {
+      var val = document.getElementById('reg-phone').value;
+      if(val) checkAvailability('phone', val, 'reg-phone');
+    });
+
+    function checkPasswordMatch() {
+      var p = document.getElementById('reg-password').value;
+      var cp = document.getElementById('reg-password-confirm').value;
+      if (cp && p !== cp) {
+        showError('reg-password-confirm', 'Passwords do not match');
+        return false;
+      }
+      showError('reg-password-confirm', '');
+      return true;
+    }
+
+    document.getElementById('reg-password').addEventListener('input', function(e) {
+      var val = e.target.value;
+      var strengthEl = document.getElementById('password-strength-container');
+      if (!val) { strengthEl.style.display = 'none'; return; }
+      strengthEl.style.display = 'block';
+      var score = 0;
+      if (val.length > 7) score++;
+      if (/[A-Z]/.test(val) && /[0-9]/.test(val)) score++;
+      if (/[^A-Za-z0-9]/.test(val)) score++;
+      
+      document.getElementById('pw-str-1').style.background = score > 0 ? (score===1?'var(--r5)':(score===2?'var(--y5)':'var(--g5)')) : 'transparent';
+      document.getElementById('pw-str-2').style.background = score > 1 ? (score===2?'var(--y5)':'var(--g5)') : 'transparent';
+      document.getElementById('pw-str-3').style.background = score > 2 ? 'var(--g5)' : 'transparent';
+      
+      var texts = ['Weak', 'Medium', 'Strong'];
+      document.getElementById('password-strength-text').textContent = score > 0 ? texts[score-1] : 'Very Weak';
+      
+      checkPasswordMatch();
+    });
+
+    document.getElementById('reg-password-confirm').addEventListener('input', checkPasswordMatch);
+    document.getElementById('reg-password-confirm').addEventListener('blur', checkPasswordMatch);
+
     // ── Register submit ───────────────────────────────────────────
     var state = { phone_token: '', email_token: '' };
 
     function getRegPayload() {
       var role = document.getElementById('reg-role').value;
+      var localPhone = document.getElementById('reg-phone').value.replace(/\D/g, '');
+      var fullPhone = document.getElementById('reg-country-code').value + localPhone;
       var data = {
         role: role,
         name: document.getElementById('reg-name').value.trim(),
         email: document.getElementById('reg-email').value.trim(),
-        phone: document.getElementById('reg-phone').value.trim(),
+        phone: fullPhone,
         username: document.getElementById('reg-username').value.trim(),
         password: document.getElementById('reg-password').value
       };
@@ -591,15 +727,35 @@
       registerNextBtn.addEventListener('click', function() {
         var alertEl = document.getElementById('register-alert');
         alertEl.style.display = 'none';
+        
+        ['reg-name','reg-phone','reg-username','reg-password'].forEach(function(id) {
+            var err = document.getElementById('err-' + id);
+            if (err && err.textContent !== 'Available') showError(id, '');
+        });
+
         var d = getRegPayload();
-        if (!d.name || !d.phone || !d.username || !d.password) {
-          showAlert(alertEl, 'Name, Phone, Username, and Password are required.', 'error');
+        var hasErr = false;
+
+        if (!document.getElementById('reg-terms').checked) {
+          showAlert(alertEl, 'You must agree to the Terms of Service and Privacy Policy.', 'error');
           return;
         }
-        if (d.password.length < 8) {
-          showAlert(alertEl, 'Password must be at least 8 characters.', 'error');
-          return;
-        }
+
+        if (!d.name) { showError('reg-name', 'Name is required'); hasErr = true; }
+        if (!document.getElementById('reg-phone').value.trim()) { showError('reg-phone', 'Phone is required'); hasErr = true; }
+        else if (document.getElementById('reg-phone').value.replace(/\D/g, '').length < 6) { showError('reg-phone', 'Enter a valid phone number'); hasErr = true; }
+        
+        if (!d.username) { showError('reg-username', 'Username is required'); hasErr = true; }
+        if (!d.password) { showError('reg-password', 'Password is required'); hasErr = true; }
+        else if (d.password.length < 8) { showError('reg-password', 'Password must be at least 8 characters'); hasErr = true; }
+        
+        if (!checkPasswordMatch()) hasErr = true;
+        
+        if (fieldAvailability.username === false) { showError('reg-username', 'Username is already registered'); hasErr = true; }
+        if (fieldAvailability.email === false) { showError('reg-email', 'Email is already registered'); hasErr = true; }
+        if (fieldAvailability.phone === false) { showError('reg-phone', 'Phone is already registered'); hasErr = true; }
+        
+        if (hasErr) return;
 
         var btn = document.getElementById('register-next-btn');
         btn.disabled = true;

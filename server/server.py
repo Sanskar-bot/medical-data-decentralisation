@@ -2270,6 +2270,26 @@ def patient_onboarding_status():
         return jsonify({"error": "db_error"}), 500
 
 
+@app.route("/auth/check_availability", methods=["GET"])
+@rate_limited(max_calls=20, window=60)
+def check_availability():
+    field = request.args.get("field", "")
+    value = (request.args.get("value", "") or "").strip().lower()
+    
+    if field not in ("username", "email", "phone") or not value:
+        return jsonify({"error": "bad_request"}), 400
+        
+    with _users_db_lock:
+        if field == "username":
+            exists = _db_get_user_by_username(value)
+        elif field == "email":
+            exists = _db_get_user_by_email(value)
+        else: # phone
+            exists = _db_get_user_by_phone(value)
+            
+    return jsonify({"available": exists is None})
+
+
 @app.route("/auth/register", methods=["POST"])
 @rate_limited(max_calls=5, window=300)
 def auth_register():
