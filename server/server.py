@@ -2313,7 +2313,7 @@ def auth_register():
             return jsonify({"error": "phone_already_registered"}), 409
 
         existing_un = _db_get_user_by_username(username)
-        if existing_un and existing_un["email"] != email:
+        if existing_un:
             return jsonify({"error": "username_taken"}), 409
 
         uid = str(uuid.uuid4())
@@ -2352,7 +2352,7 @@ def internal_register_user_db():
 
     with _users_db_lock:
         existing_un = _db_get_user_by_username(username)
-        if existing_un and existing_un["email"] != email:
+        if existing_un:
             return jsonify({"error": "username_taken",
                             "message": "Username is already taken"}), 409
         
@@ -2384,6 +2384,36 @@ def internal_register_user_db():
         })
     audit("register_via_legacy", actor=email, detail=role)
     return jsonify({"message": "created", "user_id": uid})
+
+
+@app.route("/internal/set_profile_code", methods=["POST"])
+def internal_set_profile_code():
+    """
+    Sets profile_code and/or doctor_code on an EXISTING user row, identified by
+    their real user_id (the id returned by /auth/register). This never inserts
+    a new row and never touches any other field — it is intentionally narrow.
+    """
+    auth_err = _require_api_key()
+    if auth_err:
+        return auth_err
+    body = request.get_json(force=True) or {}
+    uid = (body.get("user_id", "") or "").strip()
+    profile_code = (body.get("profile_code", "") or "").strip()
+    doctor_code = (body.get("doctor_code", "") or "").strip()
+    if not uid or not (profile_code or doctor_code):
+        return jsonify({"error": "missing_fields"}), 400
+    with db_cursor() as cur:
+        if profile_code:
+            cur.execute(
+                "UPDATE users SET profile_code = %s WHERE id = %s",
+                (profile_code, uid),
+            )
+        if doctor_code:
+            cur.execute(
+                "UPDATE users SET doctor_code = %s WHERE id = %s",
+                (doctor_code, uid),
+            )
+    return jsonify({"message": "ok"})
 
 
 @app.route("/auth/login", methods=["POST"])

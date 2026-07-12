@@ -716,17 +716,20 @@ def auth_register():
             except Exception as e:
                 app.logger.warning("backend /register_user failed: %s", e)
                 
-            # Also sync profile code to DB using the old internal route since auth/register doesn't handle decentralized codes
+            # Sync profile_code onto the real user row created by /auth/register above.
             try:
-                http.post(
-                    f"{BACKEND}/internal/register_user_db",
-                    json={"email": uid, "username": username, "name": name, "role": role,
-                          "password_hash": hash_password(password), "profile_code": profile_code,
-                          "public_key": pub_pem.decode("utf-8")},
+                _sync_resp = http.post(
+                    f"{BACKEND}/internal/set_profile_code",
+                    json={"user_id": uid, "profile_code": profile_code},
                     headers=_headers(), timeout=10,
                 )
-            except Exception:
-                pass
+                if not _sync_resp.ok:
+                    app.logger.warning(
+                        "profile_code sync failed for user_id=%s: %s",
+                        uid, _sync_resp.text,
+                    )
+            except Exception as e:
+                app.logger.warning("profile_code sync request failed: %s", e)
                 
             doctor_code = ""
 
@@ -767,15 +770,18 @@ def auth_register():
                 app.logger.warning("backend /register_doctor failed: %s", e)
                 
             try:
-                http.post(
-                    f"{BACKEND}/internal/register_user_db",
-                    json={"email": uid, "username": username, "name": name, "role": role,
-                          "password_hash": hash_password(password), "doctor_code": doctor_code,
-                          "public_key": pub_pem.decode("utf-8")},
+                _sync_resp = http.post(
+                    f"{BACKEND}/internal/set_profile_code",
+                    json={"user_id": uid, "doctor_code": doctor_code},
                     headers=_headers(), timeout=10,
                 )
-            except Exception:
-                pass
+                if not _sync_resp.ok:
+                    app.logger.warning(
+                        "doctor_code sync failed for user_id=%s: %s",
+                        uid, _sync_resp.text,
+                    )
+            except Exception as e:
+                app.logger.warning("doctor_code sync request failed: %s", e)
                 
             profile_code = ""
             
