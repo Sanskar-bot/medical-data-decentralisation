@@ -2222,12 +2222,7 @@ def auth_register():
     phone = phone_payload["sub"]
 
     email = (body.get("email", "") or "").strip().lower()
-    if email:
-        email_vtoken = body.get("email_verification_token", "")
-        email_payload = _jwt_decode(email_vtoken)
-        if not email_payload or email_payload.get("purpose") != "otp_verified" or email_payload["sub"] != email:
-            return jsonify({"error": "email_not_verified"}), 403
-    else:
+    if not email:
         email = None
 
     name     = (body.get("name", "") or "").strip()

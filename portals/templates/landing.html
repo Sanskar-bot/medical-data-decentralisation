@@ -662,13 +662,8 @@
 
           if (res.ok) {
             state.phone_token = res.data.verification_token;
-            if (d.email) {
-              // Need email verification, send email OTP
-              sendEmailOtp(d.email);
-            } else {
-              // No email, register directly
-              finalRegister();
-            }
+            // Skip email verification — go straight to registration
+            finalRegister();
           } else {
             showAlert(alertEl, res.data.error || 'Invalid SMS code.', 'error');
           }
