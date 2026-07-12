@@ -2115,7 +2115,12 @@ def auth_otp_send():
     with _otp_lock:
         _otp_set(email, otp, exp, attempts=0)
     
-    send_email_otp(email, otp)
+    try:
+        send_email_otp(email, otp)
+    except RuntimeError as e:
+        print(f"[OTP] Email send failed: {e}")
+        return jsonify({"error": "email_provider_unavailable",
+                        "message": "Email service is not configured. Please contact support."}), 503
     
     audit("otp_sent", actor=email)
     return jsonify({"message": "OTP sent", "expires_in": 300})
@@ -2134,7 +2139,12 @@ def auth_otp_send_sms():
     with _otp_lock:
         _phone_otp_set(phone, otp, exp, attempts=0)
 
-    send_sms_otp(phone, otp)
+    try:
+        send_sms_otp(phone, otp)
+    except RuntimeError as e:
+        print(f"[OTP] SMS send failed: {e}")
+        return jsonify({"error": "sms_provider_unavailable",
+                        "message": "SMS service is not configured. Please contact support."}), 503
 
     audit("sms_otp_sent", actor=phone)
     return jsonify({"message": "SMS OTP sent", "expires_in": 300})
