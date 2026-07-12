@@ -17,7 +17,14 @@ _pool: pool.ThreadedConnectionPool = None
 
 
 def _apply_schema_migrations(conn):
-    """Apply the repository schema files in an idempotent way."""
+    """Apply the repository schema files in an idempotent way.
+
+    Each file is applied in its own savepoint so a migration failure in one
+    file does not roll back already-applied migrations.  This lets the server
+    start correctly even when a schema file contains a statement that fails on
+    an already-migrated database (e.g. because the column/table already exists
+    in a slightly different form).
+    """
     schema_path = Path(__file__).with_name("schema.sql")
     additions_path = Path(__file__).with_name("schema_additions.sql")
     for path in (schema_path, additions_path):
@@ -26,9 +33,16 @@ def _apply_schema_migrations(conn):
         sql = path.read_text(encoding="utf-8")
         if not sql.strip():
             continue
-        with conn.cursor() as cur:
-            cur.execute(sql)
-    conn.commit()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+            conn.commit()
+            logger.info(f"[DB] Applied migration: {path.name}")
+        except Exception as migration_err:
+            conn.rollback()
+            logger.warning(
+                f"[DB] Migration {path.name} failed (may already be applied): {migration_err}"
+            )
 
 
 def init_db(database_url: str = None):

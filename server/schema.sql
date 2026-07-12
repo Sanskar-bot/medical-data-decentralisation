@@ -244,7 +244,10 @@ CREATE INDEX IF NOT EXISTS idx_emr_appt_patient ON emr_appointments(patient_id);
 CREATE INDEX IF NOT EXISTS idx_emr_appt_doctor  ON emr_appointments(doctor_id);
 
 -- ── Unified appointment view ────────────────────────────────────────────────
-CREATE OR REPLACE VIEW appointments_unified AS
+-- DROP + CREATE instead of CREATE OR REPLACE avoids the PostgreSQL error
+-- "cannot drop columns from view" when the column list changes across deploys.
+DROP VIEW IF EXISTS appointments_unified CASCADE;
+CREATE VIEW appointments_unified AS
 SELECT
     id::TEXT AS id,
     'request'::TEXT AS source,
