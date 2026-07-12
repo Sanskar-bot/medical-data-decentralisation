@@ -2218,6 +2218,57 @@ def auth_otp_verify_sms():
     return jsonify({"verified": True, "verification_token": vtoken})
 
 
+# ── Onboarding status ─────────────────────────────────────────────────────────
+@app.route("/patient/onboarding/status", methods=["GET", "POST"])
+@_require_jwt()
+def patient_onboarding_status():
+    """
+    GET  → {"status": "pending"|"minimum_done"|"complete"|"skipped"}
+    POST → body: {"status": "minimum_done"|"complete"|"skipped"} — updates the flag.
+
+    Never touches patient_details. No password required — this is a non-sensitive
+    completion flag only, kept separate from the encrypted health record so the
+    dashboard can show nudge banners without any decryption.
+    """
+    payload = request.jwt_payload
+    user_id = payload.get("uid") or payload.get("sub")
+
+    if request.method == "GET":
+        try:
+            with db_cursor(commit=False) as cur:
+                cur.execute(
+                    "SELECT onboarding_status FROM users WHERE id = %s",
+                    (user_id,)
+                )
+                row = cur.fetchone()
+            status = row["onboarding_status"] if row else "pending"
+            return jsonify({"status": status})
+        except Exception as e:
+            print(f"[onboarding] GET status error: {e}")
+            return jsonify({"status": "pending"})
+
+    # POST — update status
+    body = request.get_json(force=True) or {}
+    new_status = body.get("status")
+    if new_status not in ("minimum_done", "complete", "skipped"):
+        return jsonify({"error": "invalid_status"}), 400
+
+    try:
+        with db_cursor() as cur:
+            cur.execute(
+                """UPDATE users
+                   SET onboarding_status = %s,
+                       onboarding_completed_at = CASE WHEN %s = 'complete' THEN now()
+                                                      ELSE onboarding_completed_at END
+                   WHERE id = %s""",
+                (new_status, new_status, user_id)
+            )
+        audit("onboarding_status_changed", actor=user_id, detail=new_status)
+        return jsonify({"status": new_status})
+    except Exception as e:
+        print(f"[onboarding] POST status error: {e}")
+        return jsonify({"error": "db_error"}), 500
+
 
 @app.route("/auth/register", methods=["POST"])
 @rate_limited(max_calls=5, window=300)

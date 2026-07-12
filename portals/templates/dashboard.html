@@ -54,6 +54,9 @@
     </button>
   </div>
 
+  <!-- ── Onboarding nudge (JS-populated based on /patient/onboarding/status) ── -->
+  <div id="onboarding-nudge" style="display:none;" aria-label="Onboarding status"></div>
+
   <div class="grid-4 section">
     <article class="stat-card stat-card-feature fade-in" style="animation-delay:0ms">
       <div class="stat-card-header">
@@ -463,6 +466,91 @@
     if (JWT) h['Authorization'] = 'Bearer ' + JWT;
     return h;
   }
+
+  // ── Onboarding nudge ────────────────────────────────────────────────────────
+  // Fetches the non-sensitive completion flag and renders a contextual banner.
+  // Only fires for patient role; silently skipped on any error.
+  (function loadOnboardingNudge() {
+    if (ROLE !== 'patient') return;
+    var nudge = document.getElementById('onboarding-nudge');
+    if (!nudge) return;
+
+    fetch('/patient/onboarding/status', { headers: authHeaders() })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var status = d.status || 'pending';
+        if (status === 'complete') return; // nothing to show
+
+        if (status === 'pending') {
+          // Urgent full-width banner
+          nudge.innerHTML = [
+            '<div style="',
+              'background:linear-gradient(135deg,#0f2035,#162d50);',
+              'border:1px solid var(--p4);',
+              'border-radius:14px;',
+              'padding:var(--sp-5) var(--sp-6);',
+              'margin-bottom:var(--sp-6);',
+              'display:flex;gap:var(--sp-5);align-items:center;flex-wrap:wrap;',
+              '" role="alert">',
+            '<div style="',
+              'width:44px;height:44px;border-radius:50%;flex-shrink:0;',
+              'background:var(--pa);display:flex;align-items:center;justify-content:center;">',
+              '<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="var(--p4)" stroke-width="2">',
+                '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>',
+              '</svg>',
+            '</div>',
+            '<div style="flex:1;min-width:200px;">',
+              '<div style="font-weight:700;color:#e0eaff;font-size:var(--t-base);margin-bottom:4px;">',
+                'Your health vault is empty',
+              '</div>',
+              '<div style="color:rgba(180,200,255,.8);font-size:var(--t-xs);line-height:1.6;">',
+                'Set up your health record so doctors can help you quickly and safely.',
+              '</div>',
+            '</div>',
+            '<a href="/onboarding" style="',
+              'display:inline-flex;align-items:center;gap:6px;',
+              'background:var(--p5);color:#fff;font-size:var(--t-sm);font-weight:600;',
+              'padding:var(--sp-2) var(--sp-5);border-radius:8px;white-space:nowrap;',
+              'text-decoration:none;transition:background .15s;" ',
+              'onmouseover="this.style.background=\'var(--p6)\'" ',
+              'onmouseout="this.style.background=\'var(--p5)\'">',
+              'Set up vault',
+              '<svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">',
+                '<path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>',
+              '</svg>',
+            '</a>',
+            '</div>'
+          ].join('');
+          nudge.style.display = 'block';
+
+        } else {
+          // Softer card for minimum_done or skipped
+          nudge.innerHTML = [
+            '<div style="',
+              'background:var(--s2);border:1px solid var(--b1);border-radius:12px;',
+              'padding:var(--sp-4) var(--sp-5);margin-bottom:var(--sp-5);',
+              'display:flex;gap:var(--sp-4);align-items:center;flex-wrap:wrap;',
+              '">',
+            '<div style="flex:1;min-width:160px;">',
+              '<div style="font-weight:600;color:var(--tx1);font-size:var(--t-sm);margin-bottom:2px;">',
+                'Finish setting up your vault',
+              '</div>',
+              '<div style="color:var(--tx3);font-size:var(--t-xs);">',
+                'Vitals and lifestyle data help doctors give you better care.',
+              '</div>',
+            '</div>',
+            '<a href="/health-record" style="',
+              'font-size:var(--t-sm);color:var(--p5);font-weight:600;white-space:nowrap;text-decoration:none;">',
+              'Open health record →',
+            '</a>',
+            '</div>'
+          ].join('');
+          nudge.style.display = 'block';
+        }
+      })
+      .catch(function() { /* silently ignore — nudge is non-critical */ });
+  })();
+
   function showAlert(el, msg, type) {
     el.className = 'alert alert-' + (type || 'error');
     el.textContent = msg;

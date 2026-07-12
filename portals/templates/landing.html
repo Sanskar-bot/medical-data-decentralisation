@@ -772,6 +772,12 @@
       .then(function(r) { return r.json().then(function(data) { return {ok: r.ok, data: data}; }); })
       .then(function(res) {
         if (res.ok && res.data.redirect) {
+          // One-shot password relay for the onboarding wizard so the user doesn't
+          // have to retype their password. Stored in sessionStorage (per-tab, never
+          // sent to server) and deleted immediately after the wizard reads it.
+          if (res.data.redirect === '/onboarding' || res.data.redirect === '/onboarding-doctor') {
+            try { sessionStorage.setItem('mv_onboard_pw', d.password); } catch(e) {}
+          }
           window.location.href = res.data.redirect;
         } else {
           showAlert(alertEl, res.data.error || 'Registration failed.', 'error');

@@ -251,6 +251,48 @@ def profile():
     return render_template("profile.html", **_page_context())
 
 
+# ── Onboarding pages ─────────────────────────────────────────────────────────
+@app.route("/onboarding")
+def onboarding():
+    """Post-registration wizard for patients."""
+    if not session.get("logged_in") or session.get("role") != "patient":
+        return redirect("/")
+    ctx = _page_context()
+    ctx["today"] = __import__("datetime").date.today().isoformat()
+    return render_template("onboarding.html", **ctx)
+
+@app.route("/onboarding-doctor")
+def onboarding_doctor():
+    """Post-registration wizard for doctors."""
+    if not session.get("logged_in") or session.get("role") != "doctor":
+        return redirect("/")
+    return render_template("onboarding_doctor.html", **_page_context())
+
+
+# ── Onboarding status proxy (landing → backend) ───────────────────────────────
+@app.route("/patient/onboarding/status", methods=["GET", "POST"])
+def patient_onboarding_status_proxy():
+    """Proxy GET/POST /patient/onboarding/status to the backend."""
+    err = _patient_session_check()
+    if err: return err
+    jwt_tok = session.get("jwt_token", "")
+    hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
+    try:
+        if request.method == "GET":
+            r = http.get(f"{BACKEND}/patient/onboarding/status", headers=hdrs, timeout=10)
+        else:
+            r = http.post(f"{BACKEND}/patient/onboarding/status",
+                          json=request.get_json(force=True) or {},
+                          headers=hdrs, timeout=10)
+        try:
+            return jsonify(r.json()), r.status_code
+        except Exception:
+            return jsonify({"status": "pending"}), 200
+    except Exception as e:
+        app.logger.warning("onboarding status proxy error: %s", e)
+        return jsonify({"status": "pending"}), 200
+
+
 @app.route("/admin/doctors")
 def admin_create_doctor_page():
     guard = _require_session()
@@ -775,7 +817,10 @@ def auth_register():
             "message":      "ok",
             "profile_code": profile_code,
             "doctor_code":  doctor_code,
-            "redirect":     "/dashboard",
+            # Send patients to the onboarding wizard instead of the empty dashboard.
+            # The frontend stores the password in sessionStorage for one-shot handoff
+            # (see landing.html finalRegister) — cleared immediately after reading.
+            "redirect":     "/onboarding" if role == "patient" else "/dashboard",
         })
 
     except Exception as e:
@@ -861,7 +906,7 @@ def auth_register():
         return jsonify({
             "message":     "ok",
             "doctor_code": doctor_code,
-            "redirect":    "/dashboard",
+            "redirect":    "/onboarding-doctor",
         })
 
     except Exception as e:

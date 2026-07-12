@@ -1,0 +1,800 @@
+{% extends 'base.html' %}
+{% block title %}Set Up Your Vault{% endblock %}
+{% block topbar_title %}Health Vault Setup{% endblock %}
+
+{% block head %}
+<script src="{{ url_for('static', filename='js/record-save.js') }}"></script>
+<style>
+  /* ── Onboarding-specific overrides ───────────────────────────────────────── */
+  .onb-wrapper {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: var(--sp-8) var(--sp-4) var(--sp-16);
+  }
+
+  /* Progress bar */
+  .onb-progress {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-8);
+    justify-content: center;
+  }
+  .onb-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--b2);
+    transition: background .3s, transform .3s;
+    flex-shrink: 0;
+  }
+  .onb-dot.active  { background: var(--p5); transform: scale(1.25); }
+  .onb-dot.done    { background: var(--p4); }
+  .onb-connector   { flex: 1; max-width: 60px; height: 2px; background: var(--b2); border-radius: 1px; }
+  .onb-connector.done { background: var(--p4); }
+
+  /* Step header */
+  .onb-eyebrow {
+    font-size: var(--t-xs);
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--p5);
+    margin-bottom: var(--sp-2);
+  }
+  .onb-title {
+    font-size: var(--t-2xl);
+    font-weight: 700;
+    color: var(--tx1);
+    margin-bottom: var(--sp-2);
+  }
+  .onb-subtitle {
+    font-size: var(--t-sm);
+    color: var(--tx3);
+    line-height: 1.65;
+    margin-bottom: var(--sp-6);
+  }
+
+  /* Badge inline */
+  .badge-required {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px;
+    font-size: 10px; font-weight: 600; letter-spacing: .05em;
+    border-radius: 99px;
+    background: var(--ra); color: var(--r4);
+    text-transform: uppercase;
+    vertical-align: middle; margin-left: 6px;
+  }
+  .badge-optional {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px;
+    font-size: 10px; font-weight: 600; letter-spacing: .05em;
+    border-radius: 99px;
+    background: var(--ta); color: var(--tx3);
+    text-transform: uppercase;
+    vertical-align: middle; margin-left: 6px;
+  }
+
+  /* Step card animation */
+  .onb-step { display: none; animation: stepIn .28s ease both; }
+  .onb-step.active { display: block; }
+  @keyframes stepIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Checkbox toggle */
+  .check-row {
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: var(--sp-3) 0;
+    cursor: pointer;
+  }
+  .check-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--p5); cursor: pointer; }
+  .check-row label { font-size: var(--t-sm); color: var(--tx2); cursor: pointer; user-select: none; }
+
+  /* Footer bar */
+  .onb-footer {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-top: var(--sp-6);
+    flex-wrap: wrap;
+  }
+  .onb-skip-link {
+    margin-left: auto;
+    font-size: var(--t-sm);
+    color: var(--tx3);
+    cursor: pointer;
+    background: none; border: none; padding: 0;
+    transition: color .15s;
+  }
+  .onb-skip-link:hover { color: var(--tx2); }
+
+  /* Review summary */
+  .review-section {
+    background: var(--s2);
+    border: 1px solid var(--b1);
+    border-radius: 10px;
+    padding: var(--sp-5);
+    margin-bottom: var(--sp-4);
+  }
+  .review-section-title {
+    font-size: var(--t-xs); font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--tx3);
+    margin-bottom: var(--sp-3);
+  }
+  .review-field { display: flex; gap: var(--sp-3); font-size: var(--t-sm); padding: var(--sp-1) 0; }
+  .review-field-label { min-width: 140px; color: var(--tx3); flex-shrink: 0; }
+  .review-field-value { color: var(--tx1); font-weight: 500; }
+  .review-field-value.empty { color: var(--tx3); font-style: italic; }
+
+  /* Step 5 complete card */
+  .onb-complete-icon {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--p2), var(--p3));
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto var(--sp-5);
+    box-shadow: 0 4px 20px rgba(37,99,235,.2);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="onb-wrapper">
+
+  <!-- ── Hero ──────────────────────────────────────────────────────────────── -->
+  <div id="onb-hero" style="text-align:center; margin-bottom: var(--sp-8);">
+    <div style="display:inline-flex;align-items:center;gap:var(--sp-2);
+                background:var(--p1);border:1px solid var(--p3);border-radius:99px;
+                padding:var(--sp-1) var(--sp-4);margin-bottom:var(--sp-4);">
+      <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="var(--p5)" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+      </svg>
+      <span style="font-size:var(--t-xs);font-weight:600;color:var(--p5);">Zero-knowledge encrypted vault</span>
+    </div>
+    <h1 class="type-h1" style="margin-bottom:var(--sp-2);">Let's set up your health vault</h1>
+    <p style="color:var(--tx3);font-size:var(--t-sm);max-width:480px;margin:0 auto;line-height:1.7;">
+      Welcome, {{ name.split(' ')[0] }}! Complete the steps below to get the most out of MedVault.
+      Your data is encrypted in your browser — we never see it.
+    </p>
+  </div>
+
+  <!-- ── Progress ──────────────────────────────────────────────────────────── -->
+  <div class="onb-progress" id="onb-progress" aria-label="Onboarding steps">
+    <div class="onb-dot active" data-step="1" title="Safety basics"></div>
+    <div class="onb-connector" id="conn-1-2"></div>
+    <div class="onb-dot" data-step="2" title="Known risks"></div>
+    <div class="onb-connector" id="conn-2-3"></div>
+    <div class="onb-dot" data-step="3" title="Vitals"></div>
+    <div class="onb-connector" id="conn-3-4"></div>
+    <div class="onb-dot" data-step="4" title="Lifestyle"></div>
+    <div class="onb-connector" id="conn-4-5"></div>
+    <div class="onb-dot" data-step="5" title="Review &amp; finish"></div>
+  </div>
+
+  <!-- ── Global alert ───────────────────────────────────────────────────────  -->
+  <div id="onb-alert" style="display:none;margin-bottom:var(--sp-5);"></div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       STEP 1 — Safety Basics (REQUIRED)
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <div class="onb-step active card" id="onb-step-1" aria-label="Step 1 of 5">
+    <div class="onb-eyebrow">Step 1 of 5</div>
+    <div class="onb-title">
+      Safety basics
+      <span class="badge-required">Required</span>
+    </div>
+    <div class="onb-subtitle">
+      These fields let doctors and emergency responders help you quickly and safely.
+      Blood group and date of birth are used to derive your profile age and potential
+      compatibility for treatments.
+    </div>
+
+    <div class="grid-2" style="gap:var(--sp-4);">
+      <div class="input-group">
+        <label class="input-label" for="ob-dob">Date of Birth <span style="color:var(--r3)">*</span></label>
+        <input class="input-field" id="ob-dob" type="date" max="{{ today }}" autocomplete="bday">
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="ob-gender">Gender <span style="color:var(--r3)">*</span></label>
+        <select class="input-field" id="ob-gender">
+          <option value="">— Select —</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+          <option value="other">Other</option>
+          <option value="prefer_not_to_say">Prefer not to say</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="ob-blood">Blood Group <span style="color:var(--r3)">*</span></label>
+        <select class="input-field" id="ob-blood">
+          <option value="">— Select —</option>
+          <option>A+</option><option>A-</option>
+          <option>B+</option><option>B-</option>
+          <option>O+</option><option>O-</option>
+          <option>AB+</option><option>AB-</option>
+          <option value="unknown">Don't know</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="ob-emergency-name">Emergency Contact Name <span style="color:var(--r3)">*</span></label>
+        <input class="input-field" id="ob-emergency-name" type="text" placeholder="Jane Doe" autocomplete="off">
+      </div>
+      <div class="input-group" style="grid-column: span 1;">
+        <label class="input-label" for="ob-emergency-phone">Emergency Contact Phone <span style="color:var(--r3)">*</span></label>
+        <input class="input-field" id="ob-emergency-phone" type="tel" placeholder="+91 98765 43210" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="onb-footer">
+      <button class="btn-primary" id="step1-next" type="button">
+        <span id="step1-lbl">Continue</span>
+        <span id="step1-spin" class="spinner" style="display:none;"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       STEP 2 — Known Risks (REQUIRED — "none" is valid)
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <div class="onb-step card" id="onb-step-2" aria-label="Step 2 of 5">
+    <div class="onb-eyebrow">Step 2 of 5</div>
+    <div class="onb-title">
+      Known risks
+      <span class="badge-required">Required</span>
+    </div>
+    <div class="onb-subtitle">
+      Allergy and medical history flags are the most safety-critical part of your record.
+      Doctors must see this before prescribing anything. Checking "none known" is valid — but please confirm.
+    </div>
+
+    <div class="input-group" style="margin-bottom: var(--sp-2);">
+      <label class="input-label" for="ob-allergies">Allergies</label>
+      <p style="font-size:var(--t-xs);color:var(--tx3);margin-bottom:var(--sp-2);">
+        One per line or comma-separated. Include foods, drugs, latex, environmental, etc.
+      </p>
+      <textarea class="input-field" id="ob-allergies" rows="4"
+                placeholder="Penicillin&#10;Latex&#10;Peanuts"></textarea>
+    </div>
+    <label class="check-row" for="ob-no-allergies" id="ob-no-allergies-row">
+      <input type="checkbox" id="ob-no-allergies">
+      <label for="ob-no-allergies">I have no known allergies</label>
+    </label>
+
+    <div class="input-group" style="margin-top:var(--sp-5); margin-bottom:var(--sp-2);">
+      <label class="input-label" for="ob-history">Medical History</label>
+      <p style="font-size:var(--t-xs);color:var(--tx3);margin-bottom:var(--sp-2);">
+        Chronic conditions, past surgeries, significant diagnoses. One per line.
+      </p>
+      <textarea class="input-field" id="ob-history" rows="4"
+                placeholder="Type 2 Diabetes&#10;Hypertension&#10;Appendectomy (2015)"></textarea>
+    </div>
+    <label class="check-row" for="ob-no-history" id="ob-no-history-row">
+      <input type="checkbox" id="ob-no-history">
+      <label for="ob-no-history">I have no significant medical history</label>
+    </label>
+
+    <div class="onb-footer">
+      <button class="btn-secondary" id="step2-back" type="button">← Back</button>
+      <button class="btn-primary" id="step2-next" type="button">
+        <span id="step2-lbl">Save &amp; Continue</span>
+        <span id="step2-spin" class="spinner" style="display:none;"></span>
+      </button>
+      <button class="onb-skip-link" id="step2-skip" type="button" style="display:none;">Skip (not recommended)</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       STEP 3 — Vitals (OPTIONAL)
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <div class="onb-step card" id="onb-step-3" aria-label="Step 3 of 5">
+    <div class="onb-eyebrow">Step 3 of 5</div>
+    <div class="onb-title">
+      Vitals &amp; measurements
+      <span class="badge-optional">Optional</span>
+    </div>
+    <div class="onb-subtitle">
+      Used to calculate BMI and flag abnormal ranges when doctors review your record.
+      Skip if you don't have these handy — you can always add them later.
+    </div>
+
+    <div class="grid-2" style="gap:var(--sp-4);">
+      <div class="input-group">
+        <label class="input-label" for="ob-height">Height (cm)</label>
+        <input class="input-field" id="ob-height" type="number" min="50" max="250" placeholder="175">
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="ob-weight">Weight (kg)</label>
+        <input class="input-field" id="ob-weight" type="number" min="1" max="500" placeholder="70">
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="ob-bp">Blood Pressure</label>
+        <input class="input-field" id="ob-bp" type="text" placeholder="120/80 mmHg">
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="ob-hr">Heart Rate (bpm)</label>
+        <input class="input-field" id="ob-hr" type="number" min="20" max="300" placeholder="72">
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="ob-sugar">Blood Sugar</label>
+        <input class="input-field" id="ob-sugar" type="text" placeholder="90 mg/dL (fasting)">
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="ob-o2">Oxygen Saturation (%)</label>
+        <input class="input-field" id="ob-o2" type="number" min="50" max="100" placeholder="98">
+      </div>
+    </div>
+
+    <!-- BMI preview -->
+    <div id="bmi-preview" style="display:none; background:var(--p1); border:1px solid var(--p3);
+         border-radius:8px; padding:var(--sp-3) var(--sp-4); margin-top:var(--sp-4);
+         font-size:var(--t-sm); color:var(--p6);">
+      <strong>BMI:</strong> <span id="bmi-value">—</span>
+    </div>
+
+    <div class="onb-footer">
+      <button class="btn-secondary" id="step3-back" type="button">← Back</button>
+      <button class="btn-primary" id="step3-next" type="button">
+        <span id="step3-lbl">Save &amp; Continue</span>
+        <span id="step3-spin" class="spinner" style="display:none;"></span>
+      </button>
+      <button class="onb-skip-link" id="step3-skip" type="button">Skip for now</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       STEP 4 — Lifestyle (OPTIONAL)
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <div class="onb-step card" id="onb-step-4" aria-label="Step 4 of 5">
+    <div class="onb-eyebrow">Step 4 of 5</div>
+    <div class="onb-title">
+      Lifestyle
+      <span class="badge-optional">Optional</span>
+    </div>
+    <div class="onb-subtitle">
+      Lifestyle habits influence diagnoses and treatment plans. These are encrypted and
+      visible only to doctors you grant access to.
+    </div>
+
+    <div class="grid-2" style="gap:var(--sp-4);">
+      <div class="input-group">
+        <label class="input-label" for="ob-smoking">Smoking</label>
+        <select class="input-field" id="ob-smoking">
+          <option value="">— Select —</option>
+          <option value="Never">Never</option>
+          <option value="Former smoker">Former smoker</option>
+          <option value="Occasional">Occasional</option>
+          <option value="Daily">Daily</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="ob-alcohol">Alcohol</label>
+        <select class="input-field" id="ob-alcohol">
+          <option value="">— Select —</option>
+          <option value="None">None</option>
+          <option value="Occasional">Occasional</option>
+          <option value="Moderate">Moderate</option>
+          <option value="Heavy">Heavy</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="ob-exercise">Exercise frequency</label>
+        <select class="input-field" id="ob-exercise">
+          <option value="">— Select —</option>
+          <option value="Sedentary">Sedentary</option>
+          <option value="Light (1–2×/wk)">Light (1–2×/wk)</option>
+          <option value="Moderate (3–4×/wk)">Moderate (3–4×/wk)</option>
+          <option value="Active (5+×/wk)">Active (5+×/wk)</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label class="input-label" for="ob-diet">Diet</label>
+        <select class="input-field" id="ob-diet">
+          <option value="">— Select —</option>
+          <option value="Omnivore">Omnivore</option>
+          <option value="Vegetarian">Vegetarian</option>
+          <option value="Vegan">Vegan</option>
+          <option value="Keto">Keto</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="onb-footer">
+      <button class="btn-secondary" id="step4-back" type="button">← Back</button>
+      <button class="btn-primary" id="step4-next" type="button">
+        <span id="step4-lbl">Save &amp; Continue</span>
+        <span id="step4-spin" class="spinner" style="display:none;"></span>
+      </button>
+      <button class="onb-skip-link" id="step4-skip" type="button">Skip for now</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       STEP 5 — Review & Finish
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <div class="onb-step card" id="onb-step-5" aria-label="Step 5 of 5">
+    <div style="text-align:center; margin-bottom:var(--sp-6);">
+      <div class="onb-complete-icon">
+        <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="var(--p5)" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+        </svg>
+      </div>
+      <div class="onb-eyebrow">Step 5 of 5</div>
+      <div class="onb-title">Review &amp; finish</div>
+      <div class="onb-subtitle" style="max-width:480px;margin:0 auto;">
+        Here's what we've saved so far. Everything is encrypted.
+        You can edit any section from your Health Record at any time.
+      </div>
+    </div>
+
+    <!-- Review summary — populated by JS -->
+    <div id="review-basics" class="review-section"></div>
+    <div id="review-risks" class="review-section"></div>
+    <div id="review-vitals" class="review-section"></div>
+    <div id="review-lifestyle" class="review-section"></div>
+
+    <div class="onb-footer" style="justify-content:center; flex-direction:column; align-items:center; gap:var(--sp-3);">
+      <button class="btn-primary" id="step5-finish" type="button" style="min-width:200px;">
+        <span id="step5-lbl">Go to my dashboard</span>
+        <span id="step5-spin" class="spinner" style="display:none;"></span>
+      </button>
+      <p style="font-size:var(--t-xs);color:var(--tx3);text-align:center;">
+        Your vault is encrypted and ready.
+        <a href="/health-record" style="color:var(--p5);">Open full health record →</a>
+      </p>
+    </div>
+  </div>
+
+  <!-- ── Skipped/error fallback ──────────────────────────────────────────── -->
+  <div id="onb-no-pw" style="display:none;" class="card" style="text-align:center;">
+    <div style="font-size:var(--t-lg);font-weight:600;margin-bottom:var(--sp-4);">Session key not found</div>
+    <p style="color:var(--tx3);font-size:var(--t-sm);margin-bottom:var(--sp-5);">
+      Your password session expired. Please enter it below so your record can be saved securely.
+      Your password never leaves this page.
+    </p>
+    <div class="input-group" style="max-width:320px;margin:0 auto var(--sp-4);">
+      <label class="input-label" for="fallback-pw">Account Password</label>
+      <input class="input-field" id="fallback-pw" type="password" placeholder="Your registration password" autocomplete="current-password">
+    </div>
+    <button class="btn-primary" id="fallback-submit" type="button">Unlock vault →</button>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  // ── Password relay ──────────────────────────────────────────────────────────
+  // Read the one-shot password stored by the registration form, then immediately
+  // remove it from sessionStorage so it doesn't linger.
+  var _pw = '';
+  try {
+    _pw = sessionStorage.getItem('mv_onboard_pw') || '';
+    sessionStorage.removeItem('mv_onboard_pw');
+  } catch (e) {}
+
+  // In-memory state: we accumulate the record across steps
+  var _rec = {};
+
+  // ── Show/hide password gate ─────────────────────────────────────────────────
+  if (!_pw) {
+    // Show the fallback password gate, hide the wizard hero
+    document.getElementById('onb-hero').style.display = 'none';
+    document.getElementById('onb-progress').style.display = 'none';
+    document.querySelectorAll('.onb-step').forEach(function(s){ s.style.display = 'none'; });
+    document.getElementById('onb-no-pw').style.display = 'block';
+  }
+
+  document.getElementById('fallback-submit').addEventListener('click', function() {
+    var v = (document.getElementById('fallback-pw').value || '').trim();
+    if (!v) return;
+    _pw = v;
+    document.getElementById('onb-no-pw').style.display = 'none';
+    document.getElementById('onb-hero').style.display = '';
+    document.getElementById('onb-progress').style.display = '';
+    goStep(1);
+  });
+
+  // ── Step management ─────────────────────────────────────────────────────────
+  var _step = 1;
+
+  function goStep(n) {
+    document.querySelectorAll('.onb-step').forEach(function(el) {
+      el.classList.remove('active');
+    });
+    var el = document.getElementById('onb-step-' + n);
+    if (el) { el.classList.add('active'); }
+    _step = n;
+    updateProgress(n);
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  }
+
+  function updateProgress(n) {
+    var dots = document.querySelectorAll('.onb-dot');
+    var conns = document.querySelectorAll('.onb-connector');
+    dots.forEach(function(d, i) {
+      d.classList.remove('active', 'done');
+      if (i + 1 < n)  d.classList.add('done');
+      if (i + 1 === n) d.classList.add('active');
+    });
+    conns.forEach(function(c, i) {
+      c.classList.remove('done');
+      if (i + 1 < n) c.classList.add('done');
+    });
+  }
+
+  // ── Alert helper ────────────────────────────────────────────────────────────
+  function showAlert(msg, type) {
+    var el = document.getElementById('onb-alert');
+    el.className = 'alert alert-' + (type || 'error');
+    el.textContent = msg;
+    el.style.display = 'flex';
+    if (type === 'success') setTimeout(function() { el.style.display = 'none'; }, 4000);
+    el.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  }
+  function clearAlert() {
+    document.getElementById('onb-alert').style.display = 'none';
+  }
+
+  // ── Spinner helpers ─────────────────────────────────────────────────────────
+  function btnLoading(step) {
+    var btn = document.getElementById('step' + step + '-next') || document.getElementById('step' + step + '-finish');
+    if (!btn) return;
+    btn.disabled = true;
+    document.getElementById('step' + step + '-lbl').textContent = 'Saving…';
+    document.getElementById('step' + step + '-spin').style.display = 'inline-block';
+  }
+  function btnReset(step, label) {
+    var btn = document.getElementById('step' + step + '-next') || document.getElementById('step' + step + '-finish');
+    if (!btn) return;
+    btn.disabled = false;
+    document.getElementById('step' + step + '-lbl').textContent = label;
+    document.getElementById('step' + step + '-spin').style.display = 'none';
+  }
+
+  // ── Parse helpers ───────────────────────────────────────────────────────────
+  function parseLines(str) {
+    var items = [];
+    (str || '').split(/[\n,]/).forEach(function(s) {
+      s = s.trim(); if (s) items.push(s);
+    });
+    var seen = {}, result = [];
+    items.forEach(function(s) {
+      var k = s.toLowerCase();
+      if (!seen[k]) { seen[k] = true; result.push(s); }
+    });
+    return result;
+  }
+  function val(id) { return (document.getElementById(id).value || '').trim(); }
+
+  // ── STEP 1: Safety basics ───────────────────────────────────────────────────
+  // Allergies checkbox toggle
+  document.getElementById('ob-no-allergies').addEventListener('change', function() {
+    document.getElementById('ob-allergies').disabled = this.checked;
+    if (this.checked) document.getElementById('ob-allergies').value = '';
+  });
+  document.getElementById('ob-no-history').addEventListener('change', function() {
+    document.getElementById('ob-history').disabled = this.checked;
+    if (this.checked) document.getElementById('ob-history').value = '';
+  });
+
+  document.getElementById('step1-next').addEventListener('click', function() {
+    clearAlert();
+    var dob     = val('ob-dob');
+    var gender  = val('ob-gender');
+    var blood   = val('ob-blood');
+    var emgName = val('ob-emergency-name');
+    var emgPh   = val('ob-emergency-phone');
+
+    if (!dob)     { showAlert('Date of birth is required.', 'error'); return; }
+    if (!gender)  { showAlert('Please select a gender.', 'error'); return; }
+    if (!blood)   { showAlert('Please select a blood group (choose "Don\'t know" if unsure).', 'error'); return; }
+    if (!emgName) { showAlert('Emergency contact name is required.', 'error'); return; }
+    if (!emgPh)   { showAlert('Emergency contact phone is required.', 'error'); return; }
+
+    // Calculate age from DOB
+    var ageYears = '';
+    try {
+      var dob_d = new Date(dob);
+      var today = new Date();
+      var yrs = today.getFullYear() - dob_d.getFullYear();
+      var m = today.getMonth() - dob_d.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dob_d.getDate())) yrs--;
+      ageYears = String(yrs);
+    } catch(e){}
+
+    btnLoading(1);
+    var partial = {
+      dob: dob,
+      age: ageYears,
+      gender: gender,
+      blood_group: blood,
+      emergency_contact: emgName + ' — ' + emgPh,
+    };
+    MV.saveRecord(_pw, partial, function(ok, record, err) {
+      btnReset(1, 'Continue');
+      if (!ok) { showAlert(err || 'Could not save. Check your password and try again.', 'error'); return; }
+      if (record) _rec = record;
+      Object.assign(_rec, partial);
+      goStep(2);
+    });
+  });
+
+  // ── STEP 2: Known risks ─────────────────────────────────────────────────────
+  document.getElementById('step2-back').addEventListener('click', function() { goStep(1); });
+
+  document.getElementById('step2-next').addEventListener('click', function() {
+    clearAlert();
+    var noAllergies = document.getElementById('ob-no-allergies').checked;
+    var noHistory   = document.getElementById('ob-no-history').checked;
+    var allergyText = val('ob-allergies');
+    var historyText = val('ob-history');
+
+    // Must explicitly confirm if nothing is entered
+    if (!noAllergies && !allergyText) {
+      showAlert('Please list your allergies, or check "No known allergies" to confirm.', 'error');
+      return;
+    }
+    if (!noHistory && !historyText) {
+      showAlert('Please list your medical history, or check the confirmation box.', 'error');
+      return;
+    }
+
+    var allergies       = noAllergies ? ['No known allergies'] : parseLines(allergyText);
+    var medical_history = noHistory   ? ['No significant history'] : parseLines(historyText);
+
+    btnLoading(2);
+    var partial = { allergies: allergies, medical_history: medical_history };
+    MV.saveRecord(_pw, partial, function(ok, record, err) {
+      btnReset(2, 'Save & Continue');
+      if (!ok) { showAlert(err || 'Could not save. Please try again.', 'error'); return; }
+      if (record) _rec = record;
+      Object.assign(_rec, partial);
+      // Mark minimum required steps done
+      MV.setOnboardingStatus('minimum_done', function(){});
+      goStep(3);
+    });
+  });
+
+  // ── STEP 3: Vitals ──────────────────────────────────────────────────────────
+  // BMI live preview
+  ['ob-height','ob-weight'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', function() {
+      var h = parseFloat(document.getElementById('ob-height').value);
+      var w = parseFloat(document.getElementById('ob-weight').value);
+      if (h > 0 && w > 0) {
+        var bmi = (w / Math.pow(h / 100, 2)).toFixed(1);
+        document.getElementById('bmi-value').textContent = bmi + ' kg/m²';
+        document.getElementById('bmi-preview').style.display = 'block';
+      } else {
+        document.getElementById('bmi-preview').style.display = 'none';
+      }
+    });
+  });
+
+  document.getElementById('step3-back').addEventListener('click', function() { goStep(2); });
+  document.getElementById('step3-skip').addEventListener('click', function() { goStep(4); });
+
+  document.getElementById('step3-next').addEventListener('click', function() {
+    clearAlert();
+    var partial = {
+      height:            val('ob-height'),
+      weight:            val('ob-weight'),
+      blood_pressure:    val('ob-bp'),
+      heart_rate:        val('ob-hr'),
+      blood_sugar:       val('ob-sugar'),
+      oxygen_saturation: val('ob-o2'),
+    };
+    // Only save if at least one field is filled
+    var hasData = Object.values(partial).some(function(v) { return v !== ''; });
+    if (!hasData) { goStep(4); return; }
+
+    btnLoading(3);
+    MV.saveRecord(_pw, partial, function(ok, record, err) {
+      btnReset(3, 'Save & Continue');
+      if (!ok) { showAlert(err || 'Could not save vitals. Please try again.', 'error'); return; }
+      if (record) _rec = record;
+      Object.assign(_rec, partial);
+      goStep(4);
+    });
+  });
+
+  // ── STEP 4: Lifestyle ───────────────────────────────────────────────────────
+  document.getElementById('step4-back').addEventListener('click', function() { goStep(3); });
+  document.getElementById('step4-skip').addEventListener('click', function() { buildReview(); goStep(5); });
+
+  document.getElementById('step4-next').addEventListener('click', function() {
+    clearAlert();
+    var partial = {
+      smoking:  val('ob-smoking'),
+      alcohol:  val('ob-alcohol'),
+      exercise: val('ob-exercise'),
+      diet:     val('ob-diet'),
+    };
+    var hasData = Object.values(partial).some(function(v) { return v !== ''; });
+    if (!hasData) { buildReview(); goStep(5); return; }
+
+    btnLoading(4);
+    MV.saveRecord(_pw, partial, function(ok, record, err) {
+      btnReset(4, 'Save & Continue');
+      if (!ok) { showAlert(err || 'Could not save lifestyle data. Please try again.', 'error'); return; }
+      if (record) _rec = record;
+      Object.assign(_rec, partial);
+      buildReview();
+      goStep(5);
+    });
+  });
+
+  // ── STEP 5: Review ──────────────────────────────────────────────────────────
+  function esc(v) {
+    return (v || '').toString()
+      .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+      .replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function reviewRow(label, value) {
+    var empty = !value || String(value).trim() === '' || value === '—';
+    return '<div class="review-field">' +
+      '<span class="review-field-label">' + esc(label) + '</span>' +
+      '<span class="review-field-value' + (empty ? ' empty' : '') + '">' +
+        (empty ? 'Not provided' : esc(String(value))) +
+      '</span></div>';
+  }
+  function reviewArrRow(label, arr) {
+    var empty = !Array.isArray(arr) || arr.length === 0;
+    var displayVal = empty ? 'Not provided' : arr.join(', ');
+    return '<div class="review-field">' +
+      '<span class="review-field-label">' + esc(label) + '</span>' +
+      '<span class="review-field-value' + (empty ? ' empty' : '') + '">' + esc(displayVal) + '</span></div>';
+  }
+
+  function buildReview() {
+    var r = _rec;
+    document.getElementById('review-basics').innerHTML =
+      '<div class="review-section-title">Safety Basics</div>' +
+      reviewRow('Date of Birth', r.dob) +
+      reviewRow('Age', r.age ? r.age + ' years' : '') +
+      reviewRow('Gender', r.gender) +
+      reviewRow('Blood Group', r.blood_group) +
+      reviewRow('Emergency Contact', r.emergency_contact);
+
+    document.getElementById('review-risks').innerHTML =
+      '<div class="review-section-title">Known Risks</div>' +
+      reviewArrRow('Allergies', r.allergies) +
+      reviewArrRow('Medical History', r.medical_history);
+
+    document.getElementById('review-vitals').innerHTML =
+      '<div class="review-section-title">Vitals</div>' +
+      reviewRow('Height', r.height ? r.height + ' cm' : '') +
+      reviewRow('Weight', r.weight ? r.weight + ' kg' : '') +
+      reviewRow('Blood Pressure', r.blood_pressure) +
+      reviewRow('Heart Rate', r.heart_rate ? r.heart_rate + ' bpm' : '') +
+      reviewRow('Blood Sugar', r.blood_sugar) +
+      reviewRow('O₂ Saturation', r.oxygen_saturation ? r.oxygen_saturation + '%' : '');
+
+    document.getElementById('review-lifestyle').innerHTML =
+      '<div class="review-section-title">Lifestyle</div>' +
+      reviewRow('Smoking', r.smoking) +
+      reviewRow('Alcohol', r.alcohol) +
+      reviewRow('Exercise', r.exercise) +
+      reviewRow('Diet', r.diet);
+  }
+
+  document.getElementById('step5-finish').addEventListener('click', function() {
+    var btn = document.getElementById('step5-finish');
+    btn.disabled = true;
+    document.getElementById('step5-lbl').textContent = 'Finishing…';
+    document.getElementById('step5-spin').style.display = 'inline-block';
+    MV.setOnboardingStatus('complete', function() {
+      window.location.href = '/dashboard';
+    });
+  });
+
+  // ── Init ────────────────────────────────────────────────────────────────────
+  if (_pw) goStep(1);
+})();
+</script>
+{% endblock %}

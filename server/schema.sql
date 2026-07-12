@@ -452,4 +452,18 @@ CREATE TABLE IF NOT EXISTS phone_otp_store (
     attempts    INTEGER DEFAULT 0
 );
 
+-- ── Onboarding status ──────────────────────────────────────────────────────
+-- Tracks wizard completion as a plain flag — no medical data, no decryption
+-- needed. Kept separate from patient_details so the dashboard can show a nudge
+-- without touching the encrypted health record.
+-- Values: 'pending' | 'minimum_done' | 'complete' | 'skipped'
+ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_status TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_completed_at TIMESTAMPTZ;
+
+-- Doctor verification status (fast-follow — field exists now, verification logic added later)
+-- Values: 'unverified' | 'pending_review' | 'verified'
+ALTER TABLE users ADD COLUMN IF NOT EXISTS doctor_verification_status TEXT NOT NULL DEFAULT 'unverified';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS doctor_license_number TEXT;
+
 COMMIT;
+
