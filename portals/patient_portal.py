@@ -93,7 +93,7 @@ def index():
 @login_required(role="patient")
 def api_register():
     if request.method == "OPTIONS": return jsonify({}), 200
-    d = request.get_json(force=True)
+    d = request.get_json(silent=True) or {}
     name, age    = d.get("name",""), d.get("age","")
     email, notes = d.get("email",""), d.get("notes","")
     pw           = d.get("password","")
@@ -160,7 +160,7 @@ def api_register():
 @login_required(role="patient")
 def api_load_profile():
     if request.method == "OPTIONS": return jsonify({}), 200
-    d = request.get_json(force=True)
+    d = request.get_json(silent=True) or {}
     code, pw = d.get("profile_code","").strip(), d.get("password","")
     uf = user_json(code)
     if not os.path.exists(uf): return jsonify({"error":"Profile not found on this machine"}), 404
@@ -219,7 +219,7 @@ def api_requests(code):
 @login_required(role="patient")
 def api_approve():
     if request.method == "OPTIONS": return jsonify({}), 200
-    d = request.get_json(force=True)
+    d = request.get_json(silent=True) or {}
     code, req_id = d.get("profile_code",""), d.get("request_id","")
     doc_code, doc_pub, pw = d.get("doctor_code",""), d.get("doctor_public_pem",""), d.get("password","")
     uf = user_json(code)
@@ -250,7 +250,7 @@ def api_approve():
 @login_required(role="patient")
 def api_deny():
     if request.method == "OPTIONS": return jsonify({}), 200
-    d = request.get_json(force=True)
+    d = request.get_json(silent=True) or {}
     try:
         r = http.post(f"{BACKEND}/update_request_status",
             json={"request_id":d.get("request_id"),"status":"denied"}, headers=bh(), timeout=8)
@@ -272,7 +272,7 @@ def api_restore_key():
     if request.method == "OPTIONS":
         return jsonify({}), 200
 
-    d = request.get_json(force=True) or {}
+    d = request.get_json(silent=True) or {}
     password = d.get("password", "").strip()
     if not password:
         return jsonify({"error": "Password is required"}), 400
@@ -343,7 +343,7 @@ def api_restore_key():
 @app.route("/api/auth/otp", methods=["POST","OPTIONS"])
 def patient_otp():  # intentionally unprotected — used during registration flow
     if request.method == "OPTIONS": return jsonify({}), 200
-    d = request.get_json(force=True)
+    d = request.get_json(silent=True) or {}
     try:
         r = http.post(f"{BACKEND}/auth/otp/send", json={"email":d.get("email","")}, headers=bh(), timeout=8)
         return jsonify(r.json()), r.status_code
@@ -352,7 +352,7 @@ def patient_otp():  # intentionally unprotected — used during registration flo
 @app.route("/api/auth/verify_otp", methods=["POST","OPTIONS"])
 def patient_verify_otp():  # intentionally unprotected — used during registration flow
     if request.method == "OPTIONS": return jsonify({}), 200
-    d = request.get_json(force=True)
+    d = request.get_json(silent=True) or {}
     try:
         r = http.post(f"{BACKEND}/auth/otp/verify",
                       json={"email":d.get("email",""),"otp":d.get("otp","")}, headers=bh(), timeout=8)
@@ -362,7 +362,7 @@ def patient_verify_otp():  # intentionally unprotected — used during registrat
 @app.route("/api/auth/login", methods=["POST","OPTIONS"])
 def patient_login():  # intentionally unprotected — this IS the login endpoint
     if request.method == "OPTIONS": return jsonify({}), 200
-    d = request.get_json(force=True)
+    d = request.get_json(silent=True) or {}
     raw_pw = d.get("password", "")
     pw_hash = hash_password(raw_pw)
     try:
@@ -403,7 +403,7 @@ def patient_jwt_access_requests():
 def patient_access_respond():
     if request.method == "OPTIONS": return jsonify({}), 200
     token = request.headers.get("Authorization","").replace("Bearer ","")
-    d = request.get_json(force=True)
+    d = request.get_json(silent=True) or {}
     try:
         r = http.post(f"{BACKEND}/access/respond", json=d, headers=bh(token), timeout=8)
         return jsonify(r.json()), r.status_code
@@ -431,7 +431,7 @@ def patient_audit_log():
 @login_required(role="patient")
 def api_lookup_doctor():
     if request.method == "OPTIONS": return jsonify({}), 200
-    d = request.get_json(force=True); code = d.get("doctor_code","").strip()
+    d = request.get_json(silent=True) or {}; code = d.get("doctor_code","").strip()
     doctors_dir = os.path.join(ROOT, "doctor", "Doctors")
     if os.path.exists(doctors_dir):
         for folder in os.listdir(doctors_dir):
@@ -451,7 +451,7 @@ def api_lookup_doctor():
 @login_required(role="patient")
 def api_qr_transfer():
     if request.method == "OPTIONS": return jsonify({}), 200
-    d = request.get_json(force=True)
+    d = request.get_json(silent=True) or {}
     pat_code, doc_code, pw = d.get("profile_code",""), d.get("doctor_code",""), d.get("password","")
     uf = user_json(pat_code)
     if not os.path.exists(uf): return jsonify({"error":"Patient profile not found"}), 404
@@ -570,7 +570,7 @@ def api_note_image(filename):
 def proxy_appointment_request():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     try:
-        r = http.post(f"{BACKEND}/api/patient/appointment-request", json=request.get_json(force=True), headers=bh(token), timeout=8)
+        r = http.post(f"{BACKEND}/api/patient/appointment-request", json=request.get_json(silent=True) or {}, headers=bh(token), timeout=8)
         return jsonify(r.json()), r.status_code
     except Exception as e: return jsonify({"error": str(e)}), 502
 
@@ -618,9 +618,9 @@ def emr_proxy(subpath):
         elif request.method == "DELETE":
             r = http.delete(url, headers=headers, json=request.get_json(silent=True), timeout=10)
         elif request.method == "PUT":
-            r = http.put(url, headers=headers, json=request.get_json(force=True), timeout=10)
+            r = http.put(url, headers=headers, json=request.get_json(silent=True) or {}, timeout=10)
         else:  # POST
-            r = http.post(url, headers=headers, json=request.get_json(force=True), timeout=10)
+            r = http.post(url, headers=headers, json=request.get_json(silent=True) or {}, timeout=10)
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 502

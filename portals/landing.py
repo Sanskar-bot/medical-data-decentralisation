@@ -285,7 +285,7 @@ def patient_onboarding_status_proxy():
             r = http.get(f"{BACKEND}/patient/onboarding/status", headers=hdrs, timeout=10)
         else:
             r = http.post(f"{BACKEND}/patient/onboarding/status",
-                          json=request.get_json(force=True) or {},
+                          json=request.get_json(silent=True) or {},
                           headers=hdrs, timeout=10)
         try:
             return jsonify(r.json()), r.status_code
@@ -317,7 +317,7 @@ def admin_create_doctor_proxy():
     try:
         r = http.post(
             f"{BACKEND}/admin/doctors",
-            json=request.get_json(force=True) or {},
+            json=request.get_json(silent=True) or {},
             headers={**_headers(), "Authorization": f"Bearer {jwt_tok}"},
             timeout=20,
         )
@@ -369,7 +369,7 @@ def logout():
 @app.route("/login", methods=["POST"])
 def login():
     try:
-        d = request.get_json(force=True) or {}
+        d = request.get_json(silent=True) or {}
         # Accept either email or username in the same field
         identifier = (d.get("email") or d.get("username") or "").strip().lower()
         password   = d.get("password") or ""
@@ -472,7 +472,7 @@ def login():
 @app.route("/auth/set_initial_password", methods=["POST"])
 def set_initial_password():
     try:
-        d = request.get_json(force=True) or {}
+        d = request.get_json(silent=True) or {}
         temp_token = (d.get("temp_token") or "").strip()
         new_pw = d.get("new_password") or ""
         if not temp_token or not new_pw:
@@ -524,7 +524,7 @@ def set_initial_password():
 def login_upgrade():
     """Transparently upgrades a legacy-hash account to werkzeug pbkdf2 and logs in."""
     try:
-        d          = request.get_json(force=True) or {}
+        d          = request.get_json(silent=True) or {}
         identifier = (d.get("identifier") or "").strip().lower()
         old_hash   = (d.get("old_hash") or "").strip()
         new_pw     = d.get("new_password") or ""
@@ -588,22 +588,22 @@ def login_upgrade():
 # ── OTP PROXY ROUTES ──────────────────────────────────────────────────────────
 @app.route("/auth/otp/send", methods=["POST"])
 def proxy_otp_send():
-    resp = http.post(f"{BACKEND}/auth/otp/send", json=request.get_json(force=True), headers=_headers(), timeout=10)
+    resp = http.post(f"{BACKEND}/auth/otp/send", json=request.get_json(silent=True) or {}, headers=_headers(), timeout=10)
     return jsonify(resp.json()), resp.status_code
 
 @app.route("/auth/otp/verify", methods=["POST"])
 def proxy_otp_verify():
-    resp = http.post(f"{BACKEND}/auth/otp/verify", json=request.get_json(force=True), headers=_headers(), timeout=10)
+    resp = http.post(f"{BACKEND}/auth/otp/verify", json=request.get_json(silent=True) or {}, headers=_headers(), timeout=10)
     return jsonify(resp.json()), resp.status_code
 
 @app.route("/auth/otp/send_sms", methods=["POST"])
 def proxy_otp_send_sms():
-    resp = http.post(f"{BACKEND}/auth/otp/send_sms", json=request.get_json(force=True), headers=_headers(), timeout=10)
+    resp = http.post(f"{BACKEND}/auth/otp/send_sms", json=request.get_json(silent=True) or {}, headers=_headers(), timeout=10)
     return jsonify(resp.json()), resp.status_code
 
 @app.route("/auth/otp/verify_sms", methods=["POST"])
 def proxy_otp_verify_sms():
-    resp = http.post(f"{BACKEND}/auth/otp/verify_sms", json=request.get_json(force=True), headers=_headers(), timeout=10)
+    resp = http.post(f"{BACKEND}/auth/otp/verify_sms", json=request.get_json(silent=True) or {}, headers=_headers(), timeout=10)
     return jsonify(resp.json()), resp.status_code
 
 
@@ -620,7 +620,7 @@ def proxy_check_availability():
 def auth_register():
     try:
         import uuid as _uuid
-        d        = request.get_json(force=True) or {}
+        d        = request.get_json(silent=True) or {}
         role     = d.get("role", "patient")
         name     = (d.get("name") or "").strip()
         email    = (d.get("email") or "").strip().lower()
@@ -949,7 +949,7 @@ def patient_record():
     err = _patient_session_check()
     if err: return err
     try:
-        d            = request.get_json(force=True) or {}
+        d            = request.get_json(silent=True) or {}
         pw           = d.get("password", "")
         update_data  = d.get("update", None)
         profile_code = session.get("profile_code", "")
@@ -1133,7 +1133,7 @@ def patient_approve():
     err = _patient_session_check()
     if err: return err
     try:
-        d            = request.get_json(force=True) or {}
+        d            = request.get_json(silent=True) or {}
         pw           = d.get("password", "")
         request_id   = d.get("request_id", "")
         doc_code     = d.get("doctor_code", "")
@@ -1292,7 +1292,7 @@ def patient_reimport_key():
     profile_code = session.get("profile_code", "")
     doc_code     = session.get("doctor_code", "")
     try:
-        body = request.get_json(force=True) or {}
+        body = request.get_json(silent=True) or {}
         pem  = (body.get("pem") or "").strip()
         if not pem:
             return jsonify({"error": "pem is required"}), 400
@@ -1317,7 +1317,7 @@ def patient_deny():
     err = _patient_session_check()
     if err: return err
     try:
-        d       = request.get_json(force=True) or {}
+        d       = request.get_json(silent=True) or {}
         jwt_tok = session.get("jwt_token", "")
         request_id = d.get("request_id", "")
         if not request_id:
@@ -1831,7 +1831,7 @@ def doctor_load_profile():
     err = _doctor_session_check()
     if err: return err
     try:
-        d = request.get_json(force=True) or {}
+        d = request.get_json(silent=True) or {}
         doc_code = session.get("doctor_code", "")
         pw = d.get("password", "")
         try:
@@ -1867,7 +1867,7 @@ def doctor_request_access():
     err = _doctor_session_check()
     if err: return err
     try:
-        d = request.get_json(force=True) or {}
+        d = request.get_json(silent=True) or {}
         raw_code = d.get("profile_code") or d.get("patient_code") or ""
         pat_code = _resolve_patient_code(raw_code.strip())
         if not pat_code:
@@ -1946,7 +1946,7 @@ def doctor_fetch_record():
     err = _doctor_session_check()
     if err: return err
     try:
-        d = request.get_json(force=True) or {}
+        d = request.get_json(silent=True) or {}
         # Accept either key name â€” JS sends 'profile_code', older callers send 'patient_code'
         raw_code = d.get("profile_code") or d.get("patient_code") or ""
         pat_code, _ = _resolve_patient_uuid_or_code(raw_code.strip())
@@ -2089,7 +2089,7 @@ def doctor_add_note():
     if err: return err
     try:
         from datetime import datetime as _dt, timedelta as _td, timezone as _tz
-        d = request.get_json(force=True) or {}
+        d = request.get_json(silent=True) or {}
 
         pat_code = _resolve_patient_code(
             (d.get("patient_code") or d.get("profile_code") or "").strip()
@@ -2217,7 +2217,7 @@ def doctor_delete_note(note_id):
             return err
 
     try:
-        d = request.get_json(force=True) or {}
+        d = request.get_json(silent=True) or {}
         d["doctor_code"] = session.get("doctor_code", "")
         r = http.delete(
             f"{DOCTOR_PORTAL}/api/delete_note/{note_id}",
@@ -2259,7 +2259,7 @@ def api_resolve_patient():
     """Accept a patient username or profile_code and return the profile_code."""
     if not session.get("logged_in"):
         return jsonify({"error": "unauthenticated"}), 401
-    d = request.get_json(force=True) or {}
+    d = request.get_json(silent=True) or {}
     raw = (d.get("username") or d.get("patient_code") or "").strip()
     if not raw:
         return jsonify({"error": "username required"}), 400
@@ -2474,7 +2474,7 @@ def doctor_appt_respond_direct(req_id):
     if not session.get("logged_in") or session.get("role") != "doctor":
         return jsonify({"error": "unauthenticated"}), 401
 
-    d      = request.get_json(force=True) or {}
+    d      = request.get_json(silent=True) or {}
     status = d.get("status", "")
     if status not in ("accepted", "rejected", "completed", "rescheduled"):
         return jsonify({"error": "invalid_status"}), 400
@@ -2707,9 +2707,9 @@ def emr_proxy(subpath):
         elif request.method == "DELETE":
             r = http.delete(url, headers=headers, json=request.get_json(silent=True), timeout=10)
         elif request.method == "PUT":
-            r = http.put(url, headers=headers, json=request.get_json(force=True), timeout=10)
+            r = http.put(url, headers=headers, json=request.get_json(silent=True) or {}, timeout=10)
         else:  # POST
-            r = http.post(url, headers=headers, json=request.get_json(force=True), timeout=10)
+            r = http.post(url, headers=headers, json=request.get_json(silent=True) or {}, timeout=10)
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 502
@@ -2736,7 +2736,7 @@ def proxy_patient_appt_request():
         return jsonify({"error": "unauthenticated"}), 401
     try:
         r = http.post(f"{BACKEND}/api/patient/appointment-request",
-                      json=request.get_json(force=True) or {},
+                      json=request.get_json(silent=True) or {},
                       headers=_jwt_headers(), timeout=10)
         return jsonify(r.json()), r.status_code
     except Exception as e:
@@ -2776,7 +2776,7 @@ def proxy_doctor_appt_respond(req_id):
         return jsonify({"error": "unauthenticated"}), 401
     try:
         r = http.post(f"{BACKEND}/api/doctor/appointment-requests/{req_id}/respond",
-                      json=request.get_json(force=True) or {},
+                      json=request.get_json(silent=True) or {},
                       headers=_jwt_headers(), timeout=10)
         return jsonify(r.json()), r.status_code
     except Exception as e:
@@ -2788,7 +2788,7 @@ def proxy_doctor_appt_respond(req_id):
 def proxy_doctor_appt_create():
     if not session.get("logged_in"):
         return jsonify({"error": "unauthenticated"}), 401
-    d = request.get_json(force=True) or {}
+    d = request.get_json(silent=True) or {}
     # Resolve patient username in patient_username field â†’ profile_code
     raw = d.get("patient_username", "").strip()
     if raw:
@@ -3209,7 +3209,7 @@ def patient_emr_profile_direct():
         profiles = []
 
     if request.method == "POST":
-        d = request.get_json(force=True) or {}
+        d = request.get_json(silent=True) or {}
         d["patient_id"] = pid
         # Update existing or insert
         updated = False
@@ -3233,7 +3233,7 @@ def patient_appt_submit():
     """Patient submits an appointment request - stored directly with correct profile_code."""
     if not session.get("logged_in"):
         return jsonify({"error": "unauthenticated"}), 401
-    d = request.get_json(force=True) or {}
+    d = request.get_json(silent=True) or {}
     import uuid as _uuid_appt
     from datetime import datetime as _dt_appt, timezone as _tz_appt
     pid      = session.get("profile_code", "")
@@ -3331,7 +3331,7 @@ def patient_revoke():
     err = _patient_session_check()
     if err: return err
     try:
-        d = request.get_json(force=True) or {}
+        d = request.get_json(silent=True) or {}
         # Use the access/respond endpoint with action=revoke
         r = http.post(
             f"{BACKEND}/access/respond",
@@ -3590,7 +3590,7 @@ def doctor_add_prescription():
     err = _doctor_session_check()
     if err: return err
     try:
-        d = request.get_json(force=True) or {}
+        d = request.get_json(silent=True) or {}
         raw_code    = (d.get("patient_code") or d.get("profile_code") or "").strip()
         pat_code, _ = _resolve_patient_uuid_or_code(raw_code)
         diagnosis   = d.get("diagnosis", "").strip()
@@ -3662,7 +3662,7 @@ def doctor_add_lab_report():
     err = _doctor_session_check()
     if err: return err
     try:
-        d = request.get_json(force=True) or {}
+        d = request.get_json(silent=True) or {}
         raw_code    = (d.get("patient_code") or d.get("profile_code") or "").strip()
         pat_code, _ = _resolve_patient_uuid_or_code(raw_code)
         report_type = d.get("report_type", "General").strip()
@@ -3766,7 +3766,7 @@ def api_cache_password():
     """
     if not session.get("logged_in"):
         return jsonify({"error": "not_logged_in"}), 401
-    d = request.get_json(force=True) or {}
+    d = request.get_json(silent=True) or {}
     pw = d.get("password", "")
     if pw:
         session["_pw_cache"] = pw

@@ -253,7 +253,7 @@ def upsert_patient_profile(patient_id):
     if p.get("role") == "patient" and p.get("uid") != patient_id:
         return jsonify({"error": "forbidden"}), 403
 
-    body = request.get_json(force=True) or {}
+    body = request.get_json(silent=True) or {}
     body["patient_id"] = patient_id
 
     errors = models.validate_patient_profile(body)
@@ -324,7 +324,7 @@ def upsert_patient_profile(patient_id):
 @_require_jwt_deco(roles=["doctor", "admin"])
 @_rate_limited(max_calls=20, window=60)
 def create_appointment():
-    body = request.get_json(force=True) or {}
+    body = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
     # Auto-fill doctor_id from JWT if not provided
@@ -371,7 +371,7 @@ def list_doctor_appointments(doctor_id):
 @emr_bp.route("/appointments/<appointment_id>", methods=["PUT"])
 @_require_jwt_deco(roles=["doctor", "admin"])
 def update_appointment(appointment_id):
-    body = request.get_json(force=True) or {}
+    body = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
     existing = store.get_appointment(appointment_id)
@@ -426,7 +426,7 @@ def delete_appointment(appointment_id):
 @_require_jwt_deco(roles=["doctor", "admin"])
 @_rate_limited(max_calls=20, window=60)
 def create_prescription():
-    body  = request.get_json(force=True) or {}
+    body  = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
     # Use doctor_code claim (not uid which is now UUID)
@@ -540,7 +540,7 @@ def get_prescription(prescription_id):
 @_require_jwt_deco(roles=["doctor", "admin"])
 @_rate_limited(max_calls=20, window=60)
 def create_lab_report():
-    body  = request.get_json(force=True) or {}
+    body  = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
     # Use doctor_code claim (not uid which is now UUID)
@@ -637,7 +637,7 @@ def admin_list_users():
 @_rate_limited(max_calls=5, window=60)
 def admin_change_role(user_id):
     """Change a user's role (admin only)."""
-    body = request.get_json(force=True) or {}
+    body = request.get_json(silent=True) or {}
     new_role = body.get("role", "")
     if new_role not in ("patient", "doctor", "admin"):
         return jsonify({"error": "invalid role"}), 400
@@ -700,7 +700,7 @@ def admin_stats():
 @_require_jwt_deco(roles=["doctor", "admin"])
 @_rate_limited(max_calls=20, window=60)
 def create_vitals():
-    body  = request.get_json(force=True) or {}
+    body  = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
     raw_patient_id = body.get("patient_id", "")
@@ -750,7 +750,7 @@ def list_patient_vitals(patient_id):
 @_require_jwt_deco(roles=["doctor", "admin"])
 @_rate_limited(max_calls=20, window=60)
 def create_condition():
-    body  = request.get_json(force=True) or {}
+    body  = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
     # Auto-fill recorded_by from JWT, matching how create_prescription fills doctor_id
@@ -794,7 +794,7 @@ def list_patient_conditions(patient_id):
 @emr_bp.route("/conditions/<condition_id>", methods=["PUT"])
 @_require_jwt_deco(roles=["doctor", "admin"])
 def update_condition(condition_id):
-    body  = request.get_json(force=True) or {}
+    body  = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
     existing = store.get_condition(condition_id)
@@ -836,7 +836,7 @@ def update_condition(condition_id):
 @_require_jwt_deco(roles=["doctor", "admin"])
 @_rate_limited(max_calls=20, window=60)
 def create_encounter():
-    body  = request.get_json(force=True) or {}
+    body  = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
     # Auto-fill doctor_id from JWT
@@ -936,7 +936,7 @@ def get_encounter_bundle(encounter_id):
 @emr_bp.route("/encounters/<encounter_id>", methods=["PUT"])
 @_require_jwt_deco(roles=["doctor", "admin"])
 def update_encounter(encounter_id):
-    body  = request.get_json(force=True) or {}
+    body  = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
     existing = store.get_encounter(encounter_id)

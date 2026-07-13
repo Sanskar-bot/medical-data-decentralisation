@@ -143,7 +143,7 @@ def index():
 @login_required(role="doctor")
 def api_register():
     if request.method == "OPTIONS": return jsonify({}), 200
-    d    = request.get_json(force=True)
+    d    = request.get_json(silent=True) or {}
     name = d.get("name",""); spec = d.get("specialization","")
     hosp = d.get("hospital",""); email = d.get("email",""); pw = d.get("password","")
     if not name: return jsonify({"error":"Name is required"}), 400
@@ -188,7 +188,7 @@ def api_register():
 @login_required(role="doctor")
 def api_load_profile():
     if request.method == "OPTIONS": return jsonify({}), 200
-    d    = request.get_json(force=True)
+    d    = request.get_json(silent=True) or {}
     code = d.get("doctor_code","").strip(); pw = d.get("password","")
     folder = doc_dir(code)
     if not folder: return jsonify({"error":"Profile not found on this machine. Register first."}), 404
@@ -212,7 +212,7 @@ def api_load_profile():
 @login_required(role="doctor")
 def api_request_access():
     if request.method == "OPTIONS": return jsonify({}), 200
-    d         = request.get_json(force=True)
+    d         = request.get_json(silent=True) or {}
     doc_code  = d.get("doctor_code",""); pat_code = d.get("patient_code",""); pw = d.get("password","")
 
     try:
@@ -259,7 +259,7 @@ def api_request_access():
 @login_required(role="doctor")
 def api_fetch_record():
     if request.method == "OPTIONS": return jsonify({}), 200
-    d        = request.get_json(force=True)
+    d        = request.get_json(silent=True) or {}
     doc_code = d.get("doctor_code",""); pat_code = d.get("patient_code",""); pw = d.get("password","")
 
     try:
@@ -357,7 +357,7 @@ def api_fetch_record():
 @login_required(role="doctor")
 def api_lookup_patient():
     if request.method == "OPTIONS": return jsonify({}), 200
-    d = request.get_json(force=True)
+    d = request.get_json(silent=True) or {}
     code = d.get("profile_code","").strip()
     # check backend has this patient
     try:
@@ -373,7 +373,7 @@ def api_lookup_patient():
 def api_upload_report():
     if request.method == "OPTIONS": return jsonify({}), 200
     token = request.headers.get("Authorization","").replace("Bearer ","")
-    d = request.get_json(force=True)
+    d = request.get_json(silent=True) or {}
     try:
         r = http.post(f"{BACKEND}/reports/upload",
             json={"patient_id":d.get("patient_id",""),
@@ -437,7 +437,7 @@ def proxy_doctor_appointments():
 def proxy_doctor_respond_appointment(req_id):
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     try:
-        r = http.post(f"{BACKEND}/api/doctor/appointment-requests/{req_id}/respond", json=request.get_json(force=True), headers=bh(token), timeout=8)
+        r = http.post(f"{BACKEND}/api/doctor/appointment-requests/{req_id}/respond", json=request.get_json(silent=True) or {}, headers=bh(token), timeout=8)
         return jsonify(r.json()), r.status_code
     except Exception as e: return jsonify({"error": str(e)}), 502
 
@@ -459,7 +459,7 @@ def api_add_note():
     """Doctor adds a clinical note to a patient profile. Server enforces access check."""
     if request.method == "OPTIONS":
         return jsonify({}), 200
-    body = request.get_json(force=True) or {}
+    body = request.get_json(silent=True) or {}
 
     doc_code = body.get("doctor_code", "").strip()
     pw       = body.get("password", "")
@@ -530,7 +530,7 @@ def api_delete_note(note_id):
     """Doctor deletes their own note."""
     if request.method == "OPTIONS":
         return jsonify({}), 200
-    body     = request.get_json(force=True) or {}
+    body     = request.get_json(silent=True) or {}
     doc_code = body.get("doctor_code", "").strip()
     pw       = body.get("password", "")
 
@@ -586,9 +586,9 @@ def emr_proxy(subpath):
         elif request.method == "DELETE":
             r = http.delete(url, headers=headers, json=request.get_json(silent=True), timeout=10)
         elif request.method == "PUT":
-            r = http.put(url, headers=headers, json=request.get_json(force=True), timeout=10)
+            r = http.put(url, headers=headers, json=request.get_json(silent=True) or {}, timeout=10)
         else:  # POST
-            r = http.post(url, headers=headers, json=request.get_json(force=True), timeout=10)
+            r = http.post(url, headers=headers, json=request.get_json(silent=True) or {}, timeout=10)
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 502

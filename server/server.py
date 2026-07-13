@@ -1428,7 +1428,7 @@ def register_user():
     if auth_err:
         return auth_err
     try:
-        payload = request.get_json(force=True)
+        payload = request.get_json(silent=True) or {}
     except Exception as e:
         return jsonify({"error": "invalid_json", "details": str(e)}), 400
 
@@ -1621,7 +1621,7 @@ def _create_doctor_account(name, email, username, specialization, hospital, init
 @rate_limited(max_calls=5, window=300)
 @_require_jwt(roles=["admin", "receptionist"])
 def admin_create_doctor():
-    body = request.get_json(force=True) or {}
+    body = request.get_json(silent=True) or {}
     temp_password = _generate_temporary_password()
     created, err = _create_doctor_account(
         body.get("name"),
@@ -1660,7 +1660,7 @@ def register_doctor():
     if auth_err:
         return auth_err
     try:
-        data = request.get_json(force=True)
+        data = request.get_json(silent=True) or {}
     except Exception as e:
         return jsonify({"error": "invalid_json", "details": str(e)}), 400
 
@@ -1694,7 +1694,7 @@ def upload_record():
     auth_err = _require_api_key()
     if auth_err:
         return auth_err
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True) or {}
     print("\n[POST] /upload_record →", data)
 
     pid = data.get("patient_id")
@@ -1823,7 +1823,7 @@ def request_access_simple(profile_code):
     if auth_err:
         return auth_err
     try:
-        payload = request.get_json(force=True)
+        payload = request.get_json(silent=True) or {}
     except Exception as e:
         return jsonify({"error": "invalid_json", "details": str(e)}), 400
 
@@ -1943,7 +1943,7 @@ def approve_request():
     if auth_err:
         return auth_err
     try:
-        payload = request.get_json(force=True)
+        payload = request.get_json(silent=True) or {}
     except Exception as e:
         return jsonify({"error": "invalid_json", "details": str(e)}), 400
 
@@ -2006,7 +2006,7 @@ def update_request_status():
     if auth_err:
         return auth_err
     try:
-        payload = request.get_json(force=True)
+        payload = request.get_json(silent=True) or {}
     except Exception as e:
         return jsonify({"error": "invalid_json", "details": str(e)}), 400
 
@@ -2115,7 +2115,7 @@ def _schedule_cleanup():
 def auth_otp_send():
     """Send OTP to email."""
     from email_utils import send_email_otp
-    body  = request.get_json(force=True) or {}
+    body  = request.get_json(silent=True) or {}
     email = (body.get("email", "") or "").strip().lower()
     if not email or "@" not in email:
         return jsonify({"error": "invalid_email"}), 400
@@ -2139,7 +2139,7 @@ def auth_otp_send():
 def auth_otp_send_sms():
     """Send OTP to phone."""
     from sms_utils import send_sms_otp
-    body  = request.get_json(force=True) or {}
+    body  = request.get_json(silent=True) or {}
     phone = (body.get("phone", "") or "").strip()
     if not phone:
         return jsonify({"error": "invalid_phone"}), 400
@@ -2168,7 +2168,7 @@ def auth_otp_send_sms():
 @app.route("/auth/otp/verify", methods=["POST"])
 @rate_limited(max_calls=10, window=60)
 def auth_otp_verify():
-    body  = request.get_json(force=True) or {}
+    body  = request.get_json(silent=True) or {}
     email = (body.get("email", "") or "").strip().lower()
     otp   = (body.get("otp", "") or "").strip()
     with _otp_lock:
@@ -2193,7 +2193,7 @@ def auth_otp_verify():
 @app.route("/auth/otp/verify_sms", methods=["POST"])
 @rate_limited(max_calls=10, window=60)
 def auth_otp_verify_sms():
-    body  = request.get_json(force=True) or {}
+    body  = request.get_json(silent=True) or {}
     phone = (body.get("phone", "") or "").strip()
     otp   = (body.get("otp", "") or "").strip()
     print(f"[OTP-DEBUG] verify_sms: phone={phone!r}, otp_input={otp!r}")
@@ -2248,7 +2248,7 @@ def patient_onboarding_status():
             return jsonify({"status": "pending"})
 
     # POST — update status
-    body = request.get_json(force=True) or {}
+    body = request.get_json(silent=True) or {}
     new_status = body.get("status")
     if new_status not in ("minimum_done", "complete", "skipped"):
         return jsonify({"error": "invalid_status"}), 400
@@ -2293,7 +2293,7 @@ def check_availability():
 @app.route("/auth/register", methods=["POST"])
 @rate_limited(max_calls=5, window=300)
 def auth_register():
-    body   = request.get_json(force=True) or {}
+    body   = request.get_json(silent=True) or {}
     
     phone_vtoken = body.get("phone_verification_token", "")
     phone_payload = _jwt_decode(phone_vtoken)
@@ -2355,7 +2355,7 @@ def internal_register_user_db():
     auth_err = _require_api_key()
     if auth_err:
         return auth_err
-    body     = request.get_json(force=True) or {}
+    body     = request.get_json(silent=True) or {}
     email    = (body.get("email", "") or "").strip().lower()
     username = (body.get("username", "") or "").strip().lower()
     name     = (body.get("name", "") or "").strip()
@@ -2416,7 +2416,7 @@ def internal_set_profile_code():
     auth_err = _require_api_key()
     if auth_err:
         return auth_err
-    body = request.get_json(force=True) or {}
+    body = request.get_json(silent=True) or {}
     uid = (body.get("user_id", "") or "").strip()
     profile_code = (body.get("profile_code", "") or "").strip()
     doctor_code = (body.get("doctor_code", "") or "").strip()
@@ -2439,7 +2439,7 @@ def internal_set_profile_code():
 @app.route("/auth/login", methods=["POST"])
 @rate_limited(max_calls=10, window=60)
 def auth_login():
-    body       = request.get_json(force=True) or {}
+    body       = request.get_json(silent=True) or {}
     identifier = (body.get("email", "") or "").strip().lower()
     raw_pw     = body.get("password", "")
 
@@ -2508,7 +2508,7 @@ def auth_login():
 @app.route("/auth/set_initial_password", methods=["POST"])
 @rate_limited(max_calls=5, window=300)
 def auth_set_initial_password():
-    body = request.get_json(force=True) or {}
+    body = request.get_json(silent=True) or {}
     temp_token = (body.get("temp_token") or "").strip()
     new_pw = body.get("new_password") or ""
     if not temp_token or not new_pw:
@@ -2544,7 +2544,7 @@ def auth_set_initial_password():
 @rate_limited(max_calls=5, window=300)
 def auth_upgrade_password():
     """[H2] Migrate a legacy SHA-256 account to werkzeug pbkdf2:sha256."""
-    body     = request.get_json(force=True) or {}
+    body     = request.get_json(silent=True) or {}
     email    = (body.get("email", "") or "").strip().lower()
     old_hash = (body.get("old_password_hash", "") or "").strip()
     new_pw   = body.get("new_password", "")
@@ -2649,7 +2649,7 @@ def auth_logout():
 @app.route("/auth/refresh", methods=["POST"])
 def auth_refresh():
     token   = request.cookies.get("refresh_token", "") or \
-              (request.get_json(force=True) or {}).get("refresh_token", "")
+              (request.get_json(silent=True) or {}).get("refresh_token", "")
     payload = _jwt_decode(token)
     if not payload or payload.get("purpose") != "refresh":
         return jsonify({"error": "invalid_refresh_token"}), 401
@@ -2699,7 +2699,7 @@ def api_refresh_token():
     """
     if request.method == "OPTIONS":
         return jsonify({}), 200
-    body     = request.get_json(force=True) or {}
+    body     = request.get_json(silent=True) or {}
     username = (body.get("username") or "").strip().lower()
     role     = (body.get("role") or "").strip()
     if not username:
@@ -2743,7 +2743,7 @@ def auth_login_history():
 @_require_jwt(roles=["doctor"])
 @rate_limited(max_calls=20, window=60)
 def upload_report():
-    body       = request.get_json(force=True) or {}
+    body       = request.get_json(silent=True) or {}
     doctor_jwt = request.jwt_payload
     patient_id = body.get("patient_id", "")
     enc_blob   = body.get("encrypted_report_blob", {})
@@ -2979,7 +2979,7 @@ def get_profile_photo(uid):
 @app.route("/access/request", methods=["POST"])
 @_require_jwt(roles=["doctor"])
 def jwt_request_access():
-    body = request.get_json(force=True) or {}
+    body = request.get_json(silent=True) or {}
     doctor_jwt = request.jwt_payload
 
     legacy_fields = ["profile_code", "doctor_code", "doctor_public_pem", "encrypted_doctor_profile_b64"]
@@ -3083,7 +3083,7 @@ def patient_access_requests():
 @app.route("/access/respond", methods=["POST"])
 @_require_jwt(roles=["patient"])
 def respond_access():
-    body    = request.get_json(force=True) or {}
+    body    = request.get_json(silent=True) or {}
     req_id  = body.get("request_id", "")
     action  = body.get("action", "")
     patient = request.jwt_payload
@@ -3368,7 +3368,7 @@ print("[EMR] EMR module loaded ✓")
 @app.route("/api/patient/appointment-request", methods=["POST"])
 @_require_jwt(roles=["patient"])
 def request_appointment():
-    body            = request.get_json(force=True) or {}
+    body            = request.get_json(silent=True) or {}
     patient         = request.jwt_payload
     doctor_username = body.get("doctor_username", "").strip()
     date            = body.get("date", "").strip()
@@ -3427,7 +3427,7 @@ def get_doctor_appointments():
 @app.route("/api/doctor/appointment-requests/<req_id>/respond", methods=["POST"])
 @_require_jwt(roles=["doctor"])
 def respond_appointment(req_id):
-    body   = request.get_json(force=True) or {}
+    body   = request.get_json(silent=True) or {}
     status = body.get("status")
     if status not in ("accepted", "rejected", "rescheduled", "completed"):
         return jsonify({"error": "invalid_status"}), 400
@@ -3562,7 +3562,7 @@ def doctor_notes_add():
     # [C4] Derive doctor identity from JWT - use doctor_code claim, uid is UUID
     doctor_code = request.jwt_payload.get("doctor_code") or request.jwt_payload["uid"]
 
-    body         = request.get_json(force=True) or {}
+    body         = request.get_json(silent=True) or {}
     patient_code = (body.get("patient_code")  or "").strip()
     doctor_name  = (body.get("doctor_name")   or "").strip()
     doctor_spec  = (body.get("doctor_specialization") or "").strip()
