@@ -41,3 +41,4 @@ CREATE INDEX IF NOT EXISTS idx_encounters_doctor  ON encounters(doctor_id);
 CREATE INDEX IF NOT EXISTS idx_encounters_appt    ON encounters(appointment_id);
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS patient_details JSONB DEFAULT '{}'::jsonb;
