@@ -19,30 +19,49 @@ _pool: pool.ThreadedConnectionPool = None
 def _apply_schema_migrations(conn):
     """Apply the repository schema files in an idempotent way.
 
-    Each file is applied in its own savepoint so a migration failure in one
-    file does not roll back already-applied migrations.  This lets the server
-    start correctly even when a schema file contains a statement that fails on
-    an already-migrated database (e.g. because the column/table already exists
-    in a slightly different form).
+    Uses a Postgres advisory lock (lock id 987654321) so that only ONE gunicorn
+    worker runs the migrations even when all workers boot simultaneously.
+    Workers that don't win the lock skip silently — the winning worker already
+    applied everything.
+
+    Each file is applied in its own transaction so a failure in one file does
+    not roll back already-applied migrations.
     """
-    schema_path = Path(__file__).with_name("schema.sql")
-    additions_path = Path(__file__).with_name("schema_additions.sql")
-    for path in (schema_path, additions_path):
-        if not path.exists():
-            continue
-        sql = path.read_text(encoding="utf-8")
-        if not sql.strip():
-            continue
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql)
-            conn.commit()
-            logger.info(f"[DB] Applied migration: {path.name}")
-        except Exception as migration_err:
-            conn.rollback()
-            logger.warning(
-                f"[DB] Migration {path.name} failed (may already be applied): {migration_err}"
-            )
+    # Try to acquire a session-level advisory lock — non-blocking.
+    # If another worker already holds it, skip and let them do the work.
+    LOCK_ID = 987654321
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_try_advisory_lock(%s)", (LOCK_ID,))
+        acquired = cur.fetchone()[0]
+
+    if not acquired:
+        logger.info("[DB] Migration lock held by another worker — skipping.")
+        return
+
+    try:
+        schema_path = Path(__file__).with_name("schema.sql")
+        additions_path = Path(__file__).with_name("schema_additions.sql")
+        for path in (schema_path, additions_path):
+            if not path.exists():
+                continue
+            sql = path.read_text(encoding="utf-8")
+            if not sql.strip():
+                continue
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(sql)
+                conn.commit()
+                logger.info(f"[DB] Applied migration: {path.name}")
+            except Exception as migration_err:
+                conn.rollback()
+                logger.warning(
+                    f"[DB] Migration {path.name} failed (may already be applied): {migration_err}"
+                )
+    finally:
+        # Always release the advisory lock when done.
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_unlock(%s)", (LOCK_ID,))
+        conn.commit()
 
 
 def init_db(database_url: str = None):
