@@ -2753,6 +2753,12 @@ def upload_report():
     if not patient_id or not enc_blob or not enc_key:
         return jsonify({"error": "missing_fields"}), 400
 
+    if not _has_active_access(doctor_jwt["uid"], patient_id):
+        return jsonify({
+            "error": "forbidden",
+            "detail": "Doctor does not have approved access for this patient.",
+        }), 403
+
     record_id = str(uuid.uuid4())
     try:
         _db_add_record({
@@ -2777,6 +2783,11 @@ def get_patient_reports(patient_id):
     p = request.jwt_payload
     if p["role"] == "patient" and p["uid"] != patient_id:
         return jsonify({"error": "forbidden"}), 403
+    if p["role"] == "doctor" and not _has_active_access(p["uid"], patient_id):
+        return jsonify({
+            "error": "forbidden",
+            "detail": "Doctor does not have approved access for this patient.",
+        }), 403
     records = _db_get_records_for_patient(patient_id)
     audit("patient_reports_listed", actor=p.get("uid") or p.get("sub", ""),
           target=patient_id, detail="", ip=request.remote_addr)
@@ -2819,6 +2830,15 @@ def upload_image():
 
     if not record_id or not img_file or not enc_key:
         return jsonify({"error": "missing_fields"}), 400
+
+    rec = _db_get_record(record_id)
+    if not rec:
+        return jsonify({"error": "record_not_found"}), 404
+    if not _has_active_access(doctor_jwt["uid"], rec["patient_id"]):
+        return jsonify({
+            "error": "forbidden",
+            "detail": "Doctor does not have approved access for this patient.",
+        }), 403
 
     # [H6] Size check
     img_file.seek(0, 2)
