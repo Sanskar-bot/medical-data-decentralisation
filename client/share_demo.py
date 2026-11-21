@@ -1,7 +1,13 @@
 """Demonstration only; this script is not production code."""
 
 from datetime import datetime, timedelta, timezone
+import os
+import sys
 import uuid
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from common.crypto_utils import generate_rsa_keypair
 from common.share_scheme import ShareExpired, create_share, open_share

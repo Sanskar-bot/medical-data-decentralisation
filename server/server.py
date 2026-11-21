@@ -2168,7 +2168,7 @@ def create_snapshot_share():
                 "wrapped_key", "signature")
     if any(not isinstance(payload.get(key), str) or not payload.get(key) for key in required if key != "version"):
         return jsonify({"error": "invalid_package"}), 400
-    if payload.get("version") != 1 or payload.get("patient_code") != patient_code or payload.get("doctor_code") != doctor_code:
+    if type(payload.get("version")) is not int or payload.get("version") != 1 or payload.get("patient_code") != patient_code or payload.get("doctor_code") != doctor_code:
         return jsonify({"error": "package_identity_mismatch"}), 400
     try:
         package_expiry = _share_parse_expiry(payload["expires_at"])

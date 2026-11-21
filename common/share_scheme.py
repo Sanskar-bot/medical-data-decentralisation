@@ -71,7 +71,7 @@ def _signature_payload(aad, nonce, ciphertext, wrapped_key):
 def create_share(plaintext: bytes, patient_private_key, doctor_public_key,
                  share_id, patient_code, doctor_code, expires_at_iso, version=1) -> dict:
     """Encrypt and sign one immutable snapshot for one named doctor."""
-    if version != 1:
+    if type(version) is not int or version != 1:
         raise ShareError("unsupported share version")
     if not isinstance(plaintext, bytes):
         raise ShareError("plaintext must be bytes")
@@ -104,7 +104,7 @@ def open_share(share: dict, doctor_private_key, patient_public_key,
                expected_doctor_code, now=None) -> bytes:
     """Verify and decrypt a share, including an honest-client expiry check."""
     try:
-        if not isinstance(share, dict) or share.get("version") != 1:
+        if not isinstance(share, dict) or type(share.get("version")) is not int or share.get("version") != 1:
             raise ShareTampered("unsupported or malformed share version")
         if expected_doctor_code != share.get("doctor_code"):
             raise ShareWrongRecipient("share is addressed to another doctor")
