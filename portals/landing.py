@@ -650,7 +650,7 @@ def auth_register():
         if len(password) < 8:
             return jsonify({"error": "Password must be at least 8 characters"}), 400
 
-        # Generate RSA keypair for decentralized data 
+        # Generate RSA keypair for patient record encryption
         priv, pub  = generate_rsa_keypair()
         priv_pem   = rsa_serialize_private(priv)
         pub_pem    = rsa_serialize_public(pub)
@@ -2298,7 +2298,7 @@ def doctor_qr_data():
 
 
 # â”€â”€ Doctor reads patient notes from patient's LOCAL device â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# Notes are deleted from the server once patient views them (decentralised
+# Doctor notes are served through the portal workflow.
 # model).  The doctor accesses the patient's local notes.json directly â€”
 # this works because both are running on the same machine in this demo.
 @app.route("/doctor/patient_notes/<patient_code>")

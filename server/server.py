@@ -2,7 +2,7 @@
 """
 server.py
 
-Decentralised medical-data server (development).
+Centralized medical-data server (development).
 
 Storage layer migrated from JSON files to PostgreSQL.
 All 25 security fixes (C1-C4, H1-H7, M1-M8, L1-L6) are preserved.
@@ -15,6 +15,7 @@ import os
 import json
 import uuid
 import base64
+import hmac
 import time
 import sys
 from datetime import datetime, timezone
@@ -119,7 +120,7 @@ if not _SERVER_API_KEY:
 
 def _require_api_key():
     """Return a 401 response if the request has no valid API key, else None."""
-    if request.headers.get("X-API-Key", "") != _SERVER_API_KEY:
+    if not hmac.compare_digest(request.headers.get("X-API-Key", "").encode("utf-8"), _SERVER_API_KEY.encode("utf-8")):
         return jsonify({"error": "unauthorized",
                         "hint": "Add header  X-API-Key: <your key>"}), 401
     return None
@@ -2314,6 +2315,7 @@ def auth_otp_send():
     with _otp_lock:
         _otp_set(email, otp, exp, attempts=0)
     
+    is_dev = (os.environ.get("FLASK_ENV") == "development")
     try:
         send_email_otp(email, otp)
     except RuntimeError as e:
@@ -2322,7 +2324,10 @@ def auth_otp_send():
                         "message": "Email service is not configured. Please contact support."}), 503
     
     audit("otp_sent", actor=email)
-    return jsonify({"message": "OTP sent", "expires_in": 300})
+    resp = {"message": "OTP sent", "expires_in": 300}
+    if is_dev:
+        resp["dev_otp"] = otp  # Only included in development mode
+    return jsonify(resp)
 
 @app.route("/auth/otp/send_sms", methods=["POST"])
 @rate_limited(max_calls=5, window=300)
@@ -2343,6 +2348,7 @@ def auth_otp_send_sms():
         check = _phone_otp_get(phone)
     print(f"[OTP-DEBUG] send_sms: stored check={check}")
 
+    is_dev = (os.environ.get("FLASK_ENV") == "development")
     try:
         send_sms_otp(phone, otp)
     except RuntimeError as e:
@@ -2351,7 +2357,10 @@ def auth_otp_send_sms():
                         "message": "SMS service is not configured. Please contact support."}), 503
 
     audit("sms_otp_sent", actor=phone)
-    return jsonify({"message": "SMS OTP sent", "expires_in": 300})
+    resp = {"message": "SMS OTP sent", "expires_in": 300}
+    if is_dev:
+        resp["dev_otp"] = otp  # Only included in development mode
+    return jsonify(resp)
 
 
 

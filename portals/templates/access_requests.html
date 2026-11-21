@@ -57,7 +57,7 @@
     <h2 class="type-h3" id="approve-modal-title" style="margin-bottom:var(--sp-2);">Approve Access</h2>
     <p style="font-size:var(--t-sm); color:var(--tx3); margin-bottom:var(--sp-6); line-height:1.6;">
       Enter your password to cryptographically approve access for <strong id="approve-doctor-name" style="color:var(--tx1);">this doctor</strong>.
-      Access is valid for <strong style="color:var(--g5);">24 hours</strong>.
+      Wrapped-key access has a server-side expiry of <strong style="color:var(--g5);">24 hours</strong>; JWT-based approvals (access_db) currently have no expiry. Once a doctor decrypts a key or record, access cannot be cryptographically revoked.
     </p>
     <div id="approve-alert" style="display:none; margin-bottom:var(--sp-4);"></div>
     <div class="input-group">
@@ -214,7 +214,7 @@
       document.getElementById('approve-spinner').style.display = 'none';
       if (res.ok) {
         modal.style.display = 'none';
-        showAlert(document.getElementById('page-alert'), 'Access approved. Doctor can now view your record for 24 hours.', 'success');
+        showAlert(document.getElementById('page-alert'), 'Access approved. Wrapped-key access has a 24-hour server-side expiry; a decrypted key or record cannot be cryptographically revoked.', 'success');
         load();
       } else {
         showAlert(alertEl, res.data.error || 'Approval failed.', 'error');

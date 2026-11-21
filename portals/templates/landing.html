@@ -32,7 +32,7 @@
   <section aria-labelledby="hero-headline" style="background: var(--s0);">
     <div class="hero">
       <div class="hero-left fade-in">
-        <p class="landing-section-label">Zero-Trust Medical Platform</p>
+        <p class="landing-section-label">Consent-Based Sharing Prototype</p>
         <h1 class="hero-headline" id="hero-headline">
           Your health data,<br>
           <em>only yours.</em>
@@ -84,7 +84,7 @@
         </div>
         <div class="stat-bar-item fade-in" style="animation-delay:120ms">
           <div class="stat-bar-value"><em>100%</em></div>
-          <div class="stat-bar-label">Patient-controlled access</div>
+          <div class="stat-bar-label">Patient-approved access</div>
         </div>
       </div>
     </div>
@@ -117,7 +117,7 @@
           <div class="how-step-title">Control Access</div>
           <div class="how-step-desc">
             When a doctor requests access, you approve it with your password.
-            Access is time-limited to 24 hours and every event is audit-logged.
+            Wrapped-key access has a 24-hour server-side expiry; JWT-based approvals (access_db) currently have no expiry. Once a doctor decrypts a key or record, access cannot be cryptographically revoked. Access events are audit-logged.
           </div>
         </div>
       </div>
@@ -211,7 +211,7 @@
       <div>
         <div class="sidebar-logo-mark" style="font-size:var(--t-md); margin-bottom:var(--sp-3);">Med<span>VAULT</span></div>
         <p style="font-size:var(--t-sm); color:var(--tx3); max-width:280px; line-height:1.6;">
-          A zero-trust medical records platform built for patient sovereignty.
+          A research prototype of consent-based sharing for encrypted patient records.
         </p>
       </div>
       <div>
@@ -232,8 +232,8 @@
       </div>
     </div>
     <div class="landing-footer-legal" style="max-width:1280px; margin:0 auto;">
-      &copy; 2026 MedVault. All records are encrypted end-to-end.
-      MedVault does not store plaintext health data.
+      &copy; 2026 MedVault. The patient's registration record is encrypted (AES-256-GCM, key wrapped with RSA-4096 OAEP).
+      Most clinical data added later is stored in plaintext; encryption and key handling currently happen in the portal server.
     </div>
   </footer>
 
@@ -777,6 +777,23 @@
             document.getElementById('display-phone').textContent = d.phone;
             document.getElementById('reg-step-1').classList.add('hidden');
             document.getElementById('reg-step-2').classList.remove('hidden');
+            // DEV MODE: auto-fill OTP and show banner
+            if (res.data.dev_otp) {
+              var otpInput = document.getElementById('reg-phone-otp');
+              if (otpInput) otpInput.value = res.data.dev_otp;
+              var devBanner = document.getElementById('dev-otp-banner');
+              if (!devBanner) {
+                devBanner = document.createElement('div');
+                devBanner.id = 'dev-otp-banner';
+                devBanner.style.cssText = 'background:#1a1a2e;border:2px solid #f59e0b;border-radius:8px;padding:12px 16px;margin:12px 0;font-family:monospace;font-size:14px;color:#f59e0b;';
+                devBanner.innerHTML = '🛠️ <strong>DEV MODE</strong> — OTP auto-filled: <span style="font-size:20px;letter-spacing:4px;color:#fff;">' + res.data.dev_otp + '</span>';
+                var step2 = document.getElementById('reg-step-2');
+                if (step2) step2.insertBefore(devBanner, step2.firstChild);
+              } else {
+                devBanner.innerHTML = '🛠️ <strong>DEV MODE</strong> — OTP auto-filled: <span style="font-size:20px;letter-spacing:4px;color:#fff;">' + res.data.dev_otp + '</span>';
+                devBanner.style.display = 'block';
+              }
+            }
           } else {
             showAlert(alertEl, res.data.error || 'Failed to send SMS.', 'error');
           }

@@ -59,3 +59,8 @@ doctor/fetch_patient_data_debug.py
 portals/doctor_portal.py.bak
 portals/patient_portal.py.bak
 portals/patient_ui.html
+*.dpapi
+*.sqlite
+*.dump
+setup_db.py
+find_otp_js.py

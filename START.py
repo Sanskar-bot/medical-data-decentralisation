@@ -106,7 +106,7 @@ def already_running(port):
 
 print("""
 ╔══════════════════════════════════════════════════════╗
-║        🏥  MedVault — Zero-Trust Health Portal       ║
+║        🏥  MedVault — Health Portal                  ║
 ║              Launching background services…          ║
 ╚══════════════════════════════════════════════════════╝
 """, flush=True)
