@@ -2184,8 +2184,8 @@ def create_snapshot_share():
         if not cur.fetchone():
             return jsonify({"error": "doctor_not_found"}), 404
     try:
-        # Keep the exact signed ISO timestamp in the JSON package. The database
-        # timestamp is independently computed by this server for expiry checks.
+        # Preserve the exact signed deadline for server and client expiry checks.
+        # The server-calculated deadline above is a consistency check only.
         ciphertext_blob = json.dumps({
             "version": 1, "expires_at": payload["expires_at"],
             "nonce": payload["nonce"], "ciphertext": payload["ciphertext"],
@@ -2197,7 +2197,7 @@ def create_snapshot_share():
                      wrapped_key, signature, expires_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """, (payload["share_id"], patient_code, doctor_code, label,
-                  ciphertext_blob, payload["wrapped_key"], payload["signature"], server_expiry))
+                  ciphertext_blob, payload["wrapped_key"], payload["signature"], package_expiry))
     except Exception:
         return jsonify({"error": "share_create_failed"}), 400
     audit("share_created", actor=patient_code, target=payload["share_id"])

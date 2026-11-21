@@ -114,6 +114,9 @@ def test_patient_creates_named_doctor_fetches_and_opens_share(client, app, key_m
     patient_code, doctor_code = identities(key_material)
     response, package, _ = post_share(client, app, key_material, patient_code, doctor_code)
     assert response.status_code == 201
+    stored_expiry = row_for(package["share_id"])["expires_at"]
+    signed_expiry = datetime.fromisoformat(package["expires_at"].replace("Z", "+00:00"))
+    assert stored_expiry == signed_expiry
     fetched = client.get(f"/shares/{package['share_id']}", headers=token(app, "doctor", doctor_code))
     assert fetched.status_code == 200
     data = fetched.get_json()
