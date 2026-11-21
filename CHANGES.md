@@ -1,6 +1,12 @@
 # CHANGES.md — Security Fixes Applied
 
-All 25 security issues have been remediated. Changes are listed in implementation order.
+25 identified security issues were addressed as described below. H7's timing-compare issue and H8 are fixed. Remaining open items are the `approve_request` caller check, `access_db` expiry, per-grant keys, plaintext EMR data, server-side key generation, password-derived key backup, and unused Argon2 function. See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for a full analysis.
+
+### Per-share snapshots (new)
+
+Added an additive snapshot-sharing flow with a fresh key per share and best-effort expiry. It supplements the existing sharing flow. See [docs/SHARE_SCHEME_PLAN.md](docs/SHARE_SCHEME_PLAN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
+
+> **Note:** The fixes below addressed specific reported issues. They do not cover all security properties of the system. In particular: (1) most clinical data is stored in plaintext, (2) all cryptographic operations occur on the portal server rather than the patient's device, (3) the Argon2id key derivation function exists but is unused at runtime, and (4) some access-control gaps remain (see threat model for details).
 
 ---
 
@@ -54,6 +60,9 @@ All 25 security issues have been remediated. Changes are listed in implementatio
 **File:** `server/server.py` (`update_request_status()`)
 **Fix:** Added `ALLOWED_STATUSES = {"denied", "expired", "cancelled"}` whitelist. The "approved" transition is explicitly blocked with a helpful error message directing callers to `/approve_request`.
 
+### [H8] Function-Local Re-import in `api_register` — `portals/patient_portal.py`
+**Status:** Fixed. The function-level re-import was removed; the module-level import supplies both names.
+
 ---
 
 ## MEDIUM Fixes
@@ -69,6 +78,7 @@ All 25 security issues have been remediated. Changes are listed in implementatio
 ### [M3] PBKDF2 Instead of Argon2id — `common/crypto_utils.py`, `common/secure_key_store.py`
 **Files:** `common/crypto_utils.py` (new `derive_kek_argon2()`), `common/secure_key_store.py` (Linux fallback)
 **Fix:** Added `derive_kek_argon2(password, salt=None)` using argon2-cffi with `time_cost=3, memory_cost=65536, parallelism=4, hash_len=32, type=Type.ID`. `derive_kek_from_password()` is kept for backward compatibility but marked `DEPRECATED`. The Linux/macOS key store fallback uses Argon2id for machine key derivation instead of PBKDF2.
+**Incomplete:** `derive_kek_argon2()` is currently unused at runtime. All key-wrapping call sites (`patient_portal.py`, `landing.py`, `share_details.py`, `respond_request.py`) still call the deprecated `derive_kek_from_password()` (PBKDF2). Migration to Argon2id at all call sites is pending.
 
 ### [M4] Non-Atomic save_json() — `server/server.py`
 **File:** `server/server.py` (`save_json()`)
