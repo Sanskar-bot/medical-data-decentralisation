@@ -42,3 +42,23 @@ CREATE INDEX IF NOT EXISTS idx_encounters_appt    ON encounters(appointment_id);
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS patient_details JSONB DEFAULT '{}'::jsonb;
+
+-- Per-share snapshots; package payload contains encrypted snapshot data only.
+CREATE TABLE IF NOT EXISTS shares (
+    share_id        TEXT PRIMARY KEY,
+    patient_code    TEXT NOT NULL,
+    doctor_code     TEXT NOT NULL,
+    label           TEXT DEFAULT '',
+    ciphertext_blob JSONB,
+    wrapped_key     TEXT,
+    signature       TEXT,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    expires_at      TIMESTAMPTZ NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('active','revoked','expired','purged')),
+    fetched_at      TIMESTAMPTZ,
+    purged_at       TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_shares_doctor_status ON shares(doctor_code, status);
+CREATE INDEX IF NOT EXISTS idx_shares_patient_status ON shares(patient_code, status);
+CREATE INDEX IF NOT EXISTS idx_shares_expires_at ON shares(expires_at);

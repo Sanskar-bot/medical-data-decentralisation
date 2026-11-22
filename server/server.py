@@ -2,7 +2,7 @@
 """
 server.py
 
-Decentralised medical-data server (development).
+Centralized medical-data server (development).
 
 Storage layer migrated from JSON files to PostgreSQL.
 All 25 security fixes (C1-C4, H1-H7, M1-M8, L1-L6) are preserved.
@@ -15,6 +15,7 @@ import os
 import json
 import uuid
 import base64
+import hmac
 import time
 import sys
 from datetime import datetime, timezone
@@ -119,7 +120,7 @@ if not _SERVER_API_KEY:
 
 def _require_api_key():
     """Return a 401 response if the request has no valid API key, else None."""
-    if request.headers.get("X-API-Key", "") != _SERVER_API_KEY:
+    if not hmac.compare_digest(request.headers.get("X-API-Key", "").encode("utf-8"), _SERVER_API_KEY.encode("utf-8")):
         return jsonify({"error": "unauthorized",
                         "hint": "Add header  X-API-Key: <your key>"}), 401
     return None
@@ -2094,6 +2095,7 @@ def _cleanup_old_requests():
             cur.execute("DELETE FROM token_blocklist WHERE expires_at <= now()")
             # old rate limit records
             cur.execute("DELETE FROM rate_limits WHERE hit_at < now() - interval '10 minutes'")
+        purge_expired_shares()
     except Exception as ex:
         print(f"[Cleanup] DB cleanup error: {ex}")
     finally:
@@ -2104,6 +2106,195 @@ def _schedule_cleanup():
     t = _threading.Timer(3600, _cleanup_old_requests)
     t.daemon = True
     t.start()
+
+
+def purge_expired_shares():
+    """Clear overdue share payloads; audit only the number of rows affected."""
+    # Nulling columns and deleting rows cannot erase WAL, backup, replica, or log
+    # copies. Stored share material is ciphertext and a doctor-wrapped key, so
+    # those copies are unreadable without the named doctor's private key.
+    with db_cursor() as cur:
+        cur.execute("""
+            UPDATE shares
+               SET status = 'purged', ciphertext_blob = NULL, wrapped_key = NULL,
+                   signature = NULL, purged_at = now()
+             WHERE status = 'active' AND expires_at <= now()
+        """)
+        count = cur.rowcount
+    if count:
+        audit("share_purged", actor="system", detail=f"count={count}")
+    return count
+
+
+def _share_parse_expiry(value):
+    if not isinstance(value, str):
+        raise ValueError("expires_at must be an ISO-8601 string")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("expires_at must include a timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+@app.route("/shares", methods=["POST"])
+@_require_jwt(roles=["patient"])
+@rate_limited(max_calls=5, window=60)
+def create_snapshot_share():
+    """Store a patient-created encrypted snapshot for one doctor."""
+    from datetime import timedelta
+
+    purge_expired_shares()
+    raw_body = request.get_data(cache=True)
+    if len(raw_body) > 5 * 1024 * 1024:
+        return jsonify({"error": "payload_too_large"}), 413
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "invalid_json"}), 400
+
+    payload = body
+    doctor_code = body.get("doctor_code")
+    patient_code = body.get("patient_code")
+    token_patient_code = request.jwt_payload.get("profile_code")
+    if not token_patient_code or patient_code != token_patient_code:
+        return jsonify({"error": "patient_code_mismatch"}), 403
+    if not isinstance(doctor_code, str) or not doctor_code:
+        return jsonify({"error": "invalid_doctor_code"}), 400
+    label = body.get("label", "")
+    if not isinstance(label, str) or len(label) > 120:
+        return jsonify({"error": "invalid_label"}), 400
+    ttl = body.get("expires_in_seconds", 86400)
+    if isinstance(ttl, bool) or not isinstance(ttl, int) or not 300 <= ttl <= 604800:
+        return jsonify({"error": "invalid_expiry"}), 400
+
+    required = ("share_id", "version", "expires_at", "nonce", "ciphertext",
+                "wrapped_key", "signature")
+    if any(not isinstance(payload.get(key), str) or not payload.get(key) for key in required if key != "version"):
+        return jsonify({"error": "invalid_package"}), 400
+    if type(payload.get("version")) is not int or payload.get("version") != 1 or payload.get("patient_code") != patient_code or payload.get("doctor_code") != doctor_code:
+        return jsonify({"error": "package_identity_mismatch"}), 400
+    try:
+        package_expiry = _share_parse_expiry(payload["expires_at"])
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid_expiry"}), 400
+    server_now = datetime.now(timezone.utc)
+    server_expiry = server_now + timedelta(seconds=ttl)
+    if abs((package_expiry - server_expiry).total_seconds()) > 5:
+        return jsonify({"error": "package_expiry_mismatch"}), 400
+
+    with db_cursor(commit=False) as cur:
+        cur.execute("SELECT 1 FROM doctors WHERE doctor_code = %s", (doctor_code,))
+        if not cur.fetchone():
+            return jsonify({"error": "doctor_not_found"}), 404
+    try:
+        # Preserve the exact signed deadline for server and client expiry checks.
+        # The server-calculated deadline above is a consistency check only.
+        ciphertext_blob = json.dumps({
+            "version": 1, "expires_at": payload["expires_at"],
+            "nonce": payload["nonce"], "ciphertext": payload["ciphertext"],
+        })
+        with db_cursor() as cur:
+            cur.execute("""
+                INSERT INTO shares
+                    (share_id, patient_code, doctor_code, label, ciphertext_blob,
+                     wrapped_key, signature, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (payload["share_id"], patient_code, doctor_code, label,
+                  ciphertext_blob, payload["wrapped_key"], payload["signature"], package_expiry))
+    except Exception:
+        return jsonify({"error": "share_create_failed"}), 400
+    audit("share_created", actor=patient_code, target=payload["share_id"])
+    return jsonify({"share_id": payload["share_id"], "status": "active",
+                    "expires_at": payload["expires_at"]}), 201
+
+
+@app.route("/shares/<share_id>", methods=["GET"])
+@_require_jwt(roles=["doctor"])
+def fetch_snapshot_share(share_id):
+    doctor_code = request.jwt_payload.get("doctor_code")
+    if not doctor_code:
+        return jsonify({"error": "share_not_found"}), 404
+    with db_cursor() as cur:
+        cur.execute("""
+            SELECT share_id, patient_code, doctor_code, ciphertext_blob, wrapped_key,
+                   signature, expires_at, status
+              FROM shares WHERE share_id = %s AND doctor_code = %s
+        """, (share_id, doctor_code))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "share_not_found"}), 404
+        if row["status"] != "active" or row["expires_at"] <= datetime.now(timezone.utc):
+            if row["status"] == "active":
+                cur.execute("""
+                    UPDATE shares SET status = 'expired', ciphertext_blob = NULL,
+                           wrapped_key = NULL, signature = NULL
+                     WHERE share_id = %s AND doctor_code = %s AND status = 'active'
+                """, (share_id, doctor_code))
+            return jsonify({"error": "share_expired_or_unavailable"}), 410
+        cur.execute("SELECT patient_public_pem FROM patients WHERE profile_code = %s",
+                    (row["patient_code"],))
+        patient = cur.fetchone()
+        package_blob = row["ciphertext_blob"]
+        if isinstance(package_blob, str):
+            package_blob = json.loads(package_blob)
+        package = {
+            "share_id": row["share_id"], "version": package_blob["version"],
+            "patient_code": row["patient_code"], "doctor_code": row["doctor_code"],
+            "expires_at": package_blob["expires_at"], "nonce": package_blob["nonce"],
+            "ciphertext": package_blob["ciphertext"], "wrapped_key": row["wrapped_key"],
+            "signature": row["signature"],
+        }
+        cur.execute("UPDATE shares SET fetched_at = now() WHERE share_id = %s", (share_id,))
+    audit("share_fetched", actor=doctor_code, target=share_id)
+    return jsonify({"share": package,
+                    "patient_public_pem": patient.get("patient_public_pem") if patient else None}), 200
+
+
+@app.route("/shares/incoming", methods=["GET"])
+@_require_jwt(roles=["doctor"])
+def list_incoming_shares():
+    doctor_code = request.jwt_payload.get("doctor_code")
+    with db_cursor(commit=False) as cur:
+        cur.execute("""
+            SELECT share_id, label, patient_code, created_at, expires_at
+              FROM shares
+             WHERE doctor_code = %s AND status = 'active' AND expires_at > now()
+             ORDER BY created_at DESC
+        """, (doctor_code,))
+        rows = cur.fetchall()
+    return jsonify({"shares": [dict(row) for row in rows]}), 200
+
+
+@app.route("/shares/outgoing", methods=["GET"])
+@_require_jwt(roles=["patient"])
+def list_outgoing_shares():
+    patient_code = request.jwt_payload.get("profile_code")
+    with db_cursor(commit=False) as cur:
+        cur.execute("""
+            SELECT share_id, doctor_code, label, created_at, expires_at, status
+              FROM shares WHERE patient_code = %s ORDER BY created_at DESC
+        """, (patient_code,))
+        rows = cur.fetchall()
+    return jsonify({"shares": [dict(row) for row in rows]}), 200
+
+
+@app.route("/shares/<share_id>", methods=["DELETE"])
+@_require_jwt(roles=["patient"])
+def revoke_snapshot_share(share_id):
+    patient_code = request.jwt_payload.get("profile_code")
+    with db_cursor() as cur:
+        cur.execute("""
+            UPDATE shares SET status = 'revoked', ciphertext_blob = NULL,
+                   wrapped_key = NULL, signature = NULL
+             WHERE share_id = %s AND patient_code = %s AND status = 'active'
+        """, (share_id, patient_code))
+        updated = cur.rowcount
+        if not updated:
+            cur.execute("SELECT 1 FROM shares WHERE share_id = %s AND patient_code = %s",
+                        (share_id, patient_code))
+            if not cur.fetchone():
+                return jsonify({"error": "share_not_found"}), 404
+    if updated:
+        audit("share_revoked", actor=patient_code, target=share_id)
+    return jsonify({"share_id": share_id, "status": "revoked" if updated else "unavailable"}), 200
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -2124,6 +2315,7 @@ def auth_otp_send():
     with _otp_lock:
         _otp_set(email, otp, exp, attempts=0)
     
+    is_dev = (os.environ.get("FLASK_ENV") == "development")
     try:
         send_email_otp(email, otp)
     except RuntimeError as e:
@@ -2132,7 +2324,10 @@ def auth_otp_send():
                         "message": "Email service is not configured. Please contact support."}), 503
     
     audit("otp_sent", actor=email)
-    return jsonify({"message": "OTP sent", "expires_in": 300})
+    resp = {"message": "OTP sent", "expires_in": 300}
+    if is_dev:
+        resp["dev_otp"] = otp  # Only included in development mode
+    return jsonify(resp)
 
 @app.route("/auth/otp/send_sms", methods=["POST"])
 @rate_limited(max_calls=5, window=300)
@@ -2153,6 +2348,7 @@ def auth_otp_send_sms():
         check = _phone_otp_get(phone)
     print(f"[OTP-DEBUG] send_sms: stored check={check}")
 
+    is_dev = (os.environ.get("FLASK_ENV") == "development")
     try:
         send_sms_otp(phone, otp)
     except RuntimeError as e:
@@ -2161,7 +2357,10 @@ def auth_otp_send_sms():
                         "message": "SMS service is not configured. Please contact support."}), 503
 
     audit("sms_otp_sent", actor=phone)
-    return jsonify({"message": "SMS OTP sent", "expires_in": 300})
+    resp = {"message": "SMS OTP sent", "expires_in": 300}
+    if is_dev:
+        resp["dev_otp"] = otp  # Only included in development mode
+    return jsonify(resp)
 
 
 

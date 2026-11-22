@@ -114,7 +114,6 @@ def api_register():
     # one does not compromise the other.
     import json as _json_kr
     from base64 import b64encode as _b64e_kr
-    from common.crypto_utils import derive_kek_from_password, wrap_key_with_kek
     _kr_kek, _kr_salt = derive_kek_from_password(pw)
     _kr_wrapped = wrap_key_with_kek(_kr_kek, priv_pem)
     _encrypted_priv_backup = _json_kr.dumps({
