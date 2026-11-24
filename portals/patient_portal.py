@@ -186,7 +186,7 @@ def api_record(code):
 @login_required(role="patient")
 def api_requests(code):
     try:
-        r = http.get(f"{BACKEND}/active_requests", headers=bh(), timeout=8)
+        r = http.get(f"{BACKEND}/access_requests/mine", headers=bh(), timeout=8)  # [C3]
         all_r = r.json() if r.ok else []
     except: return jsonify({"error":"Cannot reach backend"}), 502
     mine = [x for x in all_r if x.get("profile_code")==code]
@@ -493,7 +493,7 @@ def api_qr_transfer():
         rd = rr.json()
         req_id = rd.get("request_id") or (rd.get("request") or {}).get("request_id")
         if not req_id:
-            ar = http.get(f"{BACKEND}/active_requests", headers=bh(), timeout=6).json()
+            ar = http.get(f"{BACKEND}/access_requests/mine", headers=bh(), timeout=6).json()  # [C3]
             found = next((x for x in ar if x.get("profile_code")==pat_code
                           and x.get("doctor_code")==doc_code and x.get("status")=="pending"), None)
             req_id = found["request_id"] if found else None

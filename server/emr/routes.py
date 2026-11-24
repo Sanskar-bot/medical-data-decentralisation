@@ -131,64 +131,19 @@ def _recorded_by_from_jwt(payload: dict) -> str:
 
 
 def _doctor_has_patient_access(payload: dict, patient_id: str, raw_patient_id: str | None = None) -> bool:
-    if payload.get("role") == "admin":
+    """[C2] Thin wrapper: every EMR access decision is made by
+    server/authz.py authorize_patient_access (deny by default; admins have no
+    clinical access - ASSUMES DECISION admin=A). Despite the old name, this
+    also answers for patients (own data only)."""
+    from authz import authorize_patient_access
+    if authorize_patient_access(payload, patient_id):
         return True
-    if payload.get("role") != "doctor":
-        return False
+    return bool(raw_patient_id) and raw_patient_id != patient_id and \
+        authorize_patient_access(payload, raw_patient_id)
 
-    doctor_candidates = {
-        payload.get("uid", ""),
-        payload.get("doctor_code", ""),
-    }
-    resolve_doctor = _get_helper("resolve_doctor_uuid")
-    if resolve_doctor:
-        for ident in list(doctor_candidates):
-            resolved = resolve_doctor(ident)
-            if resolved:
-                doctor_candidates.add(resolved)
-    patient_candidates = {patient_id, raw_patient_id or ""}
-    resolved_raw = _resolve_pid(raw_patient_id or "")
-    if resolved_raw:
-        patient_candidates.add(resolved_raw)
-    doctor_candidates = {d for d in doctor_candidates if d}
-    patient_candidates = {p for p in patient_candidates if p}
 
-    try:
-        from db import db_cursor
-        with db_cursor(commit=False) as cur:
-            cur.execute(
-                "SELECT doctor_code FROM users WHERE id = %s LIMIT 1",
-                (payload.get("uid", ""),),
-            )
-            row = cur.fetchone()
-            if row and row.get("doctor_code"):
-                doctor_candidates.add(row["doctor_code"])
-            cur.execute(
-                "SELECT profile_code FROM users WHERE id = %s LIMIT 1",
-                (patient_id,),
-            )
-            row = cur.fetchone()
-            if row and row.get("profile_code"):
-                patient_candidates.add(row["profile_code"])
-
-            cur.execute(
-                "SELECT 1 FROM access_db WHERE doctor_id = ANY(%s) "
-                "AND patient_id = ANY(%s) AND status = 'approved' LIMIT 1",
-                (list(doctor_candidates), list(patient_candidates)),
-            )
-            if cur.fetchone():
-                return True
-
-            cur.execute(
-                "SELECT 1 FROM wrapped_keys WHERE profile_code = ANY(%s) "
-                "AND doctor_code = ANY(%s) LIMIT 1",
-                (list(patient_candidates), list(doctor_candidates)),
-            )
-            if cur.fetchone():
-                return True
-    except Exception:
-        return False
-    return False
+def _forbidden():
+    return jsonify({"error": "forbidden"}), 403
 
 
 def _vitals_from_body(body: dict, patient_id: str, recorded_by: str) -> dict:
@@ -229,10 +184,10 @@ def _vitals_from_body(body: dict, patient_id: str, recorded_by: str) -> dict:
 def get_patient_profile(patient_id):
     """Fetch extended EMR profile for a patient."""
     p = request.jwt_payload
+    raw_patient_id = patient_id
     patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
-    # Patient can only see own profile; doctors and admins can see any
-    if p.get("role") == "patient" and p.get("uid") != patient_id:
-        return jsonify({"error": "forbidden"}), 403
+    if not _doctor_has_patient_access(p, patient_id, raw_patient_id):  # [C2]
+        return _forbidden()
 
     profile = store.get_profile(patient_id)
     if not profile:
@@ -249,9 +204,10 @@ def get_patient_profile(patient_id):
 def upsert_patient_profile(patient_id):
     """Create or update a patient's extended EMR profile."""
     p = request.jwt_payload
+    raw_patient_id = patient_id
     patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
-    if p.get("role") == "patient" and p.get("uid") != patient_id:
-        return jsonify({"error": "forbidden"}), 403
+    if not _doctor_has_patient_access(p, patient_id, raw_patient_id):  # [C2]
+        return _forbidden()
 
     body = request.get_json(silent=True) or {}
     body["patient_id"] = patient_id
@@ -327,9 +283,11 @@ def create_appointment():
     body = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
-    # Auto-fill doctor_id from JWT if not provided
-    if not body.get("doctor_id"):
-        body["doctor_id"] = jwt_p.get("uid", "")
+    # [C2][X4] Need a grant for the patient; doctor identity comes from the token.
+    if not _doctor_has_patient_access(jwt_p, _resolve_pid(body.get("patient_id", "")),
+                                      body.get("patient_id", "")):
+        return _forbidden()
+    body["doctor_id"] = jwt_p.get("uid", "")
 
     errors = models.validate_appointment(body)
     if errors:
@@ -346,8 +304,8 @@ def create_appointment():
 @_require_jwt_deco()
 def list_patient_appointments(patient_id):
     p = request.jwt_payload
-    if p.get("role") == "patient" and p.get("uid") != patient_id:
-        return jsonify({"error": "forbidden"}), 403
+    if not _doctor_has_patient_access(p, _resolve_pid(patient_id), patient_id):  # [C2]
+        return _forbidden()
     appts = store.appointments_for_patient(patient_id)
     appts.sort(key=lambda a: a.get("date_time", ""), reverse=True)
     _audit("emr_appointments_patient_read", actor=p.get("uid") or p.get("sub", ""),
@@ -378,9 +336,10 @@ def update_appointment(appointment_id):
     if not existing:
         return jsonify({"error": "appointment_not_found"}), 404
 
-    # Only the assigned doctor or admin can update
-    if jwt_p.get("role") == "doctor" and existing["doctor_id"] != jwt_p.get("uid"):
-        return jsonify({"error": "forbidden"}), 403
+    # [C2] Only the assigned doctor, and only while they hold a grant.
+    if existing["doctor_id"] != jwt_p.get("uid") or \
+            not _doctor_has_patient_access(jwt_p, existing["patient_id"]):
+        return _forbidden()
 
     # Allowed update fields
     allowed = {"date_time", "reason", "status", "notes"}
@@ -409,8 +368,10 @@ def delete_appointment(appointment_id):
     if not existing:
         return jsonify({"error": "appointment_not_found"}), 404
 
-    if jwt_p.get("role") == "doctor" and existing["doctor_id"] != jwt_p.get("uid"):
-        return jsonify({"error": "forbidden"}), 403
+    # [C2] Only the assigned doctor, and only while they hold a grant.
+    if existing["doctor_id"] != jwt_p.get("uid") or \
+            not _doctor_has_patient_access(jwt_p, existing["patient_id"]):
+        return _forbidden()
 
     store.delete_appointment(appointment_id)
     _audit("appointment_deleted", actor=jwt_p.get("sub", ""),
@@ -429,9 +390,11 @@ def create_prescription():
     body  = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
-    # Use doctor_code claim (not uid which is now UUID)
-    if not body.get("doctor_id"):
-        body["doctor_id"] = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
+    # [C2][X3][X4] Need a grant for the patient; doctor identity comes from the token.
+    if not _doctor_has_patient_access(jwt_p, _resolve_pid(body.get("patient_id", "")),
+                                      body.get("patient_id", "")):
+        return _forbidden()
+    body["doctor_id"] = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
     body["doctor_email"] = jwt_p.get("sub", "")
     if not body.get("doctor_name"):
         body["doctor_name"] = ""  # Will be filled by caller if available
@@ -505,10 +468,10 @@ def create_prescription():
 @_require_jwt_deco()
 def list_patient_prescriptions(patient_id):
     p = request.jwt_payload
+    raw_patient_id = patient_id
     patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
-    # Patient can only view own prescriptions
-    if p.get("role") == "patient" and p.get("uid") != patient_id:
-        return jsonify({"error": "forbidden"}), 403
+    if not _doctor_has_patient_access(p, patient_id, raw_patient_id):  # [C2]
+        return _forbidden()
     rxs = store.prescriptions_for_patient(patient_id)
     rxs.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     _audit("emr_prescriptions_read", actor=p.get("uid") or p.get("sub", ""),
@@ -523,10 +486,8 @@ def get_prescription(prescription_id):
     rx = store.get_prescription(prescription_id)
     if not rx:
         return jsonify({"error": "prescription_not_found"}), 404
-    # Patient can only fetch own prescriptions
-    patient_code = p.get("profile_code") or p.get("uid", "")
-    if p.get("role") == "patient" and patient_code != rx["patient_id"]:
-        return jsonify({"error": "forbidden"}), 403
+    if not _doctor_has_patient_access(p, rx["patient_id"]):  # [C2]
+        return _forbidden()
     _audit("emr_prescription_read", actor=p.get("uid") or p.get("sub", ""),
            target=prescription_id, detail="", ip=request.remote_addr)
     return jsonify(rx), 200
@@ -543,9 +504,11 @@ def create_lab_report():
     body  = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
-    # Use doctor_code claim (not uid which is now UUID)
-    if not body.get("doctor_id"):
-        body["doctor_id"] = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
+    # [C2][X3][X4] Need a grant for the patient; doctor identity comes from the token.
+    if not _doctor_has_patient_access(jwt_p, _resolve_pid(body.get("patient_id", "")),
+                                      body.get("patient_id", "")):
+        return _forbidden()
+    body["doctor_id"] = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
     body["doctor_email"] = jwt_p.get("sub", "")
     if not body.get("doctor_name"):
         body["doctor_name"] = ""
@@ -580,10 +543,10 @@ def create_lab_report():
 @_require_jwt_deco()
 def list_patient_lab_reports(patient_id):
     p = request.jwt_payload
+    raw_patient_id = patient_id
     patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
-    # Patient can only view own lab reports
-    if p.get("role") == "patient" and p.get("uid") != patient_id:
-        return jsonify({"error": "forbidden"}), 403
+    if not _doctor_has_patient_access(p, patient_id, raw_patient_id):  # [C2]
+        return _forbidden()
     reports = store.lab_reports_for_patient(patient_id)
     reports.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     _audit("emr_lab_reports_read", actor=p.get("uid") or p.get("sub", ""),
@@ -598,9 +561,8 @@ def get_lab_report(report_id):
     report = store.get_lab_report(report_id)
     if not report:
         return jsonify({"error": "lab_report_not_found"}), 404
-    patient_code = p.get("profile_code") or p.get("uid", "")
-    if p.get("role") == "patient" and patient_code != report["patient_id"]:
-        return jsonify({"error": "forbidden"}), 403
+    if not _doctor_has_patient_access(p, report["patient_id"]):  # [C2]
+        return _forbidden()
     _audit("emr_lab_report_read", actor=p.get("uid") or p.get("sub", ""),
            target=report_id, detail="", ip=request.remote_addr)
     return jsonify(report), 200
@@ -708,10 +670,9 @@ def create_vitals():
         body["patient_id"] = _resolve_pid(body["patient_id"])
     else:
         return jsonify({"error": "patient_id is required"}), 400
-    if jwt_p.get("role") == "doctor" and not _doctor_has_patient_access(jwt_p, body["patient_id"], raw_patient_id):
-        return jsonify({"error": "forbidden"}), 403
-    if not body.get("recorded_by"):
-        body["recorded_by"] = _recorded_by_from_jwt(jwt_p)
+    if not _doctor_has_patient_access(jwt_p, body["patient_id"], raw_patient_id):  # [C2]
+        return _forbidden()
+    body["recorded_by"] = _recorded_by_from_jwt(jwt_p)  # [X4] from the token only
 
     errors = models.validate_vitals(body)
     if errors:
@@ -753,11 +714,12 @@ def create_condition():
     body  = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
-    # Auto-fill recorded_by from JWT, matching how create_prescription fills doctor_id
-    if not body.get("recorded_by"):
-        body["recorded_by"] = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
+    # [X4] recorded_by always comes from the token
+    body["recorded_by"] = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
     if not body.get("patient_id"):
         return jsonify({"error": "patient_id is required"}), 400
+    if not _doctor_has_patient_access(jwt_p, _resolve_pid(body["patient_id"]), body["patient_id"]):  # [C2]
+        return _forbidden()
 
     errors = models.validate_condition(body)
     if errors:
@@ -781,9 +743,10 @@ def create_condition():
 @_require_jwt_deco()
 def list_patient_conditions(patient_id):
     p = request.jwt_payload
+    raw_patient_id = patient_id
     patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
-    if p.get("role") == "patient" and p.get("uid") != patient_id:
-        return jsonify({"error": "forbidden"}), 403
+    if not _doctor_has_patient_access(p, patient_id, raw_patient_id):  # [C2]
+        return _forbidden()
     status_filter = request.args.get("status") or None
     conds = store.conditions_for_patient(patient_id, status=status_filter)
     _audit("emr_conditions_read", actor=p.get("uid") or p.get("sub", ""),
@@ -801,12 +764,11 @@ def update_condition(condition_id):
     if not existing:
         return jsonify({"error": "condition_not_found"}), 404
 
-    # Only the recording doctor or admin can update
-    if jwt_p.get("role") == "doctor":
-        recorder = existing["recorded_by"]
-        doctor_id = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
-        if recorder != doctor_id:
-            return jsonify({"error": "forbidden"}), 403
+    # [C2] Only the recording doctor, and only while they hold a grant.
+    doctor_id = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
+    if existing["recorded_by"] != doctor_id or \
+            not _doctor_has_patient_access(jwt_p, existing["patient_id"]):
+        return _forbidden()
 
     allowed = {"status", "resolved_date", "notes"}
     updates = {k: v for k, v in body.items() if k in allowed}
@@ -839,9 +801,11 @@ def create_encounter():
     body  = request.get_json(silent=True) or {}
     jwt_p = request.jwt_payload
 
-    # Auto-fill doctor_id from JWT
-    if not body.get("doctor_id"):
-        body["doctor_id"] = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
+    # [C2][X4] Need a grant for the patient; doctor identity comes from the token.
+    if not _doctor_has_patient_access(jwt_p, _resolve_pid(body.get("patient_id", "")),
+                                      body.get("patient_id", "")):
+        return _forbidden()
+    body["doctor_id"] = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
 
     errors = models.validate_encounter(body)
     if errors:
@@ -875,9 +839,10 @@ def create_encounter():
 @_require_jwt_deco()
 def list_patient_encounters(patient_id):
     p = request.jwt_payload
+    raw_patient_id = patient_id
     patient_id = _resolve_pid(patient_id)  # accept profile_code OR UUID
-    if p.get("role") == "patient" and p.get("uid") != patient_id:
-        return jsonify({"error": "forbidden"}), 403
+    if not _doctor_has_patient_access(p, patient_id, raw_patient_id):  # [C2]
+        return _forbidden()
     encs = store.encounters_for_patient(patient_id)
     _audit("emr_encounters_read", actor=p.get("uid") or p.get("sub", ""),
            target=patient_id, detail="", ip=request.remote_addr)
@@ -903,12 +868,8 @@ def get_encounter(encounter_id):
     enc = store.get_encounter(encounter_id)
     if not enc:
         return jsonify({"error": "encounter_not_found"}), 404
-    patient_code = p.get("profile_code") or p.get("uid", "")
-    doctor_id    = p.get("doctor_code") or p.get("uid", "")
-    if p.get("role") == "patient" and patient_code != enc["patient_id"]:
-        return jsonify({"error": "forbidden"}), 403
-    if p.get("role") == "doctor" and doctor_id != enc["doctor_id"]:
-        return jsonify({"error": "forbidden"}), 403
+    if not _doctor_has_patient_access(p, enc["patient_id"]):  # [C2]
+        return _forbidden()
     _audit("emr_encounter_read", actor=p.get("uid") or p.get("sub", ""),
            target=encounter_id, detail="", ip=request.remote_addr)
     return jsonify(enc), 200
@@ -921,12 +882,8 @@ def get_encounter_bundle(encounter_id):
     enc = store.get_encounter(encounter_id)
     if not enc:
         return jsonify({"error": "encounter_not_found"}), 404
-    patient_code = p.get("profile_code") or p.get("uid", "")
-    doctor_id    = p.get("doctor_code") or p.get("uid", "")
-    if p.get("role") == "patient" and patient_code != enc["patient_id"]:
-        return jsonify({"error": "forbidden"}), 403
-    if p.get("role") == "doctor" and doctor_id != enc["doctor_id"]:
-        return jsonify({"error": "forbidden"}), 403
+    if not _doctor_has_patient_access(p, enc["patient_id"]):  # [C2]
+        return _forbidden()
     bundle = store.get_encounter_bundle(encounter_id)
     _audit("emr_encounter_bundle_read", actor=p.get("uid") or p.get("sub", ""),
            target=encounter_id, detail="", ip=request.remote_addr)
@@ -943,11 +900,11 @@ def update_encounter(encounter_id):
     if not existing:
         return jsonify({"error": "encounter_not_found"}), 404
 
-    # Only the encounter's doctor or admin can update
-    if jwt_p.get("role") == "doctor":
-        doctor_id = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
-        if existing["doctor_id"] != doctor_id:
-            return jsonify({"error": "forbidden"}), 403
+    # [C2] Only the encounter's doctor, and only while they hold a grant.
+    doctor_id = jwt_p.get("doctor_code") or jwt_p.get("uid", "")
+    if existing["doctor_id"] != doctor_id or \
+            not _doctor_has_patient_access(jwt_p, existing["patient_id"]):
+        return _forbidden()
 
     allowed = {"status", "summary", "completed_at"}
     updates = {k: v for k, v in body.items() if k in allowed}

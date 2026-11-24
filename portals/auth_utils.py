@@ -10,6 +10,7 @@ Provides:
   - cors_after_request(resp)   after_request hook implementing whitelist CORS
 """
 
+import hmac
 import os
 from functools import wraps
 from flask import session, redirect, url_for, jsonify, request
@@ -48,7 +49,9 @@ def get_server_api_key() -> str:
     server/api_key.txt only when FLASK_ENV=development, matching the
     backend's own fallback behavior in server/server.py.
     """
-    key = os.environ.get("SERVER_API_KEY", "")
+    # [C3] Prefer this portal's own key (MEDVAULT_SERVICE_KEY); fall back to
+    # the shared legacy key while the migration is in progress.
+    key = os.environ.get("MEDVAULT_SERVICE_KEY", "") or os.environ.get("SERVER_API_KEY", "")
     if key:
         return key
     if os.environ.get("FLASK_ENV", "production") == "development":
@@ -151,7 +154,8 @@ def login_required(role: str | None = None):
             api_key = request.headers.get("X-API-Key", "")
             if api_key:
                 stored_key = get_server_api_key()
-                if stored_key and api_key == stored_key:
+                if stored_key and hmac.compare_digest(api_key.encode("utf-8"),
+                                                      stored_key.encode("utf-8")):  # [C3]
                     # A valid API key authenticates the caller as a trusted
                     # internal service, such as landing.py proxying a request.
                     # It does not authenticate an end user or grant any role;
