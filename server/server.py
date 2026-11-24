@@ -34,6 +34,8 @@ PROJECT_ROOT = os.path.dirname(SERVER_BASE_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from common.ipfs_utils import IPFSClient, IPFSStorageError
+
 # portals/auth_utils.py provides hash_password/check_password — add the
 # portals dir to sys.path so it's importable as a sibling module, same
 # pattern used by portals/patient_portal.py.
@@ -2109,15 +2111,12 @@ def _schedule_cleanup():
 
 
 def purge_expired_shares():
-    """Clear overdue share payloads; audit only the number of rows affected."""
-    # Nulling columns and deleting rows cannot erase WAL, backup, replica, or log
-    # copies. Stored share material is ciphertext and a doctor-wrapped key, so
-    # those copies are unreadable without the named doctor's private key.
+    """Clear overdue share payloads and their IPFS references."""
     with db_cursor() as cur:
         cur.execute("""
             UPDATE shares
                SET status = 'purged', ciphertext_blob = NULL, wrapped_key = NULL,
-                   signature = NULL, purged_at = now()
+                   signature = NULL, ipfs_cid = NULL, purged_at = now()
              WHERE status = 'active' AND expires_at <= now()
         """)
         count = cur.rowcount
@@ -2139,13 +2138,14 @@ def _share_parse_expiry(value):
 @_require_jwt(roles=["patient"])
 @rate_limited(max_calls=5, window=60)
 def create_snapshot_share():
-    """Store a patient-created encrypted snapshot for one doctor."""
+    """Store encrypted share ciphertext on IPFS and metadata in PostgreSQL."""
     from datetime import timedelta
 
     purge_expired_shares()
     raw_body = request.get_data(cache=True)
     if len(raw_body) > 5 * 1024 * 1024:
         return jsonify({"error": "payload_too_large"}), 413
+
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return jsonify({"error": "invalid_json"}), 400
@@ -2154,98 +2154,196 @@ def create_snapshot_share():
     doctor_code = body.get("doctor_code")
     patient_code = body.get("patient_code")
     token_patient_code = request.jwt_payload.get("profile_code")
+
     if not token_patient_code or patient_code != token_patient_code:
         return jsonify({"error": "patient_code_mismatch"}), 403
     if not isinstance(doctor_code, str) or not doctor_code:
         return jsonify({"error": "invalid_doctor_code"}), 400
+
     label = body.get("label", "")
     if not isinstance(label, str) or len(label) > 120:
         return jsonify({"error": "invalid_label"}), 400
+
     ttl = body.get("expires_in_seconds", 86400)
     if isinstance(ttl, bool) or not isinstance(ttl, int) or not 300 <= ttl <= 604800:
         return jsonify({"error": "invalid_expiry"}), 400
 
-    required = ("share_id", "version", "expires_at", "nonce", "ciphertext",
-                "wrapped_key", "signature")
-    if any(not isinstance(payload.get(key), str) or not payload.get(key) for key in required if key != "version"):
+    required = (
+        "share_id", "version", "expires_at", "nonce",
+        "ciphertext", "wrapped_key", "signature"
+    )
+    if any(
+        not isinstance(payload.get(key), str) or not payload.get(key)
+        for key in required if key != "version"
+    ):
         return jsonify({"error": "invalid_package"}), 400
-    if type(payload.get("version")) is not int or payload.get("version") != 1 or payload.get("patient_code") != patient_code or payload.get("doctor_code") != doctor_code:
+
+    if (
+        type(payload.get("version")) is not int
+        or payload.get("version") != 1
+        or payload.get("patient_code") != patient_code
+        or payload.get("doctor_code") != doctor_code
+    ):
         return jsonify({"error": "package_identity_mismatch"}), 400
+
     try:
         package_expiry = _share_parse_expiry(payload["expires_at"])
     except (TypeError, ValueError):
         return jsonify({"error": "invalid_expiry"}), 400
-    server_now = datetime.now(timezone.utc)
-    server_expiry = server_now + timedelta(seconds=ttl)
+
+    server_expiry = datetime.now(timezone.utc) + timedelta(seconds=ttl)
     if abs((package_expiry - server_expiry).total_seconds()) > 5:
         return jsonify({"error": "package_expiry_mismatch"}), 400
 
+    # Confirm the intended doctor exists before uploading anything.
     with db_cursor(commit=False) as cur:
-        cur.execute("SELECT 1 FROM doctors WHERE doctor_code = %s", (doctor_code,))
+        cur.execute(
+            "SELECT 1 FROM doctors WHERE doctor_code = %s",
+            (doctor_code,)
+        )
         if not cur.fetchone():
             return jsonify({"error": "doctor_not_found"}), 404
+
     try:
-        # Preserve the exact signed deadline for server and client expiry checks.
-        # The server-calculated deadline above is a consistency check only.
+        try:
+            ciphertext_bytes = base64.b64decode(
+                payload["ciphertext"], validate=True
+            )
+        except (ValueError, TypeError):
+            return jsonify({"error": "invalid_ciphertext"}), 400
+
+        if not ciphertext_bytes:
+            return jsonify({"error": "empty_ciphertext"}), 400
+
+        ipfs = IPFSClient()
+        cid = ipfs.add_bytes(ciphertext_bytes)
+
+        # Do not store ciphertext in PostgreSQL; keep only the metadata
+        # needed to reconstruct the signed package on retrieval.
         ciphertext_blob = json.dumps({
-            "version": 1, "expires_at": payload["expires_at"],
-            "nonce": payload["nonce"], "ciphertext": payload["ciphertext"],
+            "version": payload["version"],
+            "expires_at": payload["expires_at"],
+            "nonce": payload["nonce"],
         })
-        with db_cursor() as cur:
-            cur.execute("""
-                INSERT INTO shares
-                    (share_id, patient_code, doctor_code, label, ciphertext_blob,
-                     wrapped_key, signature, expires_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (payload["share_id"], patient_code, doctor_code, label,
-                  ciphertext_blob, payload["wrapped_key"], payload["signature"], package_expiry))
+
+        try:
+            with db_cursor() as cur:
+                cur.execute("""
+                    INSERT INTO shares
+                        (share_id, patient_code, doctor_code, label,
+                         ciphertext_blob, wrapped_key, signature,
+                         expires_at, ipfs_cid)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    payload["share_id"], patient_code, doctor_code, label,
+                    ciphertext_blob, payload["wrapped_key"],
+                    payload["signature"], package_expiry, cid
+                ))
+        except Exception:
+            # The upload is pinned by this node. If the DB insert fails,
+            # remove this node's pin as best-effort cleanup.
+            try:
+                ipfs.unpin(cid)
+            except Exception:
+                pass
+            raise
+
+    except IPFSStorageError:
+        return jsonify({"error": "ipfs_upload_failed"}), 503
     except Exception:
         return jsonify({"error": "share_create_failed"}), 400
+
     audit("share_created", actor=patient_code, target=payload["share_id"])
-    return jsonify({"share_id": payload["share_id"], "status": "active",
-                    "expires_at": payload["expires_at"]}), 201
+    return jsonify({
+        "share_id": payload["share_id"],
+        "status": "active",
+        "expires_at": payload["expires_at"],
+        "ipfs_cid": cid,
+    }), 201
 
 
 @app.route("/shares/<share_id>", methods=["GET"])
 @_require_jwt(roles=["doctor"])
 def fetch_snapshot_share(share_id):
+    """Fetch an authorized encrypted share, retrieving ciphertext from IPFS."""
     doctor_code = request.jwt_payload.get("doctor_code")
     if not doctor_code:
         return jsonify({"error": "share_not_found"}), 404
+
     with db_cursor() as cur:
         cur.execute("""
-            SELECT share_id, patient_code, doctor_code, ciphertext_blob, wrapped_key,
-                   signature, expires_at, status
-              FROM shares WHERE share_id = %s AND doctor_code = %s
+            SELECT share_id, patient_code, doctor_code, ciphertext_blob,
+                   wrapped_key, signature, expires_at, status, ipfs_cid
+              FROM shares
+             WHERE share_id = %s AND doctor_code = %s
         """, (share_id, doctor_code))
         row = cur.fetchone()
+
         if not row:
             return jsonify({"error": "share_not_found"}), 404
+
         if row["status"] != "active" or row["expires_at"] <= datetime.now(timezone.utc):
             if row["status"] == "active":
                 cur.execute("""
-                    UPDATE shares SET status = 'expired', ciphertext_blob = NULL,
-                           wrapped_key = NULL, signature = NULL
+                    UPDATE shares
+                       SET status = 'expired', ciphertext_blob = NULL,
+                           wrapped_key = NULL, signature = NULL, ipfs_cid = NULL
                      WHERE share_id = %s AND doctor_code = %s AND status = 'active'
                 """, (share_id, doctor_code))
             return jsonify({"error": "share_expired_or_unavailable"}), 410
-        cur.execute("SELECT patient_public_pem FROM patients WHERE profile_code = %s",
-                    (row["patient_code"],))
+
+        cur.execute(
+            "SELECT patient_public_pem FROM patients WHERE profile_code = %s",
+            (row["patient_code"],)
+        )
         patient = cur.fetchone()
+
         package_blob = row["ciphertext_blob"]
         if isinstance(package_blob, str):
             package_blob = json.loads(package_blob)
-        package = {
-            "share_id": row["share_id"], "version": package_blob["version"],
-            "patient_code": row["patient_code"], "doctor_code": row["doctor_code"],
-            "expires_at": package_blob["expires_at"], "nonce": package_blob["nonce"],
-            "ciphertext": package_blob["ciphertext"], "wrapped_key": row["wrapped_key"],
-            "signature": row["signature"],
+        if not isinstance(package_blob, dict):
+            return jsonify({"error": "share_data_unavailable"}), 503
+
+        ipfs_cid = row.get("ipfs_cid")
+        wrapped_key = row["wrapped_key"]
+        signature = row["signature"]
+        patient_public_pem = patient.get("patient_public_pem") if patient else None
+        package_metadata = {
+            "share_id": row["share_id"],
+            "version": package_blob.get("version"),
+            "patient_code": row["patient_code"],
+            "doctor_code": row["doctor_code"],
+            "expires_at": package_blob.get("expires_at"),
+            "nonce": package_blob.get("nonce"),
+            "wrapped_key": wrapped_key,
+            "signature": signature,
         }
-        cur.execute("UPDATE shares SET fetched_at = now() WHERE share_id = %s", (share_id,))
+
+        # Legacy shares may still have ciphertext in PostgreSQL.
+        legacy_ciphertext = package_blob.get("ciphertext")
+        cur.execute(
+            "UPDATE shares SET fetched_at = now() WHERE share_id = %s",
+            (share_id,)
+        )
+
+    if ipfs_cid:
+        try:
+            ciphertext_bytes = IPFSClient().get_bytes(ipfs_cid)
+            package_metadata["ciphertext"] = base64.b64encode(
+                ciphertext_bytes
+            ).decode("ascii")
+        except IPFSStorageError:
+            return jsonify({"error": "ipfs_fetch_failed"}), 503
+    elif legacy_ciphertext:
+        package_metadata["ciphertext"] = legacy_ciphertext
+    else:
+        return jsonify({"error": "share_data_unavailable"}), 503
+
     audit("share_fetched", actor=doctor_code, target=share_id)
-    return jsonify({"share": package,
-                    "patient_public_pem": patient.get("patient_public_pem") if patient else None}), 200
+    return jsonify({
+        "share": package_metadata,
+        "patient_public_pem": patient_public_pem,
+    }), 200
 
 
 @app.route("/shares/incoming", methods=["GET"])
@@ -2283,7 +2381,7 @@ def revoke_snapshot_share(share_id):
     with db_cursor() as cur:
         cur.execute("""
             UPDATE shares SET status = 'revoked', ciphertext_blob = NULL,
-                   wrapped_key = NULL, signature = NULL
+                   wrapped_key = NULL, signature = NULL, ipfs_cid = NULL
              WHERE share_id = %s AND patient_code = %s AND status = 'active'
         """, (share_id, patient_code))
         updated = cur.rowcount
