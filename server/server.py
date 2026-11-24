@@ -118,12 +118,35 @@ if not _SERVER_API_KEY:
         print("[AUTH] Share this key with authorised clients: " + _SERVER_API_KEY + "\n")
 
 
+def _parse_service_keys(raw: str) -> dict:
+    """[C3] Parse SERVICE_API_KEYS="landing=k1,patient_portal=k2,doctor_portal=k3"."""
+    keys = {}
+    for part in (raw or "").split(","):
+        name, sep, value = part.strip().partition("=")
+        if sep and name.strip() and len(value.strip()) >= 32:
+            keys[name.strip()] = value.strip()
+    return keys
+
+
+# [C3] One key per calling service, so a leaked key can be revoked alone and
+# audit entries say which service called. SERVER_API_KEY still works as the
+# "legacy" service until every portal has its own key.
+_SERVICE_API_KEYS = _parse_service_keys(os.environ.get("SERVICE_API_KEYS", ""))
+
+
 def _require_api_key():
-    """Return a 401 response if the request has no valid API key, else None."""
-    if not hmac.compare_digest(request.headers.get("X-API-Key", "").encode("utf-8"), _SERVER_API_KEY.encode("utf-8")):
-        return jsonify({"error": "unauthorized",
-                        "hint": "Add header  X-API-Key: <your key>"}), 401
-    return None
+    """Return a 401 response if the request has no valid API key, else None.
+    On success g.api_service holds the calling service's name."""
+    supplied = request.headers.get("X-API-Key", "").encode("utf-8")
+    for name, value in _SERVICE_API_KEYS.items():
+        if hmac.compare_digest(supplied, value.encode("utf-8")):
+            g.api_service = name
+            return None
+    if _SERVER_API_KEY and hmac.compare_digest(supplied, _SERVER_API_KEY.encode("utf-8")):
+        g.api_service = "legacy"
+        return None
+    return jsonify({"error": "unauthorized",
+                    "hint": "Add header  X-API-Key: <your key>"}), 401
 
 # -----------------------
 # Utility helpers (kept for non-DB file ops)
@@ -167,6 +190,8 @@ def _save_json(path, obj):
 # DB init
 # -----------------------
 from db import init_db, db_cursor
+from authz import authorize_patient_access  # [C2] single access decision
+_FORBIDDEN_DETAIL = "Doctor does not have approved access for this patient."
 try:
     init_db()
     print("[DB] PostgreSQL connected ✓")
@@ -412,7 +437,11 @@ def rate_limited(max_calls=10, window=60):
 # ════════════════════════════════════════════════════════════════════════════
 
 def audit(action, actor="", target="", detail="", ip=""):
-    actor = actor or "api_key"
+    if not actor:
+        try:
+            actor = "service:" + g.get("api_service", "unknown")  # [C3]
+        except RuntimeError:
+            actor = "api_key"
     try:
         ip = ip or (request.remote_addr if request else "")
     except RuntimeError:
@@ -766,51 +795,16 @@ def _db_get_all_wrapped_keys(profile_code: str) -> dict:
 
 
 def _doctor_has_active_access(patient_code: str, doctor_code: str) -> bool:
-    """Return True iff the doctor has an active access relationship with this patient.
-    Checks (in order):
-      1. wrapped_keys table (legacy crypto-based access)
-      2. access_db table — approved status (new JWT-based flow)
-      3. emr_prescriptions / emr_lab_reports — if doctor wrote clinical data they implicitly had access
-    """
-    # 1. Wrapped key (legacy)
-    if _db_get_wrapped_key(patient_code, doctor_code) is not None:
-        return True
-    # 2. access_db — look up by doctor_code, accept 'approved' status
-    try:
-        with db_cursor(commit=False) as cur:
-            # Resolve doctor UUID from doctor_code
-            cur.execute("SELECT id FROM users WHERE doctor_code=%s LIMIT 1", (doctor_code,))
-            doc_row = cur.fetchone()
-            if doc_row:
-                doc_uuid = str(doc_row["id"])
-                # Resolve patient UUID from profile_code
-                cur.execute("SELECT id FROM users WHERE profile_code=%s LIMIT 1", (patient_code,))
-                pat_row = cur.fetchone()
-                if pat_row:
-                    pat_uuid = str(pat_row["id"])
-                    cur.execute("""
-                        SELECT 1 FROM access_db
-                        WHERE doctor_id=%s AND patient_id=%s AND status='approved'
-                        LIMIT 1
-                    """, (doc_uuid, pat_uuid))
-                    if cur.fetchone():
-                        return True
-            # 3. Implicit access — doctor already has EMR data for this patient
-            cur.execute("""
-                SELECT 1 FROM emr_prescriptions
-                WHERE patient_id=%s AND doctor_id=%s LIMIT 1
-            """, (patient_code, doctor_code))
-            if cur.fetchone():
-                return True
-            cur.execute("""
-                SELECT 1 FROM emr_lab_reports
-                WHERE patient_id=%s AND doctor_id=%s LIMIT 1
-            """, (patient_code, doctor_code))
-            if cur.fetchone():
-                return True
-    except Exception as _e:
-        print(f"[access_check] DB error: {_e}")
-    return False
+    """[C2] Thin wrapper kept for old call sites; authz makes the decision.
+    [H6] The old "implicit access" rule (a doctor who once wrote a prescription
+    or lab report kept access forever) was removed."""
+    with db_cursor(commit=False) as cur:
+        cur.execute("SELECT id FROM users WHERE doctor_code = %s AND role = 'doctor' LIMIT 1",
+                    (doctor_code,))
+        row = cur.fetchone()
+    payload = {"role": "doctor", "uid": str(row["id"]) if row else "",
+               "doctor_code": doctor_code}
+    return authorize_patient_access(payload, patient_code)
 
 
 
@@ -1136,20 +1130,10 @@ def _db_get_image(image_id: str) -> dict | None:
 # ════════════════════════════════════════════════════════════════════════════
 
 def _has_active_access(doctor_id: str, patient_id: str) -> bool:
-    """Return True only for an approved access_db row for this doctor/patient pair."""
+    """[C2] Thin wrapper: doctor (by users.id) -> patient, decided by authz."""
     if not doctor_id or not patient_id:
         return False
-
-    with db_cursor(commit=False) as cur:
-        cur.execute("""
-            SELECT 1
-            FROM access_db
-            WHERE doctor_id = %s
-              AND patient_id = %s
-              AND status = 'approved'
-            LIMIT 1
-        """, (doctor_id, patient_id))
-        return cur.fetchone() is not None
+    return authorize_patient_access({"role": "doctor", "uid": doctor_id}, patient_id)
 
 
 def _db_access_get_pending(doctor_id: str, patient_id: str) -> dict | None:
@@ -1362,7 +1346,17 @@ def _db_appt_respond(req_id: str, doctor_username: str, status: str,
 # [H1] Helper: check if the caller may access a patient's data
 # ════════════════════════════════════════════════════════════════════════════
 
+def _caller_payload():
+    """[C3] Decoded token of the end user behind this request, or None."""
+    auth = request.headers.get("Authorization", "")
+    token = auth.replace("Bearer ", "").strip() if auth.startswith("Bearer ") else ""
+    if not token:
+        token = request.cookies.get("access_token", "")
+    return _jwt_decode(token) if token else None
+
+
 def _caller_may_access_patient(profile_code: str) -> bool:
+    """[C2] Thin wrapper: decode the caller's token and ask authz."""
     auth = request.headers.get("Authorization", "")
     token = auth.replace("Bearer ", "").strip() if auth.startswith("Bearer ") else ""
     if not token:
@@ -1372,18 +1366,7 @@ def _caller_may_access_patient(profile_code: str) -> bool:
     payload = _jwt_decode(token)
     if not payload:
         return False
-    role = payload.get("role", "")
-    uid  = payload.get("uid", "")  # UUID
-    # profile_code/doctor_code stored as extra claims for quick lookup
-    pcode = payload.get("profile_code", "") or payload.get("doctor_code", "") or uid
-    if role == "patient":
-        # Match by profile_code claim or (legacy) uid == profile_code
-        return pcode == profile_code or uid == profile_code
-    if role == "doctor":
-        # doctor_code stored as claim; uid is the doctor's UUID
-        doc_code = payload.get("doctor_code", "") or uid
-        return _doctor_has_active_access(profile_code, doc_code)
-    return False
+    return authorize_patient_access(payload, profile_code)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1445,6 +1428,24 @@ def register_user():
                         "encrypted_record": enc}), 400
 
     safe_profile = "".join([c for c in profile if c.isalnum() or c in ("-", "_")])
+
+    # [C3] The record must be signed by the patient's key, and a stored
+    # public key can never be replaced through this endpoint.
+    pub_pem = payload.get("patient_public_pem") or ""
+    sig = payload.get("signature") or ""
+    try:
+        from common.crypto_utils import rsa_load_public, rsa_verify
+        pub = rsa_load_public(pub_pem.encode("utf-8"))
+        signed = (enc["nonce"] + "|" + enc["ciphertext"]).encode("utf-8")
+        sig_ok = bool(sig) and rsa_verify(pub, signed, sig)
+    except Exception:
+        sig_ok = False
+    if not sig_ok:
+        return jsonify({"error": "invalid_signature"}), 400
+    existing = _db_get_patient(safe_profile)
+    if existing and existing.get("patient_public_pem") and \
+            existing["patient_public_pem"] != pub_pem:
+        return jsonify({"error": "public_key_already_registered"}), 409
 
     obj = {
         "profile_code": profile,
@@ -1674,6 +1675,13 @@ def register_doctor():
         return jsonify({"error": "missing_required_fields",
                         "required": ["doctor_id", "doctor_code", "public_pem"]}), 400
 
+    # [C3] Public keys are write-once: an existing doctor's key is never replaced.
+    existing = _db_get_doctor(doctor_code)
+    if existing:
+        if existing.get("public_pem") == public_pem:
+            return jsonify({"status": "ok", "doctor_code": doctor_code}), 200
+        return jsonify({"error": "public_key_already_registered"}), 409
+
     try:
         _db_upsert_doctor(doctor_code, {
             "doctor_id": doctor_id,
@@ -1835,11 +1843,25 @@ def request_access_simple(profile_code):
                         "missing": missing}), 400
 
     doctor_code     = payload["doctor_code"]
-    doctor_pub      = payload["doctor_public_pem"]
     enc_profile_b64 = payload["encrypted_doctor_profile_b64"]
 
     if not isinstance(doctor_code, str) or not doctor_code:
         return jsonify({"error": "invalid_doctor_code"}), 400
+
+    # [C4] The caller must be that doctor, or the patient sharing their own
+    # record (QR flow). The public key always comes from the doctors table.
+    caller = _caller_payload() or {}
+    is_that_doctor = caller.get("role") == "doctor" and caller.get("doctor_code") == doctor_code
+    is_owner = caller.get("role") == "patient" and \
+        authorize_patient_access(caller, profile_code)
+    if not (is_that_doctor or is_owner):
+        return jsonify({"error": "forbidden"}), 403
+    registered = _db_get_doctor(doctor_code)
+    if not registered or not registered.get("public_pem"):
+        return jsonify({"error": "doctor_not_registered"}), 404
+    if payload["doctor_public_pem"] != registered["public_pem"]:
+        return jsonify({"error": "doctor_key_mismatch"}), 400
+    doctor_pub = registered["public_pem"]
     if not isinstance(enc_profile_b64, str) or len(enc_profile_b64) < 16:
         return jsonify({"error": "invalid_encrypted_profile"}), 400
 
@@ -1880,13 +1902,15 @@ def request_access_simple(profile_code):
 # ACTIVE REQUESTS ENDPOINTS
 # ════════════════════════════════════════════════════════════════════════════
 
-@app.route("/active_requests", methods=["GET"])
-def get_all_active_requests():
-    auth_err = _require_api_key()
-    if auth_err:
-        return auth_err
-    arr = _db_get_access_requests()
-    return jsonify(arr), 200
+# [C3] /active_requests (every patient's requests to anyone with the API key)
+# was removed. Patients use /access_requests/mine with their own token.
+@app.route("/access_requests/mine", methods=["GET"])
+@_require_jwt(roles=["patient"])
+def my_access_requests():
+    code = request.jwt_payload.get("profile_code", "")
+    if not code:
+        return jsonify([]), 200
+    return jsonify(_db_get_access_requests(profile_code=code)), 200
 
 
 @app.route("/request_status/<request_id>", methods=["GET"])
@@ -1896,6 +1920,14 @@ def get_request_status(request_id):
         return auth_err
     found = _db_get_one_access_request(request_id)
     if not found:
+        return jsonify({"error": "not_found"}), 404
+    # [C3] Only the owning patient or the requesting doctor may see it.
+    caller = _caller_payload() or {}
+    is_owner = caller.get("role") == "patient" and \
+        authorize_patient_access(caller, found["profile_code"])
+    is_requester = caller.get("role") == "doctor" and \
+        caller.get("doctor_code") == found.get("doctor_code")
+    if not (is_owner or is_requester):
         return jsonify({"error": "not_found"}), 404
     return jsonify(found), 200
 
@@ -1966,38 +1998,51 @@ def approve_request():
     if not found or found.get("profile_code") != patient_code or found.get("doctor_code") != doctor_code:
         return jsonify({"error": "request_not_found"}), 404
 
-    # Persist wrapped key to DB
-    if wrapped_key:
-        try:
-            _db_upsert_wrapped_key(patient_code, doctor_code, {
-                "wrapped_key": wrapped_key,
-                "encrypted_kdata_with_temp": enc_kdata_with_temp,
-                "temp_key_expires_at": temp_key_expires_at,
-            })
-        except Exception as e:
-            return jsonify({"error": "write_wrapped_key_failed", "details": str(e)}), 500
+    # [C3] The API key only proves "a MedVault service"; the approving end
+    # user must be the patient who owns this request.
+    caller = _caller_payload()
+    if not caller or caller.get("role") != "patient" or \
+            not authorize_patient_access(caller, found["profile_code"]):
+        return jsonify({"error": "forbidden"}), 403
+    # [FC5] Only a pending request can be approved (no re-approving denied/expired).
+    if found.get("status") != "pending":
+        return jsonify({"error": "request_not_pending", "status": found.get("status")}), 409
 
-    # Update request status
-    updates = {
-        "status": "approved",
-        "approved_at": datetime.now(timezone.utc),
-    }
-    if wrapped_key:
-        updates["wrapped_key"] = wrapped_key
-    if enc_kdata_with_temp:
-        updates["encrypted_kdata"] = json.dumps(enc_kdata_with_temp) \
-            if isinstance(enc_kdata_with_temp, dict) else enc_kdata_with_temp
+    temp_exp = None
     if temp_key_expires_at:
         try:
-            updates["temp_key_expires_at"] = datetime.fromisoformat(temp_key_expires_at)
+            temp_exp = datetime.fromisoformat(temp_key_expires_at)
         except ValueError:
-            pass
+            temp_exp = None
+    enc_kdata_json = json.dumps(enc_kdata_with_temp) \
+        if isinstance(enc_kdata_with_temp, dict) else enc_kdata_with_temp
 
+    # [FC5] Wrapped key and status change commit together or not at all.
     try:
-        _db_update_access_request(req_id, updates)
-    except Exception as e:
-        return jsonify({"error": "update_failed", "details": str(e)}), 500
+        with db_cursor() as cur:
+            cur.execute("""
+                UPDATE access_requests
+                   SET status = 'approved', approved_at = now(),
+                       wrapped_key = %s, encrypted_kdata = %s, temp_key_expires_at = %s
+                 WHERE request_id = %s AND status = 'pending'
+            """, (wrapped_key, enc_kdata_json, temp_exp, req_id))
+            if cur.rowcount != 1:
+                raise RuntimeError("request is no longer pending")
+            if wrapped_key:
+                cur.execute("""
+                    INSERT INTO wrapped_keys
+                        (profile_code, doctor_code, wrapped_key, encrypted_kdata, temp_key_expires_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (profile_code, doctor_code) DO UPDATE SET
+                        wrapped_key         = EXCLUDED.wrapped_key,
+                        encrypted_kdata     = EXCLUDED.encrypted_kdata,
+                        temp_key_expires_at = EXCLUDED.temp_key_expires_at,
+                        uploaded_at         = now()
+                """, (patient_code, doctor_code, wrapped_key, enc_kdata_json, temp_exp))
+    except Exception:
+        return jsonify({"error": "approve_failed"}), 409
 
+    audit("access_request_approved", actor=caller.get("uid", ""), target=req_id)
     return jsonify({"status": "ok", "request_id": req_id}), 200
 
 
@@ -2029,6 +2074,19 @@ def update_request_status():
     found = _db_get_one_access_request(req_id)
     if not found:
         return jsonify({"error": "request_not_found"}), 404
+
+    # [C3] The owning patient may deny or cancel; the requesting doctor may cancel.
+    # 'expired' is set only by the server's own cleanup job.
+    caller = _caller_payload() or {}
+    is_owner = caller.get("role") == "patient" and \
+        authorize_patient_access(caller, found["profile_code"])
+    is_requester = caller.get("role") == "doctor" and \
+        caller.get("doctor_code") == found.get("doctor_code")
+    if not ((is_owner and status in ("denied", "cancelled")) or
+            (is_requester and status == "cancelled")):
+        return jsonify({"error": "forbidden"}), 403
+    if found.get("status") != "pending":
+        return jsonify({"error": "request_not_pending", "status": found.get("status")}), 409
 
     updates = {
         "status": status,
@@ -2506,11 +2564,16 @@ def auth_register():
 
     name     = (body.get("name", "") or "").strip()
     username = (body.get("username", "") or "").strip().lower()
-    role     = body.get("role", "patient")
+    # [C1] Public registration can only ever create a patient account.
+    requested_role = body.get("role", "patient")
+    if requested_role != "patient":
+        return jsonify({"error": "role_not_allowed",
+                        "detail": "Only patient accounts can self-register."}), 403
+    role     = "patient"
     pw_hash  = body.get("password_hash", "")
     pub_key  = body.get("public_key", "")
     enc_priv = body.get("encrypted_private_key", "")
-    
+
     # Check for raw password to hash server-side
     raw_password = body.get("password")
     if raw_password and not pw_hash:
@@ -2560,6 +2623,10 @@ def internal_register_user_db():
     name     = (body.get("name", "") or "").strip()
     pw_hash  = body.get("password_hash", "")
     role     = body.get("role", "patient")
+    # [C1] This internal endpoint may only create patient rows. Doctors are
+    # created by /admin/doctors and admins by server/create_admin.py.
+    if role != "patient":
+        return jsonify({"error": "role_not_allowed"}), 403
     pub_key  = body.get("public_key", "")
     enc_priv = body.get("encrypted_private_key", "")
     must_change_password = bool(body.get("must_change_password", False))
@@ -2889,29 +2956,8 @@ def auth_me():
     })
 
 
-@app.route("/api/refresh_token", methods=["POST", "OPTIONS"])
-def api_refresh_token():
-    """Re-issue a JWT for an existing authenticated session.
-    Called by the landing portal when the session JWT has expired.
-    Requires API key auth (not JWT) since the JWT is already expired.
-    Body: {username, role}  — the portal already holds the session identity.
-    """
-    if request.method == "OPTIONS":
-        return jsonify({}), 200
-    body     = request.get_json(silent=True) or {}
-    username = (body.get("username") or "").strip().lower()
-    role     = (body.get("role") or "").strip()
-    if not username:
-        return jsonify({"error": "username required"}), 400
-    user = _db_get_user_by_username(username)
-    if not user:
-        return jsonify({"error": "user_not_found"}), 404
-    # Only reissue if role matches (basic sanity check)
-    if role and user.get("role") and user["role"] != role:
-        return jsonify({"error": "role_mismatch"}), 403
-    token = _issue_jwt(user)
-    audit("token_refreshed", actor=username, detail="silent refresh via portal")
-    return jsonify({"token": token, "access_token": token, "status": "refreshed"}), 200
+# [X1] /api/refresh_token was removed: it issued a token for any username with
+# no authentication at all. Clients must use /auth/refresh with a refresh token.
 
 
 @app.route("/auth/login_history", methods=["GET"])
@@ -2980,13 +3026,8 @@ def upload_report():
 @_require_jwt()
 def get_patient_reports(patient_id):
     p = request.jwt_payload
-    if p["role"] == "patient" and p["uid"] != patient_id:
-        return jsonify({"error": "forbidden"}), 403
-    if p["role"] == "doctor" and not _has_active_access(p["uid"], patient_id):
-        return jsonify({
-            "error": "forbidden",
-            "detail": "Doctor does not have approved access for this patient.",
-        }), 403
+    if not authorize_patient_access(p, patient_id):  # [C2] deny by default
+        return jsonify({"error": "forbidden", "detail": _FORBIDDEN_DETAIL}), 403
     records = _db_get_records_for_patient(patient_id)
     audit("patient_reports_listed", actor=p.get("uid") or p.get("sub", ""),
           target=patient_id, detail="", ip=request.remote_addr)
@@ -3000,13 +3041,8 @@ def get_report(record_id):
     rec = _db_get_record(record_id)
     if not rec:
         return jsonify({"error": "not_found"}), 404
-    if p["role"] == "patient" and p["uid"] != rec["patient_id"]:
-        return jsonify({"error": "forbidden"}), 403
-    if p["role"] == "doctor" and not _has_active_access(p["uid"], rec["patient_id"]):
-        return jsonify({
-            "error": "forbidden",
-            "detail": "Doctor does not have approved access for this patient.",
-        }), 403
+    if not authorize_patient_access(p, rec["patient_id"]):  # [C2]
+        return jsonify({"error": "forbidden", "detail": _FORBIDDEN_DETAIL}), 403
     audit("report_viewed", actor=p.get("uid") or p.get("sub", ""),
           target=record_id, detail="", ip=request.remote_addr)
     return jsonify(rec)
@@ -3084,13 +3120,8 @@ def get_images_for_record(record_id):
     rec = _db_get_record(record_id)
     if not rec:
         return jsonify({"error": "not_found"}), 404
-    if p["role"] == "patient" and p["uid"] != rec["patient_id"]:
-        return jsonify({"error": "forbidden"}), 403
-    if p["role"] == "doctor" and not _has_active_access(p["uid"], rec["patient_id"]):
-        return jsonify({
-            "error": "forbidden",
-            "detail": "Doctor does not have approved access for this patient.",
-        }), 403
+    if not authorize_patient_access(p, rec["patient_id"]):  # [C2]
+        return jsonify({"error": "forbidden", "detail": _FORBIDDEN_DETAIL}), 403
     images = _db_get_images_for_record(record_id)
     audit("record_images_listed",
           actor=p.get("uid") or p.get("sub", ""),
@@ -3109,13 +3140,8 @@ def download_image(image_id):
     rec = _db_get_record(img["record_id"])
     if not rec:
         return jsonify({"error": "record_not_found"}), 404
-    if p["role"] == "patient" and p["uid"] != rec["patient_id"]:
-        return jsonify({"error": "forbidden"}), 403
-    if p["role"] == "doctor" and not _has_active_access(p["uid"], rec["patient_id"]):
-        return jsonify({
-            "error": "forbidden",
-            "detail": "Doctor does not have approved access for this patient.",
-        }), 403
+    if not authorize_patient_access(p, rec["patient_id"]):  # [C2]
+        return jsonify({"error": "forbidden", "detail": _FORBIDDEN_DETAIL}), 403
     path = os.path.join(UPLOADS_DIR, img["encrypted_image_path"])
     if not os.path.exists(path):
         return jsonify({"error": "file_missing"}), 404
@@ -3175,10 +3201,8 @@ def get_profile_photo(uid):
         jwt_payload = _jwt_decode(token)
         if jwt_payload:
             caller_uid = jwt_payload.get("uid", "")
-            role = jwt_payload.get("role", "")
-            if role == "patient" and caller_uid != uid:
-                return jsonify({"error": "forbidden"}), 403
-            if role == "doctor" and not _doctor_has_active_access(uid, caller_uid):
+            # [C2][H9] own photo, or a patient photo the caller is authorized for
+            if caller_uid != uid and not authorize_patient_access(jwt_payload, uid):
                 return jsonify({"error": "forbidden"}), 403
         else:
             return jsonify({"error": "invalid_or_expired_token"}), 401
@@ -3204,8 +3228,17 @@ def jwt_request_access():
     legacy_fields = ["profile_code", "doctor_code", "doctor_public_pem", "encrypted_doctor_profile_b64"]
     if all(field in body for field in legacy_fields):
         profile_code = (body.get("profile_code") or "").strip()
-        doctor_code = (body.get("doctor_code") or "").strip()
-        doctor_pub = body.get("doctor_public_pem")
+        # [C4] Identity comes from the token and the key from the doctors table,
+        # never from the request body.
+        doctor_code = (doctor_jwt.get("doctor_code") or "").strip()
+        if (body.get("doctor_code") or "").strip() != doctor_code:
+            return jsonify({"error": "doctor_code_mismatch"}), 403
+        registered = _db_get_doctor(doctor_code) if doctor_code else None
+        if not registered or not registered.get("public_pem"):
+            return jsonify({"error": "doctor_not_registered"}), 403
+        if body.get("doctor_public_pem") != registered["public_pem"]:
+            return jsonify({"error": "doctor_key_mismatch"}), 400
+        doctor_pub = registered["public_pem"]
         enc_profile_b64 = body.get("encrypted_doctor_profile_b64")
 
         if not profile_code:
@@ -3288,6 +3321,30 @@ def jwt_request_access():
     return jsonify(result), 201
 
 
+def _key_fingerprint(public_pem):
+    """[C4] Short SHA-256 fingerprint of a PEM public key, shown to patients so
+    they can compare it with the one their doctor reads out."""
+    if not public_pem:
+        return ""
+    digest = hashlib.sha256(public_pem.strip().encode("utf-8")).hexdigest()[:20].upper()
+    return " ".join(digest[i:i + 4] for i in range(0, 20, 4))
+
+
+def _with_doctor_fingerprints(rows):
+    """Add doctor_key_fingerprint to access_db rows (doctor_id is a users.id)."""
+    ids = list({r.get("doctor_id") for r in rows if r.get("doctor_id")})
+    pems = {}
+    if ids:
+        with db_cursor(commit=False) as cur:
+            cur.execute("""SELECT u.id, d.public_pem FROM users u
+                           JOIN doctors d ON d.doctor_code = u.doctor_code
+                           WHERE u.id = ANY(%s)""", (ids,))
+            pems = {str(r["id"]): r["public_pem"] for r in cur.fetchall()}
+    for r in rows:
+        r["doctor_key_fingerprint"] = _key_fingerprint(pems.get(str(r.get("doctor_id")), ""))
+    return rows
+
+
 @app.route("/access/patient_requests", methods=["GET"])
 @_require_jwt(roles=["patient"])
 def patient_access_requests():
@@ -3296,7 +3353,7 @@ def patient_access_requests():
     results = _db_access_for_patient(p["uid"])
     if not results and p.get("profile_code"):
         results = _db_access_for_patient(p["profile_code"])
-    return jsonify(results)
+    return jsonify(_with_doctor_fingerprints(results))
 
 
 @app.route("/access/respond", methods=["POST"])
@@ -3736,24 +3793,24 @@ def serve_note_image(filename):
     if base.startswith("note_"):
         note_id_from_file = base[5:]
 
-    if note_id_from_file:
-        note = _db_get_note(note_id_from_file)
-        if note:
-            auth_hdr = request.headers.get("Authorization", "")
-            token = auth_hdr.replace("Bearer ", "").strip() if auth_hdr.startswith("Bearer ") else ""
-            if not token:
-                token = request.cookies.get("access_token", "")
-            if token:
-                jwt_payload = _jwt_decode(token)
-                if jwt_payload:
-                    caller_uid = jwt_payload.get("uid", "")
-                    if (caller_uid != note.get("patient_code") and
-                            caller_uid != note.get("doctor_code")):
-                        return jsonify({"error": "forbidden"}), 403
-                else:
-                    return jsonify({"error": "invalid_or_expired_token"}), 401
-            else:
-                return jsonify({"error": "missing_token"}), 401
+    # [C2][M4] Always require a token and a matching note; never serve a file
+    # whose note cannot be found.
+    auth_hdr = request.headers.get("Authorization", "")
+    token = auth_hdr.replace("Bearer ", "").strip() if auth_hdr.startswith("Bearer ") else ""
+    if not token:
+        token = request.cookies.get("access_token", "")
+    if not token:
+        return jsonify({"error": "missing_token"}), 401
+    jwt_payload = _jwt_decode(token)
+    if not jwt_payload:
+        return jsonify({"error": "invalid_or_expired_token"}), 401
+    note = _db_get_note(note_id_from_file) if note_id_from_file else None
+    if not note:
+        return jsonify({"error": "image_not_found"}), 404
+    is_author = (jwt_payload.get("role") == "doctor" and
+                 jwt_payload.get("doctor_code") == note.get("doctor_code"))
+    if not is_author and not authorize_patient_access(jwt_payload, note.get("patient_code")):
+        return jsonify({"error": "forbidden"}), 403
 
     img_path = os.path.join(NOTE_IMAGES_DIR, filename)
     if not os.path.exists(img_path):
@@ -3890,13 +3947,10 @@ def doctor_notes_for_patient(patient_code):
         jwt_payload = _jwt_decode(token)
         if jwt_payload:
             auth_actor = jwt_payload.get("uid") or jwt_payload.get("sub") or "api_key"
-            role = jwt_payload.get("role", "")
-            uid  = jwt_payload.get("uid", "")
-            if role == "patient" and uid != patient_code:
+            auth_actor = jwt_payload.get("uid") or jwt_payload.get("sub") or "api_key"
+            # [C2][H9] one decision; it understands both users.id and profile_code
+            if not authorize_patient_access(jwt_payload, patient_code):
                 return jsonify({"error": "forbidden"}), 403
-            if role == "doctor" and not _doctor_has_active_access(patient_code, uid):
-                return jsonify({"error": "forbidden",
-                                "detail": "No active access for this patient."}), 403
         else:
             return jsonify({"error": "invalid_or_expired_token"}), 401
     else:

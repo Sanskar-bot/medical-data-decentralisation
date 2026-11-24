@@ -106,39 +106,10 @@ def _refresh_jwt():
     Returns the new token string on success, or None on failure.
     This is called automatically when the backend returns invalid_or_expired_token.
     """
-    email    = session.get("email", "")
-    username = session.get("username", "")
-    password = session.get("_pw_cache", "")   # only set if user opted to cache
-    role     = session.get("role", "")
-
-    # Strategy 1: re-issue JWT from backend using stored credentials
-    if email and password:
-        try:
-            r = http.post(f"{BACKEND}/login",
-                          json={"email": email, "password": password},
-                          headers=_headers(), timeout=10)
-            if r.ok:
-                tok = r.json().get("token") or r.json().get("access_token", "")
-                if tok:
-                    session["jwt_token"] = tok
-                    return tok
-        except Exception:
-            pass
-
-    # Strategy 2: ask the backend to reissue based on username (no-pw path, some deployments)
-    if username:
-        try:
-            r = http.post(f"{BACKEND}/api/refresh_token",
-                          json={"username": username, "role": role},
-                          headers=_headers(), timeout=10)
-            if r.ok:
-                tok = r.json().get("token") or r.json().get("access_token", "")
-                if tok:
-                    session["jwt_token"] = tok
-                    return tok
-        except Exception:
-            pass
-
+    # [X7] "Strategy 1" (log in again with a password cached in the session
+    # cookie) was removed. The user must log in again when the token expires.
+    # [X1] The old "Strategy 2" (re-issue a token from a username only) was
+    # removed because the backend endpoint had no authentication.
     return None
 
 
@@ -428,8 +399,8 @@ def login():
         session["profile_code"] = pcode if role == "patient" else ""
         session["doctor_code"]  = dcode if role == "doctor" else ""
         session["jwt_token"]    = data.get("access_token", "")
-        # Cache password in encrypted session for silent JWT refresh on expiry
-        session["_pw_cache"]    = password
+        # [X7] Never store the password in the session: Flask session cookies
+        # are signed, not encrypted, so the browser cookie would contain it.
         if role == "doctor" and dcode:
             try:
                 for d_folder in os.listdir(DOCTORS_DIR):
@@ -512,7 +483,6 @@ def set_initial_password():
         session["profile_code"] = pcode if role == "patient" else ""
         session["doctor_code"] = dcode if role == "doctor" else ""
         session["jwt_token"] = data.get("access_token", "")
-        session["_pw_cache"] = new_pw
         session.permanent = True
         return jsonify({"message": "ok", "redirect": "/dashboard"})
     except Exception as e:
@@ -622,6 +592,10 @@ def auth_register():
         import uuid as _uuid
         d        = request.get_json(silent=True) or {}
         role     = d.get("role", "patient")
+        # [C1] Doctors are created by an administrator; admins by a CLI script.
+        if role != "patient":
+            return jsonify({"error": "Doctor accounts are created by an administrator. "
+                                     "Please contact MedVault support."}), 403
         name     = (d.get("name") or "").strip()
         email    = (d.get("email") or "").strip().lower()
         phone    = (d.get("phone") or "").strip()
@@ -3757,20 +3731,9 @@ def api_refresh_session():
                     "message": "Please log out and log back in."}), 401
 
 
-@app.route("/api/cache_password", methods=["POST"])
-def api_cache_password():
-    """Temporarily cache the user's password in server-side session for JWT refresh.
-    Called right after successful login if the user is logged in.
-    The password is stored ONLY in the encrypted server session (Flask session cookie),
-    never written to disk.
-    """
-    if not session.get("logged_in"):
-        return jsonify({"error": "not_logged_in"}), 401
-    d = request.get_json(silent=True) or {}
-    pw = d.get("password", "")
-    if pw:
-        session["_pw_cache"] = pw
-    return jsonify({"status": "ok"}), 200
+# [X7] /api/cache_password was removed: it stored the password in the
+# (signed, not encrypted) session cookie.
+
 
 
 # ─── Doctor: view patient detail page ──────────────────────────────────────

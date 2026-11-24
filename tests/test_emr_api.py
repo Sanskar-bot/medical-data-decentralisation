@@ -24,6 +24,26 @@ if SERVER_DIR not in sys.path:
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+@pytest.fixture(autouse=True)
+def _legacy_tests_assume_doctor_grant(monkeypatch):
+    """[C2] The functional EMR tests in this file were written before
+    deny-by-default and use doctors that have no grant row. They assume the
+    doctor already holds an approved grant, except doctors whose uid contains
+    "NO-" (for example DOC-NO-ACCESS). Real authorization is tested in
+    tests/test_sec_c2_*.py, which do NOT use this shim."""
+    import authz
+    real = authz.authorize_patient_access
+
+    def _assume_grant(payload, patient_identifier):
+        payload = payload or {}
+        if (payload.get("role") == "doctor" and patient_identifier
+                and "NO-" not in payload.get("uid", "")):
+            return True  # doctors named DOC-NO-... are the "no access" doctors
+        return real(payload, patient_identifier)
+
+    monkeypatch.setattr(authz, "authorize_patient_access", _assume_grant)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _init_dirs():
     """Ensure the server data directories exist before importing."""
@@ -580,10 +600,36 @@ class TestVitals:
         assert metadata["address"] == "42 Clinic Road"
 
 
+def _grant_report_access(doctor_id, patient_id):
+    """Give the doctor an approved access_db grant for the patient (test setup)."""
+    from db import db_cursor
+    with db_cursor() as cur:
+        cur.execute(
+            "INSERT INTO access_db (id, doctor_id, patient_id, status) "
+            "VALUES (%s, %s, %s, 'approved') ON CONFLICT (doctor_id, patient_id) "
+            "DO UPDATE SET status = 'approved'",
+            (str(uuid.uuid4()), doctor_id, patient_id),
+        )
+
+
+def _registered_doctor_token(jwt_encode, code):
+    """[C4] A doctor token whose doctor_code is registered with public key 'pem'."""
+    from db import db_cursor
+    with db_cursor() as cur:
+        cur.execute(
+            "INSERT INTO doctors (doctor_code, doctor_id, public_pem) VALUES (%s, %s, 'pem') "
+            "ON CONFLICT (doctor_code) DO UPDATE SET public_pem = 'pem'",
+            (code, str(uuid.uuid4())),
+        )
+    return jwt_encode({"sub": f"{code}@example.test", "uid": code, "role": "doctor",
+                       "doctor_code": code, "exp": time.time() + 3600})
+
+
 class TestReadAuditLogs:
     def test_patient_reports_read_writes_audit_log(self, client, jwt_encode):
         patient_id = "PAT-AUDIT-REPORT"
         doctor_token = _make_jwt(jwt_encode, role="doctor", uid="DOC-AUDIT-REPORT")
+        _grant_report_access("DOC-AUDIT-REPORT", patient_id)
         upload = client.post(
             "/reports/upload",
             headers={"Authorization": f"Bearer {doctor_token}", "Content-Type": "application/json"},
@@ -612,6 +658,7 @@ class TestReadAuditLogs:
     def test_report_read_writes_audit_log(self, client, jwt_encode):
         patient_id = "PAT-AUDIT-REPORT2"
         doctor_token = _make_jwt(jwt_encode, role="doctor", uid="DOC-AUDIT-REPORT2")
+        _grant_report_access("DOC-AUDIT-REPORT2", patient_id)
         upload = client.post(
             "/reports/upload",
             headers={"Authorization": f"Bearer {doctor_token}", "Content-Type": "application/json"},
@@ -694,7 +741,7 @@ class TestReadAuditLogs:
                 pass
         monkeypatch.setattr(server._threading, "Timer", DummyTimer)
 
-        doctor_token = _make_jwt(jwt_encode, role="doctor", uid="DOC-ACCESS-ARCHIVE")
+        doctor_token = _registered_doctor_token(jwt_encode, "DOC-ACCESS-ARCHIVE")
         patient_id = "PAT-ACCESS-ARCHIVE"
         create = client.post(
             "/access/request",
@@ -737,7 +784,7 @@ class TestReadAuditLogs:
                 pass
         monkeypatch.setattr(server._threading, "Timer", DummyTimer)
 
-        doctor_token = _make_jwt(jwt_encode, role="doctor", uid="DOC-ACCESS-HISTORY")
+        doctor_token = _registered_doctor_token(jwt_encode, "DOC-ACCESS-HISTORY")
         patient_id = "PAT-ACCESS-HISTORY"
         create = client.post(
             "/access/request",

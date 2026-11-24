@@ -394,7 +394,7 @@ def api_upload_image():
         files = {"image": (request.files["image"].filename, request.files["image"].stream, "application/octet-stream")}
         data = {k:v for k,v in request.form.items()}
         r = http.post(f"{BACKEND}/images/upload", files=files, data=data,
-            headers={"X-API-Key":api_key(),"Authorization":f"Bearer {token}"}, timeout=30)
+            headers={"X-API-Key":_api_key(),"Authorization":f"Bearer {token}"}, timeout=30)
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({"error":str(e)}), 502
