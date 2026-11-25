@@ -54,6 +54,39 @@ def test_wrapped_key_grant_respects_expiry(app, clean_db, db, make_user):
     assert ok(_p(d), p["id"]) is False
 
 
+def test_null_expiry_wrapped_key_grant_denied(app, clean_db, db, make_user):
+    from authz import authorize_patient_access as ok
+    p, d = make_user("patient"), make_user("doctor")
+    with db() as cur:
+        cur.execute("INSERT INTO wrapped_keys (profile_code, doctor_code, wrapped_key, temp_key_expires_at) "
+                    "VALUES (%s, %s, 'WK', NULL)", (p["profile_code"], d["doctor_code"]))
+    assert ok(_p(d), p["id"]) is False
+
+
+def test_patient_self_access_ignores_null_wrapped_key_expiry(app, clean_db, db, make_user):
+    from authz import authorize_patient_access as ok
+    p, d = make_user("patient"), make_user("doctor")
+    with db() as cur:
+        cur.execute("INSERT INTO wrapped_keys (profile_code, doctor_code, wrapped_key, temp_key_expires_at) "
+                    "VALUES (%s, %s, 'WK', NULL)", (p["profile_code"], d["doctor_code"]))
+    assert ok(_p(p), p["id"]) is True
+
+
+def test_missing_writer_expiry_uses_configured_default(app, clean_db, db, make_user, monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    from server import _db_upsert_wrapped_key
+    p, d = make_user("patient"), make_user("doctor")
+    monkeypatch.setenv("WRAPPED_KEY_TTL_HOURS", "2")
+    before = datetime.now(timezone.utc) + timedelta(hours=1, minutes=59)
+    _db_upsert_wrapped_key(p["profile_code"], d["doctor_code"],
+                           {"wrapped_key": "WK", "encrypted_kdata_with_temp": "{}"})
+    with db(commit=False) as cur:
+        cur.execute("SELECT temp_key_expires_at FROM wrapped_keys WHERE profile_code = %s AND doctor_code = %s",
+                    (p["profile_code"], d["doctor_code"]))
+        expiry = cur.fetchone()["temp_key_expires_at"]
+    assert expiry > before
+
+
 def test_implicit_access_from_old_prescription_is_gone(app, clean_db, db, make_user):
     from authz import authorize_patient_access as ok
     p, d = make_user("patient"), make_user("doctor")

@@ -16,6 +16,7 @@ from common.crypto_utils import (
     rsa_load_private, rsa_load_public, rsa_unwrap_key, rsa_wrap_key,
 )
 from common.secure_key_store import SecureKeyStore
+from common.access_expiry import configured_wrapped_key_expiry
 
 # Add portals dir to sys.path so auth_utils is importable as a sibling module
 _PORTALS_DIR = os.path.dirname(__file__)
@@ -233,7 +234,7 @@ def api_approve():
         doc_pub_obj = rsa_load_public(doc_pub.encode())
         T = os.urandom(32); enc_kdata = aesgcm_encrypt(T, K_data)
         wrapped_T = rsa_wrap_key(doc_pub_obj, T)
-        expires = (datetime.now(timezone.utc)+timedelta(hours=24)).isoformat()
+        expires = configured_wrapped_key_expiry().isoformat()
     except Exception as e: return jsonify({"error":f"Crypto: {e}"}), 500
     try:
         r = http.post(f"{BACKEND}/approve_request",
@@ -482,7 +483,7 @@ def api_qr_transfer():
         doc_pub_obj = rsa_load_public(doc_pub_pem.encode())
         T = os.urandom(32); enc_kdata = aesgcm_encrypt(T, K_data)
         wrapped_T = rsa_wrap_key(doc_pub_obj, T)
-        expires   = (datetime.now(timezone.utc)+timedelta(hours=24)).isoformat()
+        expires   = configured_wrapped_key_expiry().isoformat()
         enc_b64   = rsa_wrap_key(doc_pub_obj,
                       json.dumps({"doctor_code":doc_code,"name":"QR"}).encode())
     except Exception as e: return jsonify({"error":f"Crypto: {e}"}), 500

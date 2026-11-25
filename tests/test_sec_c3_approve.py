@@ -44,6 +44,20 @@ def test_owner_approves_once(client, req, make_token, db):
     assert client.post("/approve_request", headers=hdr, json=body).status_code == 409
 
 
+def test_approval_without_expiry_uses_configured_default(client, req, make_token, db, monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    p, _, _, body = req
+    body.pop("temp_key_expires_at")
+    monkeypatch.setenv("WRAPPED_KEY_TTL_HOURS", "2")
+    before = datetime.now(timezone.utc) + timedelta(hours=1, minutes=59)
+    response = client.post("/approve_request", headers={**API, **make_token(p)}, json=body)
+    assert response.status_code == 200
+    with db(commit=False) as cur:
+        cur.execute("SELECT temp_key_expires_at FROM wrapped_keys")
+        expiry = cur.fetchone()["temp_key_expires_at"]
+    assert expiry > before
+
+
 def test_denied_request_cannot_be_approved(client, req, make_token, db):
     p, _, _, body = req
     with db() as cur:

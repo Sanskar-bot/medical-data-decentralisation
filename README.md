@@ -151,7 +151,7 @@ The maintenance worker migrates legacy inline encrypted registration/share paylo
 - Hybrid encryption (AES-256-GCM + RSA-4096 OAEP) for the **patient registration record**
 - Private Kubo/IPFS storage for registration ciphertext and per-share snapshot ciphertext; PostgreSQL retains CIDs, SHA-256, sizes, wrapped keys and metadata
 - Consent-based key sharing: doctors must request access, patients must approve
-- Wrapped-key access has a 24-hour server-side expiry; JWT-based approvals (access_db) currently have no expiry. Once a doctor decrypts a key or record, access cannot be cryptographically revoked.
+- New wrapped-key grants default to a 24-hour server-side expiry (`WRAPPED_KEY_TTL_HOURS` configures the default). Grants with a missing/NULL expiry are denied; patients must re-approve those legacy grants. JWT-based approvals (`access_db`) currently have no expiry. Once a doctor decrypts a key or record, access cannot be cryptographically revoked.
 - JWT-based authentication with refresh token rotation
 - Audit logging of access events
 - TLS transport encryption via Nginx
@@ -170,7 +170,7 @@ The maintenance worker migrates legacy inline encrypted registration/share paylo
 
 ### Known security limitations
 - The same password is used for login and KEK derivation; the backend receives the password at login.
-- Access through `access_db` has no expiry in backend authorization checks; wrapped-key grants are checked against their expiry. Authorship does not grant patient-wide access. Prescription and lab reads require a patient grant even for their author; only specific doctor-note image and deletion operations allow the note's author to act on that note.
+- Access through `access_db` has no expiry in backend authorization checks. Wrapped-key grants require an explicit future expiry; legacy NULL-expiry grants are no longer honored and patients must re-approve them. The default for new grants is 24 hours and can be configured with `WRAPPED_KEY_TTL_HOURS`. Authorship does not grant patient-wide access. Prescription and lab reads require a patient grant even for their author; only specific doctor-note image and deletion operations allow the note's author to act on that note.
 - `/approve_request` is protected by a shared API key, not patient-specific authentication.
 - API keys and JWT HMAC signatures use `hmac.compare_digest`; RSA package signatures are verified with `rsa_verify`.
 

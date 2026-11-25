@@ -36,6 +36,7 @@ from common.crypto_utils import (
     generate_aes_key, aesgcm_encrypt, rsa_sign,
     derive_kek_from_password, wrap_key_with_kek,
 )
+from common.access_expiry import wrapped_key_expiry_is_active
 from common.secure_key_store import SecureKeyStore
 
 # â”€â”€ App setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1755,7 +1756,8 @@ def _require_active_access(doctor_code: str, patient_code: str = None):
         doctor_uuid = str(doc_row["id"])
         cur.execute(
             """
-            SELECT a.status, a.responded_at, wk.temp_key_expires_at
+            SELECT a.status, a.responded_at, wk.profile_code AS wrapped_key_profile_code,
+                   wk.temp_key_expires_at
             FROM access_db a
             LEFT JOIN users p ON a.patient_id::text = p.id::text
             LEFT JOIN wrapped_keys wk ON wk.profile_code = p.profile_code AND wk.doctor_code = %s
@@ -1778,12 +1780,18 @@ def _require_active_access(doctor_code: str, patient_code: str = None):
     if row.get("status") != "approved":
         return jsonify({"error": "access_not_approved", "message": "Access to this patient is not approved."}), 403
 
-    expires_at = row.get("temp_key_expires_at")
-    if not expires_at:
-        responded_at = row.get("responded_at")
-        if not responded_at:
-            return jsonify({"error": "access_expired", "message": "Your access to this patient has expired."}), 403
-        expires_at = responded_at + _td(hours=24)
+    if row.get("wrapped_key_profile_code") is not None:
+        if not wrapped_key_expiry_is_active(row.get("temp_key_expires_at")):
+            return jsonify({"error": "access_expired", "message": "Your wrapped-key grant is missing an active expiry."}), 403
+        return None
+
+    # Pre-Task-4 access_db approvals still use the existing responded_at window
+    # when there is no wrapped_keys row; this fallback does not revive a
+    # wrapped-key row whose own expiry is NULL.
+    responded_at = row.get("responded_at")
+    if not responded_at:
+        return jsonify({"error": "access_expired", "message": "Your access to this patient has expired."}), 403
+    expires_at = responded_at + _td(hours=24)
 
     if isinstance(expires_at, str):
         try:
@@ -2435,12 +2443,10 @@ def doctor_my_patients():
 # â”€â”€ Doctor access expiry: return how long this doctor's key is valid â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/doctor/access_expiry/<patient_code>")
 def doctor_access_expiry(patient_code):
-    """Return temp_key_expires_at for the logged-in doctor's wrapped key.
-    Falls back to uploaded_at + 24 h if temp_key_expires_at is absent."""
+    """Return only the explicit expiry stored for the doctor's wrapped key."""
     err = _doctor_session_check()
     if err: return err
     try:
-        from datetime import timezone as _tz, timedelta as _td
         doc_code   = session.get("doctor_code", "")
         # Resolve username â†’ profile_code
         resolved_code = _resolve_patient_code(patient_code)
@@ -2457,14 +2463,6 @@ def doctor_access_expiry(patient_code):
                 if stored != doc_code:
                     continue
                 expires_at = data.get("temp_key_expires_at")
-                # If the patient approved without specifying an expiry, fall back
-                # to uploaded_at + 24 hours (the system default access window).
-                if not expires_at:
-                    uploaded_at = data.get("uploaded_at")
-                    if uploaded_at:
-                        from datetime import datetime as _dt
-                        ua = _dt.fromisoformat(uploaded_at)
-                        expires_at = (ua + _td(hours=24)).isoformat()
                 return jsonify({"expires_at": expires_at}), 200
             except Exception:
                 continue

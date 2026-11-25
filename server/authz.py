@@ -16,6 +16,7 @@ There is NO "implicit" access: having written a prescription or lab report
 for a patient in the past does not grant access.  [H6]
 """
 from db import db_cursor
+from common.access_expiry import active_wrapped_key_sql
 
 
 def resolve_patient(identifier):
@@ -71,7 +72,7 @@ def doctor_has_grant(payload, patient):
         if code and patient["profile_code"]:
             cur.execute(
                 "SELECT 1 FROM wrapped_keys WHERE doctor_code = %s AND profile_code = %s "
-                "AND (temp_key_expires_at IS NULL OR temp_key_expires_at > now()) LIMIT 1",
+                f"AND {active_wrapped_key_sql()} LIMIT 1",
                 (code, patient["profile_code"]),
             )
             if cur.fetchone():

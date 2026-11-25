@@ -4,7 +4,6 @@ Doctor Portal  —  http://127.0.0.1:5002
 Serves the doctor-facing web UI and handles all crypto on the doctor's machine.
 """
 import json, os, sys, uuid, secrets
-from datetime import datetime, timezone, timedelta
 from base64 import b64encode, b64decode
 from flask import Flask, request, jsonify, send_file, session, redirect, Response
 import requests as http
@@ -18,6 +17,7 @@ from common.crypto_utils import (
     rsa_load_private, rsa_unwrap_key, rsa_load_public, rsa_hybrid_encrypt,
     aesgcm_decrypt, rsa_verify,
 )
+from common.access_expiry import wrapped_key_expiry_is_active
 from common.secure_key_store import SecureKeyStore
 
 # Add portals dir to sys.path so auth_utils is importable as a sibling module
@@ -313,12 +313,9 @@ def api_fetch_record():
     if not wrapped_key_b64:
         return jsonify({"error":"No access key found. The patient may not have approved your request yet, or access has expired."}), 403
 
-    # check expiry
-    if expires_at:
-        try:
-            if datetime.fromisoformat(expires_at) < datetime.now(timezone.utc):
-                return jsonify({"error":"Your access to this patient's record has expired."}), 403
-        except Exception: pass
+    # NULL, malformed, or past expiries must not authorize a doctor grant.
+    if not wrapped_key_expiry_is_active(expires_at):
+        return jsonify({"error":"Your access to this patient's record has expired."}), 403
 
     # unwrap temp key T, then decrypt K_data, then decrypt record
     try:

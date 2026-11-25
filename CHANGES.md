@@ -14,6 +14,10 @@ Removed unreferenced `check_p17.py`–`check_p26.py`, `check_snippets.py`, legac
 
 Confirmed that `server/authz.py` grants patient-level doctor access only through an approved `access_db` row or an unexpired wrapped-key row; previous prescription/lab authorship creates no patient-wide grant. Prescription and lab list/detail reads require that patient-level grant, including for their author. Only specific doctor-note image and deletion operations have note-author exceptions. Added regression coverage for an ungranted prescription/lab author and an expected xfail for an old `access_db` approval; Task 4 will add approval expiry. No schema or runtime behavior changed.
 
+### Hardening cleanup — Task 3b: NULL wrapped-key expiry
+
+Doctor wrapped-key access now requires an explicit future `temp_key_expires_at`; legacy rows with NULL expiry are denied, so affected patients must re-approve. New approvals default to 24 hours, configurable through `WRAPPED_KEY_TTL_HOURS`. Patient self-access remains independent of doctor-grant expiry. Added regression tests for NULL, future, past, revoked, owner/self and missing-expiry writer cases. No schema changes.
+
 ### Per-share snapshots (new)
 
 Added an additive snapshot-sharing flow with a fresh key per share and best-effort expiry. It supplements the existing sharing flow. See [docs/SHARE_SCHEME_PLAN.md](docs/SHARE_SCHEME_PLAN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).

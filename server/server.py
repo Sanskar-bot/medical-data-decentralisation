@@ -35,6 +35,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from common.ipfs_utils import IPFSClient, IPFSStorageError, IPFSIntegrityError
+from common.access_expiry import active_wrapped_key_sql, configured_wrapped_key_expiry
 
 # portals/auth_utils.py provides hash_password/check_password — add the
 # portals dir to sys.path so it's importable as a sibling module, same
@@ -889,11 +890,11 @@ def _db_upsert_doctor(doctor_code: str, data: dict):
 
 def _db_get_wrapped_key(profile_code: str, doctor_code: str) -> dict | None:
     with db_cursor(commit=False) as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT * FROM wrapped_keys
             WHERE profile_code = %s
               AND doctor_code = %s
-              AND (temp_key_expires_at IS NULL OR temp_key_expires_at > now())
+              AND {active_wrapped_key_sql()}
         """, (profile_code, doctor_code))
         row = cur.fetchone()
         return dict(row) if row else None
@@ -901,12 +902,7 @@ def _db_get_wrapped_key(profile_code: str, doctor_code: str) -> dict | None:
 
 def _db_upsert_wrapped_key(profile_code: str, doctor_code: str, data: dict):
     enc_kdata = data.get("encrypted_kdata_with_temp")
-    temp_exp  = data.get("temp_key_expires_at")
-    if isinstance(temp_exp, str) and temp_exp:
-        try:
-            temp_exp = datetime.fromisoformat(temp_exp)
-        except ValueError:
-            temp_exp = None
+    temp_exp = configured_wrapped_key_expiry(data.get("temp_key_expires_at"))
     with db_cursor() as cur:
         cur.execute("""
             INSERT INTO wrapped_keys
@@ -929,10 +925,10 @@ def _db_upsert_wrapped_key(profile_code: str, doctor_code: str, data: dict):
 def _db_get_all_wrapped_keys(profile_code: str) -> dict:
     """Returns dict keyed by doctor_code (non-expired only)."""
     with db_cursor(commit=False) as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT * FROM wrapped_keys
             WHERE profile_code = %s
-              AND (temp_key_expires_at IS NULL OR temp_key_expires_at > now())
+              AND {active_wrapped_key_sql()}
         """, (profile_code,))
         rows = cur.fetchall()
         return {r["doctor_code"]: dict(r) for r in rows}
@@ -2191,12 +2187,7 @@ def approve_request():
     if found.get("status") != "pending":
         return jsonify({"error": "request_not_pending", "status": found.get("status")}), 409
 
-    temp_exp = None
-    if temp_key_expires_at:
-        try:
-            temp_exp = datetime.fromisoformat(temp_key_expires_at)
-        except ValueError:
-            temp_exp = None
+    temp_exp = configured_wrapped_key_expiry(temp_key_expires_at)
     enc_kdata_json = json.dumps(enc_kdata_with_temp) \
         if isinstance(enc_kdata_with_temp, dict) else enc_kdata_with_temp
 
