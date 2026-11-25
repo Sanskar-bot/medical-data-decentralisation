@@ -44,3 +44,66 @@ jobs:
         run: bandit -q -r server portals common -lll || true
       - name: Docker build
         run: docker build -t medvault-ci .
+
+  ipfs-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: medvault_user
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: medvault_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U medvault_user -d medvault_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://medvault_user:ci_password@127.0.0.1:5432/medvault_test
+      DATABASE_URL: postgresql://medvault_user:ci_password@127.0.0.1:5432/medvault_test
+      SERVER_API_KEY: ci-server-api-key
+      JWT_SECRET: ci-test-jwt-secret-0123456789abcdef0123456789abcdef
+      FLASK_ENV: development
+      IPFS_INTEGRATION: "1"
+      IPFS_API_URL: http://127.0.0.1:5001
+      IPFS_PIN_TARGETS: replica=http://127.0.0.1:5002
+      IPFS_RETRIES: "2"
+      IPFS_RETRY_BACKOFF_SECONDS: "0.1"
+      KUBO_DATA_DIR: ${{ github.workspace }}/.ci-kubo-data
+      KUBO_REPLICA_DATA_DIR: ${{ github.workspace }}/.ci-kubo-replica
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies and PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest==9.1.1
+      - name: Start private offline Kubo nodes
+        run: |
+          mkdir -p "$KUBO_DATA_DIR" "$KUBO_REPLICA_DATA_DIR"
+          docker run -d --name medvault-kubo \
+            -p 127.0.0.1:5001:5001 \
+            -v "$KUBO_DATA_DIR:/data/ipfs" \
+            -v "$GITHUB_WORKSPACE/deploy/kubo-private-init.sh:/container-init.d/001-private.sh:ro" \
+            ipfs/kubo:v0.43.1 daemon --offline
+          docker run -d --name medvault-kubo-replica \
+            -p 127.0.0.1:5002:5001 \
+            -v "$KUBO_REPLICA_DATA_DIR:/data/ipfs" \
+            -v "$GITHUB_WORKSPACE/deploy/kubo-private-init.sh:/container-init.d/001-private.sh:ro" \
+            ipfs/kubo:v0.43.1 daemon --offline
+          for port in 5001 5002; do
+            for attempt in $(seq 1 60); do
+              if curl -fsS -X POST "http://127.0.0.1:$port/api/v0/id" >/dev/null; then break; fi
+              sleep 2
+            done
+            curl -fsS -X POST "http://127.0.0.1:$port/api/v0/id" >/dev/null
+          done
+      - name: Run ciphertext sentinel tests against PostgreSQL and Kubo
+        run: pytest -q -p no:cacheprovider tests/test_ipfs_integration.py

@@ -39,12 +39,16 @@ ALL_TABLES = [
     "appointments", "emr_profiles", "emr_appointments", "emr_prescriptions",
     "emr_lab_reports", "audit_log", "rate_limits", "conditions", "vitals",
     "encounters", "shares",
+    "ipfs_pin_status", "ipfs_orphans", "ipfs_gc_state",
 ]
 
 
 @pytest.fixture(scope="session")
 def app():
     from server import app as flask_app
+    if os.environ.get("IPFS_INTEGRATION") != "1":
+        from fake_ipfs import FakeIPFSClient
+        flask_app.config["IPFS_CLIENT"] = FakeIPFSClient()
     flask_app.config["TESTING"] = True
     return flask_app
 

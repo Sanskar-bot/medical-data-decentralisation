@@ -17,11 +17,17 @@ Patients authorize access to their records via **consent-based cryptographic key
 
 The patient's registration record is encrypted (AES-256-GCM, key wrapped with RSA-4096 OAEP). Most clinical data added later (notes, prescriptions, vitals, lab results) is stored in plaintext. Encryption and key handling currently happen in the portal server.
 
+Encrypted registration records and per-share snapshot ciphertexts are stored in a private, offline Kubo/IPFS node. PostgreSQL stores their CIDs, SHA-256 digests, sizes and package metadata. IPFS is not public or decentralized in this deployment. EMR clinical tables remain plaintext in PostgreSQL, and the application does not claim end-to-end encryption.
+
 > **Important:** This is a research prototype, not a production system. See [Current Status and Limitations](#-current-status-and-limitations) below, and the full [Threat Model](docs/THREAT_MODEL.md).
 
 ### Per-share snapshots (new)
 
 New per-share snapshot endpoints encrypt a selected snapshot with a fresh key for one doctor and apply best-effort expiry. This feature supplements the existing sharing flow. See the [scheme plan](docs/SHARE_SCHEME_PLAN.md) and [threat model](docs/THREAT_MODEL.md) for its limits.
+
+### Private ciphertext storage
+
+The Docker Compose deployment runs two offline Kubo nodes with no published API or gateway port. The backend and maintenance worker reach them over an internal Docker network. For configuration and the backup/restore procedure, see [IPFS backup and restore](docs/IPFS_BACKUP_RESTORE.md).
 
 ---
 
@@ -72,7 +78,7 @@ The current prototype uses a **centralized Flask + PostgreSQL backend**. A plann
 | **Frontend** | HTML/CSS/JS | Patient & Doctor web interfaces |
 | **Backend** | Flask (Python) | REST APIs for registration, authentication, data exchange |
 | **Encryption** | AES-256-GCM, RSA-4096 OAEP | Hybrid encryption for patient registration records |
-| **Storage** | PostgreSQL | Centralized database |
+| **Storage** | PostgreSQL + private Kubo/IPFS | PostgreSQL metadata; private IPFS ciphertext for registration records and per-share snapshots |
 | **Transport** | HTTPS (TLS 1.2+) | Secure communication layer |
 
 ---
@@ -133,10 +139,13 @@ Content-Type: application/json
 
 This is a **research prototype**. The following honestly states what is and is not implemented:
 
-This is a centralized Flask + PostgreSQL prototype. No IPFS, blockchain or P2P code exists. Most clinical data is stored in plaintext, and portal servers handle keys. The Android patient app and registry-based doctor verification are planned and not implemented. Revocation cannot un-see decrypted data.
+This is a centralized Flask + PostgreSQL prototype with a private, offline Kubo/IPFS ciphertext store for encrypted registration records and per-share snapshots only. Most clinical data remains plaintext in PostgreSQL, and portal servers handle keys. No public gateway, public-network publishing, blockchain, or public IPFS network is used. The Android patient app and registry-based doctor verification are planned and not implemented. Revocation cannot un-see decrypted data.
+
+The maintenance worker migrates legacy inline encrypted registration/share payloads in batches; until that finishes, legacy ciphertext can remain in PostgreSQL. The registration-record deletion endpoint removes the registration envelope and related share metadata/pins, but does not remove plaintext EMR data or the patient account.
 
 ### What is implemented
 - Hybrid encryption (AES-256-GCM + RSA-4096 OAEP) for the **patient registration record**
+- Private Kubo/IPFS storage for registration ciphertext and per-share snapshot ciphertext; PostgreSQL retains CIDs, SHA-256, sizes, wrapped keys and metadata
 - Consent-based key sharing: doctors must request access, patients must approve
 - Wrapped-key access has a 24-hour server-side expiry; JWT-based approvals (access_db) currently have no expiry. Once a doctor decrypts a key or record, access cannot be cryptographically revoked.
 - JWT-based authentication with refresh token rotation
@@ -147,7 +156,7 @@ This is a centralized Flask + PostgreSQL prototype. No IPFS, blockchain or P2P c
 ### What is NOT implemented (planned for future work)
 - **Client-side (phone/browser) encryption**: Currently, all key generation, encryption, and decryption happen on the portal server, not on the patient's device. The portal server can read plaintext and private keys.
 - **Encryption of clinical data**: Most clinical data (doctor notes, prescriptions, lab reports, vitals, conditions, encounters, EMR profiles) is stored as **plaintext** in the database. Only the initial patient registration record is encrypted.
-- **Decentralized or distributed storage**: The system uses a centralized PostgreSQL database. No IPFS, blockchain, or peer-to-peer code exists.
+- **Public or decentralized storage**: IPFS is a private offline ciphertext store for registration records and per-share snapshots only. It does not provide anonymity or guaranteed deletion. EMR clinical data remains in PostgreSQL.
 - **Robust key recovery**: Key loss currently means partial data loss.
 - **Doctor identity verification**: Doctor accounts are created manually by an admin. The `doctor_verification_status` column exists but no verification logic is implemented.
 - **Encrypted backup/export**: No backup export mechanism exists.

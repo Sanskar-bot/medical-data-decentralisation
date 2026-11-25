@@ -75,6 +75,47 @@ def test_doctor_notes_forwards_jwt(doctor_client):
         assert "Authorization" in kwargs["headers"]
         assert kwargs["headers"]["Authorization"] == "Bearer faketoken_doc"
 
+
+def test_doctor_rejects_swapped_registration_ciphertext_before_decryption(doctor_client):
+    import base64
+    import hashlib
+    import json
+
+    from common.crypto_utils import generate_rsa_keypair, rsa_serialize_public, rsa_sign
+
+    patient_private, patient_public = generate_rsa_keypair(2048)
+    original = {"nonce": base64.b64encode(b"0" * 12).decode(),
+                "ciphertext": base64.b64encode(b"original encrypted bytes").decode()}
+    signature = rsa_sign(
+        patient_private,
+        (original["nonce"] + "|" + original["ciphertext"]).encode(),
+    )
+    swapped = {**original, "ciphertext": base64.b64encode(b"swapped bytes").decode()}
+    serialized = json.dumps(swapped, sort_keys=True, separators=(",", ":")).encode()
+    response_body = {
+        "encrypted_record": swapped,
+        "patient_public_pem": rsa_serialize_public(patient_public).decode(),
+        "signature": signature,
+        # Model a malicious DB update that also replaced the expected hash.
+        "ciphertext_sha256": hashlib.sha256(serialized).hexdigest(),
+    }
+
+    with patch("doctor_portal.unlock_doctor_private_key", return_value=(None, object())), \
+         patch("doctor_portal.http.get", return_value=MagicMock(
+             status_code=200, json=lambda: response_body
+         )) as mock_get, \
+         patch("doctor_portal.rsa_unwrap_key") as unwrap, \
+         patch("doctor_portal.aesgcm_decrypt") as decrypt:
+        response = doctor_client.post("/api/fetch_record", json={
+            "doctor_code": "DOC-TEST", "patient_code": "PAT-TEST", "password": "pw",
+        })
+
+    assert response.status_code == 502
+    assert response.get_json()["error"] == "invalid_patient_signature"
+    assert mock_get.call_count == 1  # wrapped keys were never fetched
+    unwrap.assert_not_called()
+    decrypt.assert_not_called()
+
 def test_doctor_note_image_forwards_jwt(doctor_client):
     with patch("doctor_portal.http.get") as mock_get:
         mock_get.return_value = MagicMock(ok=True, content=b"img")

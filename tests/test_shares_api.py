@@ -23,6 +23,9 @@ def app():
     from db import init_db
     init_db()
     from server import app as flask_app
+    if os.environ.get("IPFS_INTEGRATION") != "1":
+        from fake_ipfs import FakeIPFSClient
+        flask_app.config["IPFS_CLIENT"] = FakeIPFSClient()
     flask_app.config["TESTING"] = True
     return flask_app
 
@@ -147,6 +150,7 @@ def test_fetch_after_server_expiry_returns_410_and_clears_blobs(client, app, key
     patient_code, doctor_code = identities(key_material)
     response, package, _ = post_share(client, app, key_material, patient_code, doctor_code)
     assert response.status_code == 201
+    cid = response.get_json()["ipfs_cid"]
     from db import db_cursor
     with db_cursor() as cur:
         cur.execute("UPDATE shares SET expires_at = now() - interval '1 second' WHERE share_id = %s",
@@ -156,12 +160,14 @@ def test_fetch_after_server_expiry_returns_410_and_clears_blobs(client, app, key
     row = row_for(package["share_id"])
     assert row["status"] == "expired"
     assert row["ciphertext_blob"] is None and row["wrapped_key"] is None and row["signature"] is None
+    assert cid not in app.config["IPFS_CLIENT"].pins
 
 
 def test_delete_revokes_and_clears_share(client, app, key_material):
     patient_code, doctor_code = identities(key_material)
     response, package, _ = post_share(client, app, key_material, patient_code, doctor_code)
     assert response.status_code == 201
+    cid = response.get_json()["ipfs_cid"]
     revoked = client.delete(f"/shares/{package['share_id']}",
                             headers=token(app, "patient", patient_code))
     assert revoked.status_code == 200
@@ -170,6 +176,20 @@ def test_delete_revokes_and_clears_share(client, app, key_material):
     row = row_for(package["share_id"])
     assert row["status"] == "revoked"
     assert row["ciphertext_blob"] is None and row["wrapped_key"] is None and row["signature"] is None
+    assert row["ipfs_cid"] is None and row["ciphertext_sha256"] is None
+    assert cid not in app.config["IPFS_CLIENT"].pins
+
+
+def test_tampered_share_bytes_fail_closed(client, app, key_material):
+    patient_code, doctor_code = identities(key_material)
+    response, package, _ = post_share(client, app, key_material, patient_code, doctor_code)
+    assert response.status_code == 201
+    cid = response.get_json()["ipfs_cid"]
+    app.config["IPFS_CLIENT"].tamper(cid, b"changed ciphertext")
+    fetched = client.get(f"/shares/{package['share_id']}",
+                         headers=token(app, "doctor", doctor_code))
+    assert fetched.status_code == 503
+    assert fetched.get_json()["error"] == "ciphertext_integrity_failed"
 
 
 def test_purge_expired_shares_nulls_payload_and_marks_purged(client, app, key_material):

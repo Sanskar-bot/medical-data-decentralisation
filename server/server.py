@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 load_dotenv()  # load .env before any os.environ.get calls
 
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, current_app
 from cryptography.fernet import Fernet
 
 # -----------------------
@@ -34,7 +34,7 @@ PROJECT_ROOT = os.path.dirname(SERVER_BASE_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from common.ipfs_utils import IPFSClient, IPFSStorageError
+from common.ipfs_utils import IPFSClient, IPFSStorageError, IPFSIntegrityError
 
 # portals/auth_utils.py provides hash_password/check_password — add the
 # portals dir to sys.path so it's importable as a sibling module, same
@@ -206,12 +206,26 @@ except RuntimeError as _db_err:
 
 @app.route("/health")
 def health_check():
+    database_ok = False
     try:
         with db_cursor(commit=False) as cur:
             cur.execute("SELECT 1")
-        return jsonify({"status": "ok"}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "detail": str(e)}), 503
+        database_ok = True
+    except Exception:
+        pass
+    try:
+        ipfs_status = _get_ipfs_client().health_status()
+        ipfs_ok = all(ipfs_status.values())
+    except Exception:
+        ipfs_ok = False
+        ipfs_status = {"primary": False}
+    healthy = database_ok and ipfs_ok
+    return jsonify({
+        "status": "ok" if healthy else "degraded",
+        "database": "ok" if database_ok else "unavailable",
+        "ipfs": "ok" if ipfs_ok else "degraded",
+        "ipfs_targets": ipfs_status,
+    }), 200 if healthy else 503
 
 # ════════════════════════════════════════════════════════════════════════════
 # DB HELPERS — Users
@@ -696,22 +710,150 @@ def _db_get_patient(profile_code: str) -> dict | None:
         return dict(row) if row else None
 
 
-def _db_upsert_patient(profile_code: str, data: dict):
-    enc_rec = data.get("encrypted_record", {})
-    with db_cursor() as cur:
+def _get_ipfs_client():
+    """Allow tests/deployments to inject the configured private Kubo client."""
+    configured = current_app.config.get("IPFS_CLIENT")
+    return configured if configured is not None else IPFSClient()
+
+
+def _store_ipfs_bytes(data: bytes):
+    if not isinstance(data, bytes) or not data:
+        raise ValueError("Encrypted payload must be non-empty bytes")
+    return _get_ipfs_client().store_ciphertext(data)
+
+
+def _persist_pin_status(cur, cid: str, pin_status: dict[str, str]):
+    for target, status in pin_status.items():
         cur.execute("""
-            INSERT INTO patients (profile_code, encrypted_record, patient_public_pem, signature)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (profile_code) DO UPDATE SET
-                encrypted_record   = EXCLUDED.encrypted_record,
-                patient_public_pem = EXCLUDED.patient_public_pem,
-                signature          = EXCLUDED.signature
-        """, (
-            profile_code,
-            json.dumps(enc_rec) if isinstance(enc_rec, dict) else enc_rec,
-            data.get("patient_public_pem"),
-            data.get("signature"),
-        ))
+            INSERT INTO ipfs_pin_status (cid, target, status, last_checked_at, last_error)
+            VALUES (%s, %s, %s, now(), '')
+            ON CONFLICT (cid, target) DO UPDATE SET
+                status = EXCLUDED.status, last_checked_at = now(), last_error = ''
+        """, (cid, target, status))
+
+
+def _unpin_ciphertext(cid: str | None):
+    """Best-effort removal from every configured private pin target."""
+    if not cid:
+        return
+    try:
+        with db_cursor(commit=False) as cur:
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM patients WHERE ipfs_cid = %s
+                    UNION ALL
+                    SELECT 1 FROM shares WHERE ipfs_cid = %s AND status = 'active'
+                ) AS referenced
+            """, (cid, cid))
+            if cur.fetchone()["referenced"]:
+                return
+    except Exception:
+        # Unpin is best-effort; proceed so a failed DB insert does not leak a pin.
+        pass
+    try:
+        statuses = _get_ipfs_client().unpin_all(cid)
+    except Exception:
+        statuses = {}
+    try:
+        with db_cursor() as cur:
+            for target, status in statuses.items():
+                cur.execute("""
+                    INSERT INTO ipfs_pin_status (cid, target, status, last_checked_at, last_error)
+                    VALUES (%s, %s, %s, now(), %s)
+                    ON CONFLICT (cid, target) DO UPDATE SET
+                        status = EXCLUDED.status, last_checked_at = now(),
+                        last_error = EXCLUDED.last_error
+                """, (cid, target, status, "" if status == "unpinned" else "unpin pending"))
+    except Exception:
+        pass
+
+
+def _decode_registration_record(row: dict) -> dict:
+    """Fetch the registration envelope from IPFS, migrating legacy rows once."""
+    cid = row.get("ipfs_cid")
+    digest = row.get("ciphertext_sha256")
+    if not cid and row.get("encrypted_record"):
+        _db_upsert_patient(row["profile_code"], {
+            "encrypted_record": row["encrypted_record"],
+            "patient_public_pem": row.get("patient_public_pem"),
+            "signature": row.get("signature"),
+        })
+        row = _db_get_patient(row["profile_code"]) or {}
+        cid = row.get("ipfs_cid")
+        digest = row.get("ciphertext_sha256")
+    if not cid or not digest:
+        raise IPFSStorageError("registration ciphertext is unavailable")
+    data = _get_ipfs_client().get_verified_bytes(cid, digest)
+    if row.get("ciphertext_size") is not None and len(data) != row["ciphertext_size"]:
+        raise IPFSIntegrityError("registration ciphertext size verification failed")
+    try:
+        envelope = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, TypeError) as exc:
+        raise IPFSIntegrityError("registration ciphertext envelope is invalid") from exc
+    if not isinstance(envelope, dict) or not all(
+        isinstance(envelope.get(field), str) and envelope[field]
+        for field in ("nonce", "ciphertext")
+    ):
+        raise IPFSIntegrityError("registration ciphertext envelope is invalid")
+    return envelope
+
+
+def _db_upsert_patient(profile_code: str, data: dict):
+    enc_rec = data.get("encrypted_record")
+    if isinstance(enc_rec, str):
+        try:
+            enc_rec = json.loads(enc_rec)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Invalid encrypted registration envelope") from exc
+    stored = None
+    if enc_rec is not None:
+        if not isinstance(enc_rec, dict) or not all(
+            isinstance(enc_rec.get(field), str) and enc_rec[field]
+            for field in ("nonce", "ciphertext")
+        ):
+            raise ValueError("Invalid encrypted registration envelope")
+        serialized = json.dumps(enc_rec, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        stored = _store_ipfs_bytes(serialized)
+
+    old_cid = None
+    try:
+        with db_cursor() as cur:
+            cur.execute("SELECT ipfs_cid FROM patients WHERE profile_code = %s FOR UPDATE",
+                        (profile_code,))
+            previous = cur.fetchone()
+            old_cid = previous.get("ipfs_cid") if previous else None
+            if stored:
+                cur.execute("""
+                    INSERT INTO patients
+                        (profile_code, encrypted_record, patient_public_pem, signature,
+                         ipfs_cid, ciphertext_sha256, ciphertext_size, ipfs_version, uploaded_at)
+                    VALUES (%s, NULL, %s, %s, %s, %s, %s, 1, now())
+                    ON CONFLICT (profile_code) DO UPDATE SET
+                        encrypted_record = NULL,
+                        patient_public_pem = EXCLUDED.patient_public_pem,
+                        signature = EXCLUDED.signature,
+                        ipfs_cid = EXCLUDED.ipfs_cid,
+                        ciphertext_sha256 = EXCLUDED.ciphertext_sha256,
+                        ciphertext_size = EXCLUDED.ciphertext_size,
+                        ipfs_version = EXCLUDED.ipfs_version,
+                        uploaded_at = now()
+                """, (profile_code, data.get("patient_public_pem"), data.get("signature"),
+                      stored.cid, stored.sha256, stored.size))
+                _persist_pin_status(cur, stored.cid, stored.pin_status)
+            else:
+                cur.execute("""
+                    INSERT INTO patients (profile_code, patient_public_pem, signature)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (profile_code) DO UPDATE SET
+                        patient_public_pem = COALESCE(EXCLUDED.patient_public_pem, patients.patient_public_pem),
+                        signature = COALESCE(EXCLUDED.signature, patients.signature)
+                """, (profile_code, data.get("patient_public_pem"), data.get("signature")))
+    except Exception:
+        if stored:
+            _unpin_ciphertext(stored.cid)
+        raise
+    if stored and old_cid and old_cid != stored.cid:
+        _unpin_ciphertext(old_cid)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1459,10 +1601,18 @@ def register_user():
 
     try:
         _db_upsert_patient(safe_profile, obj)
+    except IPFSStorageError:
+        return jsonify({"error": "ipfs_storage_unavailable"}), 503
     except Exception as e:
         return jsonify({"error": "write_failed", "details": str(e)}), 500
 
-    return jsonify({"status": "ok", "profile": profile}), 200
+    registration = _db_get_patient(safe_profile) or {}
+    return jsonify({
+        "status": "ok", "profile": profile,
+        "ipfs_cid": registration.get("ipfs_cid"),
+        "ciphertext_sha256": registration.get("ciphertext_sha256"),
+        "ciphertext_size": registration.get("ciphertext_size"),
+    }), 200
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1759,12 +1909,12 @@ def get_patient_data(profile_code):
         if not patient_data:
             return jsonify({"error": "Patient not found"}), 404
 
-        enc_record = patient_data.get("encrypted_record")
-        if isinstance(enc_record, str):
-            enc_record = json.loads(enc_record)
-
-        if not enc_record or "nonce" not in enc_record or "ciphertext" not in enc_record:
-            return jsonify({"error": "Malformed encrypted record"}), 500
+        try:
+            enc_record = _decode_registration_record(patient_data)
+        except IPFSIntegrityError:
+            return jsonify({"error": "ciphertext_integrity_failed"}), 503
+        except IPFSStorageError:
+            return jsonify({"error": "registration_ciphertext_unavailable"}), 503
 
         print(f"\n[🔍 SERVER] Returning encrypted data for {profile_code}")
         auth_header = request.headers.get("Authorization", "")
@@ -1780,9 +1930,40 @@ def get_patient_data(profile_code):
             "patient_public_pem": patient_data.get("patient_public_pem"),
         }), 200
 
-    except Exception as e:
-        print(f"[X] Error in get_patient_data: {e}")
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        app.logger.exception("get_patient_data failed")
+        return jsonify({"error": "patient_data_unavailable"}), 503
+
+
+@app.route("/registration-record/<profile_code>", methods=["DELETE"])
+@_require_jwt(roles=["patient"])
+def delete_registration_record(profile_code):
+    """Delete this patient's encrypted registration record and share copies."""
+    claims = request.jwt_payload
+    requested = re.sub(r"[^A-Za-z0-9_\-]", "", profile_code)
+    if not requested or claims.get("profile_code") != requested:
+        return jsonify({"error": "forbidden"}), 403
+    with db_cursor() as cur:
+        cur.execute("SELECT ipfs_cid FROM patients WHERE profile_code = %s", (requested,))
+        patient = cur.fetchone()
+        cur.execute("SELECT ipfs_cid FROM shares WHERE patient_code = %s AND ipfs_cid IS NOT NULL",
+                    (requested,))
+        cids = {row["ipfs_cid"] for row in cur.fetchall() if row.get("ipfs_cid")}
+        if patient and patient.get("ipfs_cid"):
+            cids.add(patient["ipfs_cid"])
+        cur.execute("""
+            UPDATE shares SET status = 'purged', ciphertext_blob = NULL,
+                wrapped_key = NULL, signature = NULL, ipfs_cid = NULL,
+                ciphertext_sha256 = NULL, ciphertext_size = NULL, purged_at = now()
+            WHERE patient_code = %s AND status IN ('active','expired','revoked')
+        """, (requested,))
+        cur.execute("DELETE FROM patients WHERE profile_code = %s", (requested,))
+        deleted = cur.rowcount
+    for cid in cids:
+        _unpin_ciphertext(cid)
+    if deleted:
+        audit("registration_record_deleted", actor=requested, target=requested)
+    return jsonify({"status": "deleted" if deleted else "not_found"}), 200 if deleted else 404
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -2171,13 +2352,18 @@ def _schedule_cleanup():
 def purge_expired_shares():
     """Clear overdue share payloads and their IPFS references."""
     with db_cursor() as cur:
+        cur.execute("SELECT ipfs_cid FROM shares WHERE status = 'active' AND expires_at <= now() AND ipfs_cid IS NOT NULL")
+        cids = [row["ipfs_cid"] for row in cur.fetchall()]
         cur.execute("""
             UPDATE shares
                SET status = 'purged', ciphertext_blob = NULL, wrapped_key = NULL,
-                   signature = NULL, ipfs_cid = NULL, purged_at = now()
+                   signature = NULL, ipfs_cid = NULL, ciphertext_sha256 = NULL,
+                   ciphertext_size = NULL, purged_at = now()
              WHERE status = 'active' AND expires_at <= now()
         """)
         count = cur.rowcount
+    for cid in cids:
+        _unpin_ciphertext(cid)
     if count:
         audit("share_purged", actor="system", detail=f"count={count}")
     return count
@@ -2273,8 +2459,9 @@ def create_snapshot_share():
         if not ciphertext_bytes:
             return jsonify({"error": "empty_ciphertext"}), 400
 
-        ipfs = IPFSClient()
-        cid = ipfs.add_bytes(ciphertext_bytes)
+        ipfs = _get_ipfs_client()
+        stored = ipfs.store_ciphertext(ciphertext_bytes)
+        cid = stored.cid
 
         # Do not store ciphertext in PostgreSQL; keep only the metadata
         # needed to reconstruct the signed package on retrieval.
@@ -2290,26 +2477,25 @@ def create_snapshot_share():
                     INSERT INTO shares
                         (share_id, patient_code, doctor_code, label,
                          ciphertext_blob, wrapped_key, signature,
-                         expires_at, ipfs_cid)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         expires_at, ipfs_cid, ciphertext_sha256, ciphertext_size)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     payload["share_id"], patient_code, doctor_code, label,
                     ciphertext_blob, payload["wrapped_key"],
-                    payload["signature"], package_expiry, cid
+                    payload["signature"], package_expiry, cid,
+                    stored.sha256, stored.size,
                 ))
+                _persist_pin_status(cur, cid, stored.pin_status)
         except Exception:
-            # The upload is pinned by this node. If the DB insert fails,
-            # remove this node's pin as best-effort cleanup.
-            try:
-                ipfs.unpin(cid)
-            except Exception:
-                pass
+            # If the DB insert fails, remove pins on all configured nodes.
+            _unpin_ciphertext(cid)
             raise
 
     except IPFSStorageError:
         return jsonify({"error": "ipfs_upload_failed"}), 503
     except Exception:
-        return jsonify({"error": "share_create_failed"}), 400
+        app.logger.exception("share creation failed")
+        return jsonify({"error": "share_create_failed"}), 500
 
     audit("share_created", actor=patient_code, target=payload["share_id"])
     return jsonify({
@@ -2317,6 +2503,8 @@ def create_snapshot_share():
         "status": "active",
         "expires_at": payload["expires_at"],
         "ipfs_cid": cid,
+        "ciphertext_sha256": stored.sha256,
+        "ciphertext_size": stored.size,
     }), 201
 
 
@@ -2328,10 +2516,12 @@ def fetch_snapshot_share(share_id):
     if not doctor_code:
         return jsonify({"error": "share_not_found"}), 404
 
+    expired_cid = None
     with db_cursor() as cur:
         cur.execute("""
             SELECT share_id, patient_code, doctor_code, ciphertext_blob,
-                   wrapped_key, signature, expires_at, status, ipfs_cid
+                   wrapped_key, signature, expires_at, status, ipfs_cid,
+                   ciphertext_sha256, ciphertext_size
               FROM shares
              WHERE share_id = %s AND doctor_code = %s
         """, (share_id, doctor_code))
@@ -2342,60 +2532,69 @@ def fetch_snapshot_share(share_id):
 
         if row["status"] != "active" or row["expires_at"] <= datetime.now(timezone.utc):
             if row["status"] == "active":
+                expired_cid = row.get("ipfs_cid")
                 cur.execute("""
                     UPDATE shares
                        SET status = 'expired', ciphertext_blob = NULL,
-                           wrapped_key = NULL, signature = NULL, ipfs_cid = NULL
+                           wrapped_key = NULL, signature = NULL, ipfs_cid = NULL,
+                           ciphertext_sha256 = NULL, ciphertext_size = NULL
                      WHERE share_id = %s AND doctor_code = %s AND status = 'active'
                 """, (share_id, doctor_code))
-            return jsonify({"error": "share_expired_or_unavailable"}), 410
+                expired = True
+            else:
+                expired = True
+        else:
+            expired = False
 
-        cur.execute(
-            "SELECT patient_public_pem FROM patients WHERE profile_code = %s",
-            (row["patient_code"],)
-        )
-        patient = cur.fetchone()
+        if expired:
+            patient = None
+            package_metadata = None
+            ipfs_cid = None
+        else:
+            cur.execute(
+                "SELECT patient_public_pem FROM patients WHERE profile_code = %s",
+                (row["patient_code"],)
+            )
+            patient = cur.fetchone()
 
-        package_blob = row["ciphertext_blob"]
-        if isinstance(package_blob, str):
-            package_blob = json.loads(package_blob)
-        if not isinstance(package_blob, dict):
-            return jsonify({"error": "share_data_unavailable"}), 503
+            package_blob = row["ciphertext_blob"]
+            if isinstance(package_blob, str):
+                package_blob = json.loads(package_blob)
+            if not isinstance(package_blob, dict):
+                return jsonify({"error": "share_data_unavailable"}), 503
 
-        ipfs_cid = row.get("ipfs_cid")
-        wrapped_key = row["wrapped_key"]
-        signature = row["signature"]
-        patient_public_pem = patient.get("patient_public_pem") if patient else None
-        package_metadata = {
-            "share_id": row["share_id"],
-            "version": package_blob.get("version"),
-            "patient_code": row["patient_code"],
-            "doctor_code": row["doctor_code"],
-            "expires_at": package_blob.get("expires_at"),
-            "nonce": package_blob.get("nonce"),
-            "wrapped_key": wrapped_key,
-            "signature": signature,
-        }
+            ipfs_cid = row.get("ipfs_cid")
+            package_metadata = {
+                "share_id": row["share_id"],
+                "version": package_blob.get("version"),
+                "patient_code": row["patient_code"],
+                "doctor_code": row["doctor_code"],
+                "expires_at": package_blob.get("expires_at"),
+                "nonce": package_blob.get("nonce"),
+                "wrapped_key": row["wrapped_key"],
+                "signature": row["signature"],
+            }
 
-        # Legacy shares may still have ciphertext in PostgreSQL.
-        legacy_ciphertext = package_blob.get("ciphertext")
-        cur.execute(
-            "UPDATE shares SET fetched_at = now() WHERE share_id = %s",
-            (share_id,)
-        )
+            cur.execute("UPDATE shares SET fetched_at = now() WHERE share_id = %s", (share_id,))
 
-    if ipfs_cid:
-        try:
-            ciphertext_bytes = IPFSClient().get_bytes(ipfs_cid)
-            package_metadata["ciphertext"] = base64.b64encode(
-                ciphertext_bytes
-            ).decode("ascii")
-        except IPFSStorageError:
-            return jsonify({"error": "ipfs_fetch_failed"}), 503
-    elif legacy_ciphertext:
-        package_metadata["ciphertext"] = legacy_ciphertext
-    else:
+    if expired:
+        if expired_cid:
+            _unpin_ciphertext(expired_cid)
+        return jsonify({"error": "share_expired_or_unavailable"}), 410
+    patient_public_pem = patient.get("patient_public_pem") if patient else None
+    if not ipfs_cid or not row.get("ciphertext_sha256"):
         return jsonify({"error": "share_data_unavailable"}), 503
+    try:
+        ciphertext_bytes = _get_ipfs_client().get_verified_bytes(
+            ipfs_cid, row["ciphertext_sha256"]
+        )
+        if row.get("ciphertext_size") is not None and len(ciphertext_bytes) != row["ciphertext_size"]:
+            raise IPFSIntegrityError("share ciphertext size verification failed")
+        package_metadata["ciphertext"] = base64.b64encode(ciphertext_bytes).decode("ascii")
+    except IPFSIntegrityError:
+        return jsonify({"error": "ciphertext_integrity_failed"}), 503
+    except IPFSStorageError:
+        return jsonify({"error": "ipfs_fetch_failed"}), 503
 
     audit("share_fetched", actor=doctor_code, target=share_id)
     return jsonify({
@@ -2437,9 +2636,14 @@ def list_outgoing_shares():
 def revoke_snapshot_share(share_id):
     patient_code = request.jwt_payload.get("profile_code")
     with db_cursor() as cur:
+        cur.execute("SELECT ipfs_cid FROM shares WHERE share_id = %s AND patient_code = %s AND status = 'active'",
+                    (share_id, patient_code))
+        active_row = cur.fetchone()
+        cid = active_row.get("ipfs_cid") if active_row else None
         cur.execute("""
             UPDATE shares SET status = 'revoked', ciphertext_blob = NULL,
-                   wrapped_key = NULL, signature = NULL, ipfs_cid = NULL
+                   wrapped_key = NULL, signature = NULL, ipfs_cid = NULL,
+                   ciphertext_sha256 = NULL, ciphertext_size = NULL
              WHERE share_id = %s AND patient_code = %s AND status = 'active'
         """, (share_id, patient_code))
         updated = cur.rowcount
@@ -2449,6 +2653,7 @@ def revoke_snapshot_share(share_id):
             if not cur.fetchone():
                 return jsonify({"error": "share_not_found"}), 404
     if updated:
+        _unpin_ciphertext(cid)
         audit("share_revoked", actor=patient_code, target=share_id)
     return jsonify({"share_id": share_id, "status": "revoked" if updated else "unavailable"}), 200
 

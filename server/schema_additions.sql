@@ -65,3 +65,41 @@ CREATE INDEX IF NOT EXISTS idx_shares_expires_at ON shares(expires_at);
 
 -- IPFS content addressing for encrypted share snapshots.
 ALTER TABLE shares ADD COLUMN IF NOT EXISTS ipfs_cid TEXT;
+ALTER TABLE shares ADD COLUMN IF NOT EXISTS ciphertext_sha256 TEXT;
+ALTER TABLE shares ADD COLUMN IF NOT EXISTS ciphertext_size BIGINT;
+
+-- Encrypted registration records are stored in private Kubo. Keep the old
+-- column nullable for one-way migration of rows created by earlier releases.
+ALTER TABLE patients ALTER COLUMN encrypted_record DROP NOT NULL;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS ipfs_cid TEXT;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS ciphertext_sha256 TEXT;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS ciphertext_size BIGINT;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS ipfs_version INTEGER NOT NULL DEFAULT 1;
+
+-- Pin state is tracked per CID and private target so the repair worker can
+-- restore replicas without placing ciphertext in PostgreSQL.
+CREATE TABLE IF NOT EXISTS ipfs_pin_status (
+    cid             TEXT NOT NULL,
+    target          TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('pinned','pending','unpinned')),
+    last_checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_error      TEXT DEFAULT '',
+    PRIMARY KEY (cid, target)
+);
+CREATE INDEX IF NOT EXISTS idx_ipfs_pin_status_pending
+    ON ipfs_pin_status(status, last_checked_at);
+
+-- Orphans are delayed before cleanup to avoid racing a just-uploaded CID with
+-- its metadata transaction.
+CREATE TABLE IF NOT EXISTS ipfs_orphans (
+    cid         TEXT NOT NULL,
+    target      TEXT NOT NULL,
+    first_seen  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (cid, target)
+);
+
+CREATE TABLE IF NOT EXISTS ipfs_gc_state (
+    target       TEXT PRIMARY KEY,
+    last_gc_at   TIMESTAMPTZ NOT NULL DEFAULT 'epoch'
+);
