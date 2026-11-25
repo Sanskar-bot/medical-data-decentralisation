@@ -6,9 +6,21 @@
 
 The patient's registration record is encrypted (AES-256-GCM, key wrapped with RSA-4096 OAEP). Most clinical data added later (notes, prescriptions, vitals, lab results) is stored in plaintext. Encryption and key handling currently happen in the portal server. Wrapped-key access has a 24-hour server-side expiry; JWT-based approvals (`access_db`) currently have no expiry. Once a doctor decrypts a key or record, access cannot be cryptographically revoked.
 
+## Private IPFS ciphertext store
+
+Kubo/IPFS stores only the ciphertext bytes for encrypted patient registration records and per-share snapshot packages. PostgreSQL stores each registration CID, ciphertext SHA-256 and size alongside the patient public key and signature. For shares, PostgreSQL stores the CID, ciphertext SHA-256 and size, expiry/identity metadata, wrapped key and signature. Fetches verify the returned bytes against both the stored SHA-256 and a locally recalculated CID before returning ciphertext; a mismatch or unavailable node fails closed with HTTP 503. The signature already present on each ciphertext package remains the client-side authenticity check.
+
+The optional inline-size threshold is **not implemented**; in-scope payloads are stored on IPFS regardless of size. The current v1 registration/share signatures do not bind the stored CID or SHA-256 into AAD or the signed package. Protection comes from the signature over the ciphertext bytes and fetch-time SHA-256/CID verification. Doctor registration-record fetch now verifies the signature before decrypting; share clients use the v1 package verifier before decrypting.
+
+The Kubo primary and replica run offline with bootstrap peers removed. The HTTP gateway binds to loopback inside each container; the RPC API is reachable only from the private internal Docker network by the backend and maintenance worker. Configurable pin targets are private Kubo APIs. Pin state is tracked per target, and the maintenance worker repairs missing pins, delays orphan removal to avoid racing writes, and runs repository garbage collection on a schedule. The `ipfs_data` and `ipfs_replica_data` Docker volumes must be included in backups; restore both volumes together with the matching PostgreSQL metadata and verify CIDs before reopening service.
+
+The maintenance worker migrates legacy inline registration and share ciphertext in batches. Until migration completes, those legacy encrypted bytes can remain in PostgreSQL. The patient registration deletion endpoint removes that patient's registration record and share metadata/pins; it does not delete plaintext EMR data or the patient account. A separate, broader patient deletion workflow remains out of scope.
+
+IPFS provides content addressing, integrity checking, deduplication and portability between private Kubo nodes. It does not provide anonymity or guaranteed deletion. Unpinning plus repository garbage collection removes this service's live references, but cannot remove copies fetched by another party or copies preserved in backups, snapshots or logs. This is a private ciphertext store, not public decentralisation.
+
 ## Per-share snapshot scheme
 
-New snapshot shares encrypt only the patient-selected snapshot with a fresh one-time key. The patient's permanent data key is never sent to the doctor. Each share has its own key; the expiry, share ID, patient ID, and doctor ID are bound to the ciphertext and covered by the patient's signature. The server stores the encrypted snapshot and a key wrapped for the named doctor. Clearing those database fields removes the live copy; residual database copies are unreadable without that doctor's private key. Expiry is best-effort and provides accountability, not guaranteed destruction.
+New snapshot shares encrypt only the patient-selected snapshot with a fresh one-time key. The patient's permanent data key is never sent to the doctor. Each share has its own key; the expiry, share ID, patient ID, and doctor ID are bound to the ciphertext and covered by the patient's signature. The server stores the encrypted snapshot on private IPFS and keeps its CID, SHA-256, size, wrapped key, signature and expiry metadata in PostgreSQL. Expiry/revocation clears the metadata and unpins from configured nodes; this does not erase any copy already fetched or retained elsewhere.
 
 This scheme assumes doctors follow the protocol and do not intentionally copy or leak data. A doctor who already decrypted a snapshot can retain it. Screenshots and a compromised doctor device are outside the protection provided here. Database backups, WAL, replicas, and logs may retain old ciphertext and wrapped keys. The server sees metadata about who shared with whom and when. Doctor identity verification is not implemented. In the current deployment, the patient and doctor portals run server-side and handle private keys and plaintext, so the server is not blind to plaintext. The portable crypto module could later run in native patient and doctor clients; no such client is implemented here. This is not end-to-end encryption.
 
@@ -67,7 +79,7 @@ All components run in Docker containers on a single host (`docker-compose.yml`).
 
 | Asset | Sensitivity | Storage Location |
 |-------|------------|-----------------|
-| Patient clinical record (initial registration blob) | High | `patients.encrypted_record` — AES-256-GCM encrypted |
+| Patient clinical record (initial registration blob) | High | Ciphertext in private IPFS; `patients` stores CID, SHA-256, size, public key and signature |
 | EMR profiles, prescriptions, lab reports, conditions, vitals, encounters, doctor notes | High | `emr_profiles`, `emr_prescriptions`, `emr_lab_reports`, `conditions`, `vitals`, `encounters`, `doctor_notes` — **all plaintext** in Postgres |
 | Patient RSA private key | Critical | Portal server filesystem (`SecureKeyStore`, DPAPI or AES-GCM), plus encrypted backup in `users.encrypted_private_key` |
 | AES data key K_data | Critical | Wrapped in portal server's `user_data.json` (KEK from password via PBKDF2) |

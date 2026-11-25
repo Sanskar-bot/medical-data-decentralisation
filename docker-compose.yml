@@ -24,16 +24,38 @@ services:
       IPFS_PROFILE: server
     volumes:
       - ipfs_data:/data/ipfs
+      - ./deploy/kubo-private-init.sh:/container-init.d/001-private.sh:ro
     expose:
       - "5001"
+    command: ["daemon", "--offline"]
     healthcheck:
-      test: ["CMD", "ipfs", "id"]
+      test: ["CMD", "ipfs", "--api=/ip4/127.0.0.1/tcp/5001", "id"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 15s
     networks:
-      - medvault_net
+      - ipfs_net
+
+  ipfs_replica:
+    image: ipfs/kubo:v0.43.1
+    restart: unless-stopped
+    environment:
+      IPFS_PROFILE: server
+    volumes:
+      - ipfs_replica_data:/data/ipfs
+      - ./deploy/kubo-private-init.sh:/container-init.d/001-private.sh:ro
+    expose:
+      - "5001"
+    command: ["daemon", "--offline"]
+    healthcheck:
+      test: ["CMD", "ipfs", "--api=/ip4/127.0.0.1/tcp/5001", "id"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - ipfs_net
 
   backend:
     build: .
@@ -43,10 +65,13 @@ services:
         condition: service_healthy
       ipfs:
         condition: service_healthy
+      ipfs_replica:
+        condition: service_healthy
     env_file: .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       IPFS_API_URL: http://ipfs:5001
+      IPFS_PIN_TARGETS: replica=http://ipfs_replica:5001
     volumes:
       - .:/app
     working_dir: /app/server
@@ -59,6 +84,30 @@ services:
       start_period: 15s
     networks:
       - medvault_net
+      - ipfs_net
+
+  ipfs_maintenance:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ipfs:
+        condition: service_healthy
+      ipfs_replica:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      IPFS_API_URL: http://ipfs:5001
+      IPFS_PIN_TARGETS: replica=http://ipfs_replica:5001
+    volumes:
+      - .:/app
+    working_dir: /app/server
+    command: python ipfs_maintenance.py
+    networks:
+      - medvault_net
+      - ipfs_net
 
   patient_portal:
     build: .
@@ -155,7 +204,11 @@ services:
 volumes:
   pgdata:
   ipfs_data:
+  ipfs_replica_data:
 
 networks:
   medvault_net:
     driver: bridge
+  ipfs_net:
+    driver: bridge
+    internal: true

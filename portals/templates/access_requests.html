@@ -95,6 +95,20 @@
     catch(e) { return s; }
   }
 
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>\"']/g, function(ch) {
+      return {'&':'&amp;', '<':'&lt;', '>':'&gt;', '\"':'&quot;', "'":'&#39;'}[ch];
+    });
+  }
+
+  function fingerprintHtml(r) {
+    var fingerprint = r.doctor_key_fingerprint;
+    if (typeof fingerprint !== 'string' || !fingerprint.trim()) {
+      return '<div class="alert alert-error" role="alert" style="margin-top:var(--sp-2);">Doctor key fingerprint unavailable. Verify the doctor another way before approving.</div>';
+    }
+    return '<div class="field-value" style="margin-top:var(--sp-2);">Doctor key fingerprint: <code>' + escapeHtml(fingerprint) + '</code></div>';
+  }
+
   function expiryBadge(respondedAt) {
     if (!respondedAt) return '<span class="badge badge-approved">Active</span>';
     var exp  = new Date(new Date(respondedAt).getTime() + 24 * 3600 * 1000);
@@ -132,6 +146,7 @@
       '<div style="display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);">' +
         '<div>' +
           '<div style="font-size:var(--t-sm); font-weight:600; color:var(--tx1); margin-bottom:var(--sp-1);">Dr. ' + doctorLabel + '</div>' +
+          fingerprintHtml(r) +
         '</div>' +
         '<div class="cluster-3">' + actions + '</div>' +
       '</div>' +

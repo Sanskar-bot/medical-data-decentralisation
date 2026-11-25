@@ -276,6 +276,25 @@ def api_fetch_record():
     except Exception as e:
         return jsonify({"error":f"Backend error: {e}"}), 502
 
+    # Authenticate the registration envelope before obtaining/decrypting any key.
+    # The storage CID/hash are not part of the legacy signature format; the
+    # signature covers the nonce and ciphertext bytes themselves.
+    try:
+        enc_rec = enc_resp.get("encrypted_record", {})
+        pat_pub_pem = enc_resp.get("patient_public_pem", "")
+        sig = enc_resp.get("signature", "")
+        if not isinstance(enc_rec, dict) or not all(
+            isinstance(enc_rec.get(field), str) and enc_rec[field]
+            for field in ("nonce", "ciphertext")
+        ) or not pat_pub_pem or not sig:
+            raise ValueError("missing signed registration envelope fields")
+        pat_pub = rsa_load_public(pat_pub_pem.encode())
+        signed = (enc_rec["nonce"] + "|" + enc_rec["ciphertext"]).encode()
+        if not rsa_verify(pat_pub, signed, sig):
+            return jsonify({"error": "invalid_patient_signature"}), 502
+    except Exception:
+        return jsonify({"error": "invalid_patient_signature"}), 502
+
     # fetch wrapped key
     try:
         rw = http.get(f"{BACKEND}/wrapped_key/{pat_code}", headers=bh(), timeout=8)
@@ -303,7 +322,6 @@ def api_fetch_record():
 
     # unwrap temp key T, then decrypt K_data, then decrypt record
     try:
-        enc_rec = enc_resp.get("encrypted_record",{})
         enc_kdata_with_temp = None
         # find encrypted_kdata_with_temp from wrapped keys entry
         if doc_code in wkmap and isinstance(wkmap[doc_code], dict):
@@ -322,17 +340,6 @@ def api_fetch_record():
     except Exception as e:
         return jsonify({"error":f"Decryption failed: {e}"}), 500
 
-    # verify signature
-    sig_valid = False
-    try:
-        pat_pub_pem = enc_resp.get("patient_public_pem","")
-        sig         = enc_resp.get("signature","")
-        if pat_pub_pem and sig:
-            pat_pub  = rsa_load_public(pat_pub_pem.encode())
-            to_verify = (enc_rec["nonce"] + "|" + enc_rec["ciphertext"]).encode()
-            sig_valid = rsa_verify(pat_pub, to_verify, sig)
-    except Exception: pass
-
     # fetch all doctor notes for this patient
     notes = []
     try:
@@ -347,7 +354,7 @@ def api_fetch_record():
     except Exception:
         pass   # notes are best-effort; don't fail the whole request
 
-    return jsonify({"record": record, "sig_valid": sig_valid,
+    return jsonify({"record": record, "sig_valid": True,
                     "expires_at": expires_at, "notes": notes})
 
 

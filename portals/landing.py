@@ -1041,6 +1041,7 @@ def patient_requests():
                             "request_id":   rid,
                             "doctor_code":  x.get("doctor_code", x.get("doctor_email", "")),
                             "doctor_name":  x.get("doctor_name", x.get("doctor_email", "Doctor")),
+                            "doctor_key_fingerprint": x.get("doctor_key_fingerprint", ""),
                             "status":       x.get("status", "pending"),
                             "requested_at": x.get("created_at", x.get("requested_at", "")),
                         })
@@ -1064,9 +1065,11 @@ def patient_requests():
                     cur.execute("""
                         SELECT a.id, a.status, a.created_at, a.responded_at,
                                a.doctor_id, a.doctor_email,
-                               u.doctor_code, u.name AS doctor_name, u.username AS doctor_username
+                               u.doctor_code, u.name AS doctor_name, u.username AS doctor_username,
+                               d.public_pem AS doctor_public_pem
                         FROM access_db a
                         LEFT JOIN users u ON a.doctor_id = u.id
+                        LEFT JOIN doctors d ON d.doctor_code = u.doctor_code
                         WHERE a.patient_id = %s
                         ORDER BY a.created_at DESC
                     """, (str(pt["id"]),))
@@ -1081,11 +1084,15 @@ def patient_requests():
                         doc_code    = (x.get("doctor_code") or x.get("doctor_email") or
                                        str(x.get("doctor_id", "")))
                         responded   = x.get("responded_at")
+                        public_pem  = (x.get("doctor_public_pem") or "").strip()
+                        fingerprint = hashlib.sha256(public_pem.encode("utf-8")).hexdigest()[:20].upper() if public_pem else ""
+                        fingerprint = " ".join(fingerprint[i:i + 4] for i in range(0, len(fingerprint), 4))
                         normalized.append({
                             "id":           rid,
                             "request_id":   rid,
                             "doctor_code":  doc_code,
                             "doctor_name":  doc_display,
+                            "doctor_key_fingerprint": fingerprint,
                             "status":       x.get("status", "pending"),
                             "requested_at": x["created_at"].isoformat() if hasattr(x.get("created_at"), "isoformat") else str(x.get("created_at", "")),
                             "responded_at": responded.isoformat() if responded and hasattr(responded, "isoformat") else str(responded or ""),

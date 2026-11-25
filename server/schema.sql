@@ -52,9 +52,13 @@ CREATE INDEX IF NOT EXISTS idx_login_history_email ON login_history(email);
 -- ── Patients ──────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS patients (
     profile_code        TEXT PRIMARY KEY,
-    encrypted_record    JSONB NOT NULL,
+    encrypted_record    JSONB,
     patient_public_pem  TEXT,
     signature           TEXT,
+    ipfs_cid            TEXT,
+    ciphertext_sha256   TEXT,
+    ciphertext_size     BIGINT,
+    ipfs_version        INTEGER NOT NULL DEFAULT 1,
     uploaded_at         TIMESTAMPTZ DEFAULT now()
 );
 

@@ -6,6 +6,10 @@
 
 Added an additive snapshot-sharing flow with a fresh key per share and best-effort expiry. It supplements the existing sharing flow. See [docs/SHARE_SCHEME_PLAN.md](docs/SHARE_SCHEME_PLAN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
+### Phase 5B — Private IPFS ciphertext storage
+
+Moved encrypted patient registration envelopes to private Kubo/IPFS and strengthened per-share snapshot storage with SHA-256 and CID verification on every fetch. PostgreSQL stores CIDs, digests, sizes, wrapped keys and metadata; plaintext EMR tables and routes are unchanged and remain plaintext in PostgreSQL. The compose stack uses offline private Kubo primary/replica nodes, pin tracking/repair, orphan cleanup and scheduled repository GC. IPFS is a private ciphertext store, not public decentralisation; the application makes no end-to-end encryption claim. A UI sentinel gate remains skipped until client-side EMR encryption in Phases 1–5 is complete.
+
 > **Note:** The fixes below addressed specific reported issues. They do not cover all security properties of the system. In particular: (1) most clinical data is stored in plaintext, (2) all cryptographic operations occur on the portal server rather than the patient's device, (3) the Argon2id key derivation function exists but is unused at runtime, and (4) some access-control gaps remain (see threat model for details).
 
 ---
