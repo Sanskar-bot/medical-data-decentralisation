@@ -4,6 +4,8 @@
 > Claims about the planned phone-first design are clearly marked **PLANNED, NOT IMPLEMENTED**.
 > Every claim about current behaviour cites a source file and function or line number.
 
+Repository cleanup removed unreferenced one-off check/patch scripts and ignores future `graphify-out/` generation. The tracked graph report remains because project agent rules reference it. These maintenance changes do not alter runtime controls or trust boundaries.
+
 The patient's registration record and per-share snapshots are encrypted. Most clinical data added later (notes, prescriptions, vitals, lab results) is stored in plaintext. Encryption and key handling currently happen in the portal server. Wrapped-key access has a 24-hour server-side expiry; approved grants in `access_db` currently have no expiry in backend authorization checks. Once a doctor decrypts a key or record, access cannot be cryptographically revoked.
 
 ## Private IPFS ciphertext store

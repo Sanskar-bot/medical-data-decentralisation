@@ -64,3 +64,5 @@ portals/patient_ui.html
 *.dump
 setup_db.py
 find_otp_js.py
+graphify-out/
+login_snippet.txt

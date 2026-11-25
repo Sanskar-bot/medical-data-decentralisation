@@ -6,6 +6,10 @@
 
 Updated the README and security documentation to include per-share snapshot ciphertext, remove the stale claim that `_doctor_has_active_access` grants permanent access based on past authorship, and correct the API-key comparison statement. API keys and JWT HMAC signatures use `hmac.compare_digest`; RSA package signatures use `rsa_verify`. This task changes documentation only.
 
+### Hardening cleanup — Task 2: repository hygiene
+
+Removed unreferenced `check_p17.py`–`check_p26.py`, `check_snippets.py`, legacy patch scripts and the `login_snippet.txt` debug output. Kept `doctor/pateint_search.py` because it is identical to the corrected filename and the changelog records the rename; kept `graphify-out/` because `.agents/rules/graphify.md` reads it. Added ignore entries for future graph output and the generated login snippet. No runtime code changed. Full pytest: 227 passed, 2 skipped. Docker build is unverified here because the Docker CLI is unavailable.
+
 ### Per-share snapshots (new)
 
 Added an additive snapshot-sharing flow with a fresh key per share and best-effort expiry. It supplements the existing sharing flow. See [docs/SHARE_SCHEME_PLAN.md](docs/SHARE_SCHEME_PLAN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).

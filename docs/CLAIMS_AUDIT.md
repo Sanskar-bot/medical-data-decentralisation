@@ -15,6 +15,8 @@ Searched the entire repository for the terms: `zero-trust`, `end-to-end` / `E2E`
 
 The README status section now includes per-share snapshots among encrypted payloads, describes the remaining plaintext EMR data, and no longer states that API-key comparison uses `!=`. `server._require_api_key`, `server._jwt_decode`, and the portal API-key check use `hmac.compare_digest`; RSA package signatures are verified with `rsa_verify`. The former permanent patient-wide authorship grant was removed: `server._doctor_has_active_access` delegates to `authorize_patient_access`, which accepts approved `access_db` rows or unexpired wrapped-key grants. `access_db` approval expiry remains open. Entries below preserve older quoted claims for audit history; they do not describe the current behavior where the evidence has since changed.
 
+Task 2 repository cleanup removed only unreferenced maintenance scripts and their generated debug snippet. The identical typo-path patient search copy remains because the changelog references it; the tracked graph report remains because project agent rules consume it. No application security claims changed in this task.
+
 ## Audit Table
 
 ### README.md

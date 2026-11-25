@@ -29,6 +29,10 @@ New per-share snapshot endpoints encrypt a selected snapshot with a fresh key fo
 
 The Docker Compose deployment runs two offline Kubo nodes with no published API or gateway port. The backend and maintenance worker reach them over an internal Docker network. For configuration and the backup/restore procedure, see [IPFS backup and restore](docs/IPFS_BACKUP_RESTORE.md).
 
+### Repository maintenance
+
+Unreferenced one-off check and patch scripts have been removed. `graphify-out/` is ignored as generated output; its currently tracked report remains because the project agent rules refer to it.
+
 ---
 
 ## 🔍 Problem Statement
