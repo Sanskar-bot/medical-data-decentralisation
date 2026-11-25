@@ -170,7 +170,7 @@ The maintenance worker migrates legacy inline encrypted registration/share paylo
 
 ### Known security limitations
 - The same password is used for login and KEK derivation; the backend receives the password at login.
-- Access through `access_db` has no expiry in backend authorization checks; wrapped-key grants are checked against their expiry. The old implicit grant based on having authored a prescription or lab report was removed.
+- Access through `access_db` has no expiry in backend authorization checks; wrapped-key grants are checked against their expiry. Authorship does not grant patient-wide access. Prescription and lab reads require a patient grant even for their author; only specific doctor-note image and deletion operations allow the note's author to act on that note.
 - `/approve_request` is protected by a shared API key, not patient-specific authentication.
 - API keys and JWT HMAC signatures use `hmac.compare_digest`; RSA package signatures are verified with `rsa_verify`.
 

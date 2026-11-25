@@ -1,6 +1,8 @@
 """[C2] Unit tests for the single authorization function."""
 import uuid
 
+import pytest
+
 
 def _p(user):
     return {"uid": user["id"], "role": user["role"],
@@ -59,6 +61,29 @@ def test_implicit_access_from_old_prescription_is_gone(app, clean_db, db, make_u
         cur.execute("INSERT INTO emr_prescriptions (id, patient_id, doctor_id, medications) "
                     "VALUES (%s, %s, %s, '[]')", (str(uuid.uuid4()), p["profile_code"], d["doctor_code"]))
     assert ok(_p(d), p["profile_code"]) is False
+
+
+def test_authored_lab_report_does_not_grant_patient_wide_access(app, clean_db, db, make_user):
+    from authz import authorize_patient_access as ok
+    p, d = make_user("patient"), make_user("doctor")
+    with db() as cur:
+        cur.execute("INSERT INTO emr_lab_reports (id, patient_id, doctor_id, report_type) "
+                    "VALUES (%s, %s, %s, 'CBC')",
+                    (str(uuid.uuid4()), p["profile_code"], d["doctor_code"]))
+    assert ok(_p(d), p["profile_code"]) is False
+
+
+@pytest.mark.xfail(strict=True, reason="access_db has no expiry until Task 4")
+def test_old_approved_access_db_grant_should_be_denied(app, clean_db, db, make_user):
+    """Task 4 will add and enforce approval expiry; this documents the gap."""
+    from authz import authorize_patient_access as ok
+    p, d = make_user("patient"), make_user("doctor")
+    with db() as cur:
+        cur.execute("""
+            INSERT INTO access_db (id, doctor_id, doctor_email, patient_id, status, responded_at)
+            VALUES (%s, %s, %s, %s, 'approved', now() - interval '25 hours')
+        """, (str(uuid.uuid4()), d["id"], d["email"], p["id"]))
+    assert ok(_p(d), p["id"]) is False
 
 
 def test_admin_receptionist_and_unknown_denied(app, clean_db, make_user):

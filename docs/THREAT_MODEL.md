@@ -67,13 +67,21 @@ All components run in Docker containers on a single host (`docker-compose.yml`).
 
 ### Data Flow: Doctor Access
 
-1. Doctor requests the patient's data. The backend checks `_doctor_has_active_access` (`server/server.py`), which delegates to `authorize_patient_access` (`server/authz.py`) and returns true if:
+1. Doctor requests the patient's data. Patient-level access checks use `authorize_patient_access` (`server/authz.py`) and return true if:
    - A non-expired entry exists in `wrapped_keys` (checks `temp_key_expires_at > now()`), **OR**
    - An `approved` row exists in `access_db` (no expiry check).
-   - There is no patient-wide grant based on previous prescription or lab authorship. Specific record endpoints may authorize the doctor who authored that record, and only for that record.
+   - Previous prescription or lab authorship does not grant patient-wide access. Prescription and lab list/detail endpoints require a patient-level grant even for the record author. The `/note_images/<filename>` and `/doctor_notes/<note_id>` operations have record-scoped note-author checks; those checks do not grant access to other records.
 2. If access is granted, the backend returns the wrapped key. The doctor's portal/client unwraps T with their RSA private key, then decrypts K_data with T.
 3. The doctor can then decrypt the `encrypted_record` using K_data.
 4. All EMR data (prescriptions, notes, vitals, etc.) is served as plaintext from the database — no decryption step is needed for these.
+
+### Access decision and callers
+
+`server/authz.py:authorize_patient_access` is the shared patient-level decision. It allows a patient to access their own data, or a doctor with an approved `access_db` row or an unexpired `wrapped_keys` row. `server/server.py:_doctor_has_active_access` wraps it for `/doctor_notes/add`; `_has_active_access` wraps it for `/reports/upload` and `/images/upload`; `_caller_may_access_patient` wraps it for `/get_patient_data/<profile_code>` and `/wrapped_key/<profile_code>`.
+
+Other direct callers in `server/server.py` are `request_access_simple`, `get_request_status`, `approve_request`, `update_request_status`, `get_patient_reports`, `get_report`, `get_images_for_record`, `download_image`, `get_profile_photo`, `doctor_notes_for_patient`, and `serve_note_image`. `server/emr/routes.py:_doctor_has_patient_access` wraps it for patient-profile, patient-appointment, prescription, lab-report, vitals, condition, and encounter operations. Doctor-specific appointment and encounter listings validate the doctor ID against the JWT and do not make patient-level access decisions.
+
+Record authorship exceptions are limited to specific doctor-note operations: the note author may serve that note's image and delete that note. Prescription and lab-report list/detail reads have no author exception. No prescription/lab authorship creates patient-wide access.
 
 ---
 

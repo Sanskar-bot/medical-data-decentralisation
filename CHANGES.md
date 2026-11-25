@@ -10,6 +10,10 @@ Updated the README and security documentation to include per-share snapshot ciph
 
 Removed unreferenced `check_p17.py`–`check_p26.py`, `check_snippets.py`, legacy patch scripts and the `login_snippet.txt` debug output. Kept `doctor/pateint_search.py` because it is identical to the corrected filename and the changelog records the rename; kept `graphify-out/` because `.agents/rules/graphify.md` reads it. Added ignore entries for future graph output and the generated login snippet. No runtime code changed. Full pytest: 227 passed, 2 skipped. Docker build is unverified here because the Docker CLI is unavailable.
 
+### Hardening cleanup — Task 3: access-decision tests
+
+Confirmed that `server/authz.py` grants patient-level doctor access only through an approved `access_db` row or an unexpired wrapped-key row; previous prescription/lab authorship creates no patient-wide grant. Prescription and lab list/detail reads require that patient-level grant, including for their author. Only specific doctor-note image and deletion operations have note-author exceptions. Added regression coverage for an ungranted prescription/lab author and an expected xfail for an old `access_db` approval; Task 4 will add approval expiry. No schema or runtime behavior changed.
+
 ### Per-share snapshots (new)
 
 Added an additive snapshot-sharing flow with a fresh key per share and best-effort expiry. It supplements the existing sharing flow. See [docs/SHARE_SCHEME_PLAN.md](docs/SHARE_SCHEME_PLAN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).

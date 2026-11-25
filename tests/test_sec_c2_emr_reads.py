@@ -38,3 +38,32 @@ def test_allowed(client, world, make_token, who):
     for url in _urls(world):
         r = client.get(url, headers=make_token(world[who]))
         assert r.status_code == 200, (who, url, r.status_code)
+
+
+def test_authored_prescription_and_lab_still_require_patient_grant(
+    client, clean_db, db, make_user, make_token
+):
+    """Authorship alone grants no patient-wide or record-read access."""
+    owner, author = make_user("patient"), make_user("doctor")
+    rx_id, lab_id = str(uuid.uuid4()), str(uuid.uuid4())
+    with db() as cur:
+        cur.execute(
+            "INSERT INTO emr_prescriptions (id, patient_id, doctor_id, medications) "
+            "VALUES (%s, %s, %s, '[]')",
+            (rx_id, owner["id"], author["doctor_code"]),
+        )
+        cur.execute(
+            "INSERT INTO emr_lab_reports (id, patient_id, doctor_id, report_type) "
+            "VALUES (%s, %s, %s, 'CBC')",
+            (lab_id, owner["id"], author["doctor_code"]),
+        )
+
+    urls = (
+        f"/emr/prescriptions/patient/{owner['id']}",
+        f"/emr/prescriptions/{rx_id}",
+        f"/emr/lab-reports/patient/{owner['id']}",
+        f"/emr/lab-reports/{lab_id}",
+    )
+    for url in urls:
+        response = client.get(url, headers=make_token(author))
+        assert response.status_code == 403, (url, response.status_code)
