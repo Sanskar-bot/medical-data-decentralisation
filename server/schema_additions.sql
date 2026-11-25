@@ -62,3 +62,6 @@ CREATE TABLE IF NOT EXISTS shares (
 CREATE INDEX IF NOT EXISTS idx_shares_doctor_status ON shares(doctor_code, status);
 CREATE INDEX IF NOT EXISTS idx_shares_patient_status ON shares(patient_code, status);
 CREATE INDEX IF NOT EXISTS idx_shares_expires_at ON shares(expires_at);
+
+-- IPFS content addressing for encrypted share snapshots.
+ALTER TABLE shares ADD COLUMN IF NOT EXISTS ipfs_cid TEXT;
