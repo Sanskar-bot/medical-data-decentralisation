@@ -1,3 +1,4 @@
+
 services:
   postgres:
     image: postgres:16
@@ -16,15 +17,36 @@ services:
     networks:
       - medvault_net
 
+  ipfs:
+    image: ipfs/kubo:v0.43.1
+    restart: unless-stopped
+    environment:
+      IPFS_PROFILE: server
+    volumes:
+      - ipfs_data:/data/ipfs
+    expose:
+      - "5001"
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - medvault_net
+
   backend:
     build: .
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+      ipfs:
+        condition: service_healthy
     env_file: .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      IPFS_API_URL: http://ipfs:5001
     volumes:
       - .:/app
     working_dir: /app/server
@@ -132,6 +154,7 @@ services:
 
 volumes:
   pgdata:
+  ipfs_data:
 
 networks:
   medvault_net:
