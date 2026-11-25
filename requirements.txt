@@ -53,3 +53,6 @@ argon2-cffi==23.1.0
 psycopg2-binary==2.9.9
 gunicorn==26.0.0
 twilio
+
+faster-whisper==1.2.1
+av==19.0.2

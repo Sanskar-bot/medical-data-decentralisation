@@ -2287,14 +2287,46 @@ def doctor_patient_notes(patient_code):
     try:
         # Resolve username â†’ profile_code (folder name on disk)
         notes_file = os.path.join(USERS_DIR, resolved_code, "notes.json")
-        if not os.path.exists(notes_file):
-            return jsonify({"notes": [], "source": "local"}), 200
-        notes = json.load(open(notes_file, encoding="utf-8"))
+        notes = []
+        if os.path.exists(notes_file):
+            with open(notes_file, encoding="utf-8") as nf:
+                notes = json.load(nf)
         if not isinstance(notes, list):
             notes = []
+        notes = [n for n in notes if isinstance(n, dict)]
+        local_ids = set()
+        for n in notes:
+            nid = n.get("note_id") or n.get("id")
+            if nid:
+                local_ids.add(str(nid))
+
+        # Notes still waiting on the relay server (patient has not synced yet)
+        relay_ok = False
+        try:
+            rr = http.get(f"{BACKEND}/doctor_notes/patient/{resolved_code}",
+                          headers=_jwt_headers(), timeout=8)
+            if rr.ok:
+                body = rr.json()
+                relay = body if isinstance(body, list) else body.get("notes", []) if isinstance(body, dict) else []
+                relay_ok = True
+                for n in (relay if isinstance(relay, list) else []):
+                    if not isinstance(n, dict):
+                        continue
+                    nid = n.get("note_id") or n.get("id")
+                    if nid and str(nid) in local_ids:
+                        continue
+                    n = dict(n)
+                    n["pending_sync"] = True
+                    notes.append(n)
+                    if nid:
+                        local_ids.add(str(nid))
+        except Exception:
+            app.logger.warning("doctor_patient_notes: relay fetch failed")
+
         # Sort newest first
-        notes.sort(key=lambda n: n.get("created_at", ""), reverse=True)
-        return jsonify({"notes": notes, "source": "local"}), 200
+        notes.sort(key=lambda n: str(n.get("created_at", "")), reverse=True)
+        source = "local+relay" if relay_ok else "local"
+        return jsonify({"notes": notes, "source": source}), 200
     except Exception as e:
         app.logger.exception("doctor_patient_notes error")
         return jsonify({"error": str(e), "notes": []}), 500
@@ -3655,6 +3687,58 @@ def doctor_patient_appointments(patient_code):
             app.logger.warning("doctor_patient_appointments: %s", e)
     out.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return jsonify(out), 200
+
+
+@app.route("/doctor/voice_to_visit", methods=["POST"])
+def doctor_voice_to_visit():
+    """Doctor dictates a visit; returns a DRAFT (note + medicines). Never saves anything."""
+    err = _doctor_session_check()
+    if err: return err
+
+    patient_code = (request.form.get("patient_code") or "").strip()
+    resolved_code, _pid = _resolve_patient_uuid_or_code(patient_code)
+    err = _require_active_access(session.get("doctor_code", ""), resolved_code)
+    if err:
+        return err
+
+    if (request.content_length or 0) > 12 * 1024 * 1024:
+        return jsonify({"error": "audio_too_large"}), 413
+    f = request.files.get("audio")
+    if not f:
+        return jsonify({"error": "audio_required"}), 400
+    ctype = (f.mimetype or "").lower()
+    if not (ctype.startswith("audio/") or ctype == "video/webm"):
+        return jsonify({"error": "unsupported_audio_type"}), 415
+    lang = request.form.get("lang", "hi")
+    if lang not in ("hi", "en", "auto"):
+        lang = "hi"
+
+    import tempfile
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
+            f.save(tmp)
+            tmp_path = tmp.name
+        if os.path.getsize(tmp_path) > 10 * 1024 * 1024:
+            return jsonify({"error": "audio_too_large"}), 413
+        import voice_utils
+        result = voice_utils.build_visit_draft(tmp_path, lang)
+        app.logger.info("voice_to_visit doctor=%s patient=%s",
+                        session.get("doctor_code", ""), resolved_code)
+        return jsonify(result), 200
+    except ImportError:
+        return jsonify({"error": "voice_not_installed",
+                        "detail": "Run: pip install faster-whisper"}), 501
+    except Exception:
+        app.logger.exception("doctor_voice_to_visit failed")
+        return jsonify({"error": "voice_failed",
+                        "detail": "Could not process the audio. Please try again."}), 500
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 @app.route("/doctor/add_prescription", methods=["POST"])
