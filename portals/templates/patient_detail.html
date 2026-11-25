@@ -115,17 +115,15 @@
 <!-- Decrypted Record result -->
 <div id="record-display" style="display:none; margin-bottom:var(--sp-6);"></div>
 
-<!-- Tab Navigation -->
-<div style="display:flex; gap:0; border-bottom:1px solid var(--b1); margin-bottom:var(--sp-6); overflow-x:auto;">
-  <button class="tab-btn active" data-tab="overview" type="button">Overview</button>
-  <button class="tab-btn" data-tab="notes" type="button">Doctor Notes</button>
-  <button class="tab-btn" data-tab="prescriptions" type="button">Prescriptions</button>
-  <button class="tab-btn" data-tab="lab-reports" type="button">Lab Reports</button>
-  <button class="tab-btn" data-tab="vitals" type="button">Vitals</button>
-  <button class="tab-btn" data-tab="new-visit" type="button">New Visit</button>
-  <button class="tab-btn" data-tab="conditions" type="button">Conditions &amp; Allergies</button>
-  <button class="tab-btn" data-tab="reports-images" type="button">Reports &amp; Images</button>
-  <button class="tab-btn" data-tab="appointments" type="button">Appointments</button>
+<!-- Tab Navigation (3 groups; a dropdown picks the section inside a group) -->
+<div style="display:flex; gap:0; border-bottom:1px solid var(--b1); margin-bottom:var(--sp-4); overflow-x:auto;">
+  <button class="tab-btn active" data-group="info" type="button">Patient Info</button>
+  <button class="tab-btn" data-group="records" type="button">Notes &amp; Prescriptions</button>
+  <button class="tab-btn" data-group="visit" type="button">New Visit</button>
+</div>
+<div id="sub-picker" style="display:flex; align-items:center; gap:var(--sp-3); margin-bottom:var(--sp-5);">
+  <label for="sub-select" class="type-caption">Show:</label>
+  <select class="input-field" id="sub-select" style="width:auto; min-width:240px;"></select>
 </div>
 
 <style>
@@ -143,6 +141,66 @@
 }
 .tab-btn:hover { color: var(--tx1); }
 .tab-btn.active { color: var(--t5); border-bottom-color: var(--t5); font-weight: 600; }
+</style>
+
+<style>
+.mv-voice-card { margin-bottom: var(--sp-4); padding: clamp(var(--sp-4), 3vw, var(--sp-6)); }
+.mv-voice-header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, 260px); align-items: start; gap: var(--sp-5); }
+.mv-voice-heading-group { min-width: 0; }
+.mv-voice-intro { margin-top: var(--sp-1); color: var(--tx2); font-size: var(--t-sm); line-height: 1.55; }
+.mv-voice-language-group { min-width: 0; }
+.mv-voice-language-group .input-label { margin-bottom: var(--sp-1); }
+.mv-voice-language { min-height: 44px; }
+.mv-voice-workspace { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--sp-4) var(--sp-6); margin-top: var(--sp-5); }
+.mv-voice-activity { min-width: 0; }
+.mv-voice-status { min-height: 1.5em; color: var(--tx2); font-size: var(--t-sm); line-height: 1.5; }
+.mv-voice-live { display: flex; align-items: center; gap: var(--sp-4); min-height: 56px; margin-bottom: var(--sp-2); }
+.mv-voice-live[hidden], .mv-voice-progress[hidden], .mv-voice-error[hidden], .mv-voice-cancel[hidden] { display: none; }
+.mv-voice-level { display: block; width: min(100%, 360px); height: 56px; }
+.mv-voice-timer { min-width: 4.5em; color: var(--tx1); font: 600 var(--t-md)/1 var(--font-mono); font-variant-numeric: tabular-nums; }
+.mv-voice-silence { margin-top: var(--sp-1); color: var(--tx2); font-size: var(--t-xs); }
+.mv-voice-silence[hidden] { display: none; }
+.mv-voice-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
+.mv-voice-record, .mv-voice-cancel, .mv-voice-retry { min-height: 48px; }
+.mv-voice-record { min-width: 158px; justify-content: center; background: var(--p5); border-color: var(--p5); transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.mv-voice-record:hover { background: var(--p6); border-color: var(--p6); }
+.mv-voice-record:focus-visible, .mv-voice-cancel:focus-visible, .mv-voice-retry:focus-visible, .mv-voice-language:focus-visible { outline: 3px solid var(--p4); outline-offset: 3px; }
+.mv-voice-record.mv-voice-recording { background: var(--r5); border-color: var(--r5); }
+.mv-voice-record.mv-voice-recording:hover { background: var(--r6); border-color: var(--r6); }
+.mv-voice-record:disabled { background: var(--s2); border-color: var(--b1); color: var(--tx3); }
+.mv-voice-mic-icon { width: 19px; height: 19px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mv-voice-progress { max-width: 420px; margin: 0 0 var(--sp-3); }
+.mv-voice-progress-track { display: block; height: 5px; overflow: hidden; border-radius: 999px; background: var(--s3); }
+.mv-voice-progress-bar { display: block; width: 34%; height: 100%; border-radius: inherit; background: var(--p5); animation: mv-voice-progress 1.5s ease-in-out infinite; }
+@keyframes mv-voice-progress { 0% { transform: translateX(-115%); } 100% { transform: translateX(310%); } }
+.mv-voice-error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--r2); border-radius: var(--r-sm); background: var(--r1); }
+.mv-voice-error-message { flex: 1 1 220px; color: var(--r5); font-size: var(--t-sm); line-height: 1.5; }
+.mv-voice-retry { color: var(--r5); border-color: var(--r3); }
+.mv-voice-retry:hover { color: var(--r6); border-color: var(--r4); background: var(--r2); }
+.mv-voice-review { margin-top: var(--sp-4); }
+.mv-voice-review-banner { display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--g2); border-radius: var(--r-sm); background: var(--g1); color: var(--g6); font-size: var(--t-sm); line-height: 1.5; }
+.mv-voice-review-banner svg { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.mv-voice-review-details { margin-top: var(--sp-3); color: var(--tx2); font-size: var(--t-sm); }
+.mv-voice-review-details summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--p6); font-weight: 600; }
+.mv-voice-review-details summary:focus-visible { outline: 3px solid var(--p4); outline-offset: 2px; border-radius: var(--r-sm); }
+.mv-voice-review-label { margin-top: var(--sp-2); }
+.mv-voice-transcript { white-space: pre-wrap; overflow-wrap: anywhere; }
+.mv-voice-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 600px) {
+  .mv-voice-header { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
+  .mv-voice-workspace { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); margin-top: var(--sp-4); }
+  .mv-voice-actions { justify-content: stretch; }
+  .mv-voice-record, .mv-voice-cancel { flex: 1 1 140px; }
+  .mv-voice-language { max-width: 100%; }
+}
+@media (max-width: 380px) {
+  .mv-voice-live { gap: var(--sp-2); }
+  .mv-voice-timer { min-width: 3.5em; font-size: var(--t-sm); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mv-voice-progress-bar { width: 42%; animation: none; transform: none; }
+  .mv-voice-record, .mv-voice-cancel, .mv-voice-retry { transition: none; }
+}
 </style>
 
 <div class="grid-sidebar" style="align-items:start;">
@@ -237,6 +295,68 @@
     <span class="type-caption">Note and prescription in one step. The visit date is set by the server (today).</span>
   </div>
   <div id="visit-alert" style="display:none;"></div>
+  <section class="card mv-voice-card" aria-labelledby="voice-heading">
+    <div class="mv-voice-header">
+      <div class="mv-voice-heading-group">
+        <h3 id="voice-heading" class="type-h3">Dictate a visit</h3>
+        <p class="mv-voice-intro">Speak naturally. Review every draft before saving.</p>
+      </div>
+      <div class="mv-voice-language-group">
+        <label for="voice-lang" class="input-label">Doctor speaks</label>
+        <select class="input-field mv-voice-language" id="voice-lang">
+          <option value="hi">Hindi / Hinglish</option>
+          <option value="en">English</option>
+          <option value="auto">Auto-detect</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="mv-voice-workspace">
+      <div class="mv-voice-activity">
+        <div id="voice-live" class="mv-voice-live" hidden>
+          <canvas id="voice-level" class="mv-voice-level" width="360" height="56" aria-hidden="true"></canvas>
+          <span id="voice-level-label" class="mv-voice-sr-only">Live microphone level is shown in the bars.</span>
+          <span id="voice-timer" class="mv-voice-timer" role="timer" aria-label="Recording time">00:00</span>
+        </div>
+        <div id="voice-progress" class="mv-voice-progress" hidden aria-hidden="true">
+          <span class="mv-voice-progress-track"><span class="mv-voice-progress-bar"></span></span>
+        </div>
+        <p id="voice-status" class="mv-voice-status" aria-live="polite" role="status">Ready when you are.</p>
+        <p id="voice-silence" class="mv-voice-silence" hidden>We can’t hear you. Check your microphone.</p>
+        <div id="voice-error" class="mv-voice-error" role="alert" aria-live="assertive" hidden>
+          <p id="voice-error-message" class="mv-voice-error-message"></p>
+          <button id="voice-retry" class="btn-secondary mv-voice-retry" type="button">Try again</button>
+        </div>
+      </div>
+      <div class="mv-voice-actions">
+        <button class="btn-primary mv-voice-record" id="voice-btn" type="button" aria-label="Start voice dictation" aria-pressed="false">
+          <svg class="mv-voice-mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 1 0-7 0v6A3.5 3.5 0 0 0 12 15Z"></path>
+            <path d="M19 11.5a7 7 0 0 1-14 0M12 18.5V22m-4 0h8"></path>
+          </svg>
+          <span id="voice-btn-label">Dictate visit</span>
+        </button>
+        <button id="voice-cancel" class="btn-secondary mv-voice-cancel" type="button" hidden>Cancel recording</button>
+      </div>
+    </div>
+
+    <div id="voice-review" class="mv-voice-review" style="display:none;">
+      <div class="mv-voice-review-banner">
+        <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+          <path d="M10 2.5 18 17H2L10 2.5Z"></path>
+          <path d="M10 7v4.5m0 2.5h.01"></path>
+        </svg>
+        <span>Auto-filled from voice. Review everything before saving. Amber fields could not be found in the transcript.</span>
+      </div>
+      <details class="mv-voice-review-details">
+        <summary>Original speech and full English text</summary>
+        <div class="field-label mv-voice-review-label">Original</div>
+        <div id="voice-original" class="field-value mv-voice-transcript"></div>
+        <div class="field-label mv-voice-review-label">English</div>
+        <div id="voice-english" class="field-value mv-voice-transcript"></div>
+      </details>
+    </div>
+  </section>
   <div class="card">
     <div class="input-group">
       <label class="input-label" for="visit-diagnosis">Diagnosis</label>
@@ -398,19 +518,6 @@
     return m[t] || 'badge-patient';
   }
 
-  // ── Tabs ──────────────────────────────────────────────────────────
-  document.querySelectorAll('.tab-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
-      document.querySelectorAll('.tab-content').forEach(function(c) { c.style.display = 'none'; });
-      btn.classList.add('active');
-      var tab = btn.dataset.tab;
-      document.getElementById('tab-' + tab).style.display = '';
-      if (tab === 'prescriptions') loadPrescriptions();
-      if (tab === 'lab-reports')   loadLabReports();
-      if (tab === 'vitals')        loadVitals();
-    });
-  });
 
   // ── Complete-record tabs (lazy loaded, read-only) ─────────────────
   var _tabLoaded = {};
@@ -454,14 +561,48 @@
       .catch(function() { box.innerHTML = _emptyBox('Network error. Try again.'); });
   }
 
-  document.querySelectorAll('.tab-btn').forEach(function(b) {
-    b.addEventListener('click', function() {
-      var t = b.getAttribute('data-tab');
-      if (_tabLoaded[t]) return;
-      if (t === 'reports-images') { _tabLoaded[t] = true; loadReportsImages(); }
-      if (t === 'appointments')   { _tabLoaded[t] = true; loadPatientAppointments(); }
+  // ── Navigation: 3 groups, each with a dropdown of sections ────────
+  var GROUPS = {
+    info: [['overview','Overview'], ['conditions','Conditions & Allergies'], ['vitals','Vitals'],
+           ['lab-reports','Lab Reports'], ['reports-images','Reports & Images'], ['appointments','Appointments']],
+    records: [['notes','Doctor Notes'], ['prescriptions','Prescriptions']],
+    visit: [['new-visit','New Visit']]
+  };
+
+  function showPanel(tab) {
+    document.querySelectorAll('.tab-content').forEach(function(c) { c.style.display = 'none'; });
+    var el = document.getElementById('tab-' + tab);
+    if (el) el.style.display = '';
+    if (tab === 'prescriptions') loadPrescriptions();
+    if (tab === 'lab-reports')   loadLabReports();
+    if (tab === 'vitals')        loadVitals();
+    if (!_tabLoaded[tab]) {
+      if (tab === 'reports-images') { _tabLoaded[tab] = true; loadReportsImages(); }
+      if (tab === 'appointments')   { _tabLoaded[tab] = true; loadPatientAppointments(); }
+    }
+  }
+
+  function showGroup(g) {
+    document.querySelectorAll('.tab-btn').forEach(function(b) {
+      b.classList.toggle('active', b.getAttribute('data-group') === g);
     });
+    var items = GROUPS[g] || [];
+    var sel = document.getElementById('sub-select');
+    sel.innerHTML = '';
+    items.forEach(function(it) {
+      var o = document.createElement('option');
+      o.value = it[0]; o.textContent = it[1];
+      sel.appendChild(o);
+    });
+    document.getElementById('sub-picker').style.display = items.length > 1 ? 'flex' : 'none';
+    showPanel(items[0][0]);
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(function(b) {
+    b.addEventListener('click', function() { showGroup(b.getAttribute('data-group')); });
   });
+  document.getElementById('sub-select').addEventListener('change', function() { showPanel(this.value); });
+  showGroup('info');
 
   // ── Fetch encrypted record ────────────────────────────────────────
   document.getElementById('fetch-record-btn').addEventListener('click', function() {
@@ -524,7 +665,7 @@
         return '<div class="note-card">' +
           '<div class="note-card-header"><span class="badge ' + noteTypeColor(n.note_type) + '">' + esc(n.note_type||'General') + '</span><span class="type-caption">Visit: ' + esc(n.visit_date||'—') + '</span></div>' +
           '<div class="note-body">' + esc(n.note_text||n.content||'—') + '</div>' +
-          '<div class="note-footer">Added ' + fmt(n.created_at) + '</div>' +
+          '<div class="note-footer">Added ' + esc(fmt(n.created_at)) + (n.pending_sync ? ' &middot; <span style="color:var(--g5); font-weight:600;">Awaiting patient sync</span>' : '') + '</div>' +
         '</div>';
       }).join('') + '</div>';
     })
@@ -819,6 +960,367 @@
   document.getElementById('visit-clear-btn').addEventListener('click', clearVisitForm);
   addMedRow();
 
+  // ── Voice dictation (draft only, never auto-saves) ────────────────
+  var voiceRec = null, voiceChunks = [], voiceStream = null;
+  var voiceAudioContext = null, voiceAudioSource = null, voiceAnalyser = null, voiceLevelData = null;
+  var voiceLevels = [], voiceFrame = 0, voiceTimerInterval = 0, voiceStartedAt = 0, voiceSilentSince = 0;
+  var voiceCurrentLevel = 0, voiceLastSampleAt = 0, voiceState = 'idle', voiceAttempt = 0;
+  var voiceRequestPending = false, voiceRecordingLang = 'hi', voiceDiscardRecording = false, voiceRecorderError = '';
+  var voiceCanvas = document.getElementById('voice-level');
+  var voiceCanvasContext = voiceCanvas ? voiceCanvas.getContext('2d') : null;
+  var voiceReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function voiceStatus(t) { document.getElementById('voice-status').textContent = t || ''; }
+
+  function stopVoiceStream() {
+    if (voiceFrame) { cancelAnimationFrame(voiceFrame); voiceFrame = 0; }
+    if (voiceTimerInterval) { clearInterval(voiceTimerInterval); voiceTimerInterval = 0; }
+    if (voiceAudioSource) { try { voiceAudioSource.disconnect(); } catch (e) {} voiceAudioSource = null; }
+    if (voiceAnalyser) { try { voiceAnalyser.disconnect(); } catch (e) {} voiceAnalyser = null; }
+    voiceLevelData = null;
+    if (voiceAudioContext) {
+      var contextToClose = voiceAudioContext;
+      voiceAudioContext = null;
+      if (contextToClose.state !== 'closed') contextToClose.close().catch(function() {});
+    }
+    if (voiceStream) {
+      voiceStream.getTracks().forEach(function(track) { try { track.stop(); } catch (e) {} });
+      voiceStream = null;
+    }
+    voiceSilentSince = 0;
+    voiceCurrentLevel = 0;
+    voiceLastSampleAt = 0;
+    if (voiceCanvasContext && voiceCanvas) voiceCanvasContext.clearRect(0, 0, voiceCanvas.width, voiceCanvas.height);
+  }
+
+  function setVoiceState(next) {
+    voiceState = next;
+    var button = document.getElementById('voice-btn');
+    var label = document.getElementById('voice-btn-label');
+    var cancel = document.getElementById('voice-cancel');
+    var language = document.getElementById('voice-lang');
+    var busy = next === 'requesting' || next === 'processing';
+    button.disabled = busy;
+    button.classList.toggle('mv-voice-recording', next === 'recording');
+    button.setAttribute('aria-pressed', next === 'recording' ? 'true' : 'false');
+    if (next === 'requesting') {
+      label.textContent = 'Waiting for permission…';
+      button.setAttribute('aria-label', 'Waiting for microphone permission');
+    } else if (next === 'recording') {
+      label.textContent = 'Stop and process';
+      button.setAttribute('aria-label', 'Stop and process voice dictation');
+    } else if (next === 'processing') {
+      label.textContent = 'Processing…';
+      button.setAttribute('aria-label', 'Processing dictation');
+    } else {
+      label.textContent = 'Dictate visit';
+      button.setAttribute('aria-label', 'Start voice dictation');
+    }
+    language.disabled = next === 'requesting' || next === 'recording' || next === 'processing';
+    document.getElementById('voice-live').hidden = next !== 'recording';
+    document.getElementById('voice-progress').hidden = next !== 'processing' || voiceDiscardRecording;
+    cancel.hidden = next !== 'recording' && next !== 'processing';
+    cancel.disabled = next !== 'recording';
+    document.getElementById('voice-error').hidden = next !== 'error';
+    if (next !== 'error') document.getElementById('voice-silence').hidden = true;
+  }
+
+  function setVoiceError(message) {
+    voiceRequestPending = false;
+    stopVoiceStream();
+    voiceRec = null;
+    voiceChunks = [];
+    voiceRecorderError = '';
+    voiceDiscardRecording = false;
+    setVoiceState('error');
+    document.getElementById('voice-error-message').textContent = message;
+  }
+
+  function applyVoiceDraft(d) {
+    var hasContent = (document.getElementById('visit-note').value || '').trim() ||
+                     (document.getElementById('visit-diagnosis').value || '').trim() ||
+                     collectMeds().length;
+    if (hasContent && !confirm('Replace what is already in the visit form with the dictated draft?')) return;
+    document.getElementById('voice-original').textContent = d.original_text || '';
+    document.getElementById('voice-english').textContent = d.english_text || '';
+    document.getElementById('voice-review').style.display = '';
+    if (d.warning) visitAlert(d.warning, 'error');
+    document.getElementById('visit-diagnosis').value = d.diagnosis || '';
+    document.getElementById('visit-note').value = d.note || '';
+    document.getElementById('visit-meds').innerHTML = '';
+    var meds = Array.isArray(d.medications) ? d.medications : [];
+    var fieldMap = {name: '.vm-name', dosage: '.vm-dose', frequency: '.vm-freq', duration: '.vm-dur'};
+    meds.forEach(function(m) {
+      var row = addMedRow(m);
+      (Array.isArray(m.unverified) ? m.unverified : []).forEach(function(f) {
+        var el = fieldMap[f] ? row.querySelector(fieldMap[f]) : null;
+        if (!el) return;
+        el.style.outline = '2px solid #f59e0b';
+        el.title = 'Not found in the transcript - please check';
+        el.addEventListener('input', function() { this.style.outline = ''; this.title = ''; }, {once: true});
+      });
+    });
+    if (!meds.length) addMedRow();
+    visitState.rxDone = false;
+  }
+
+  function sendVoice(blob) {
+    if (voiceRequestPending) return;
+    if (!blob || !blob.size) { setVoiceError('No audio was recorded. Try again.'); return; }
+    voiceRequestPending = true;
+    setVoiceState('processing');
+    voiceStatus('Processing your dictation. The first time can take a few minutes.');
+    var fd = new FormData();
+    fd.append('audio', blob, 'visit.webm');
+    fd.append('patient_code', PATIENT_CODE);
+    fd.append('lang', voiceRecordingLang);
+    fetch('/doctor/voice_to_visit', {method: 'POST', body: fd, credentials: 'same-origin'})
+      .then(function(r) {
+        return r.json().catch(function() { return {}; }).then(function(d) { return {ok: r.ok, status: r.status, d: d}; });
+      })
+      .then(function(res) {
+        voiceRequestPending = false;
+        if (!res.ok) {
+          var detail = typeof res.d.detail === 'string' ? res.d.detail : (res.d.error || '');
+          if (res.status === 413) detail = detail ? detail + ' Try a shorter recording.' : 'That recording is too large. Try a shorter recording.';
+          else if (res.status === 415) detail = detail ? detail + ' Try a different browser.' : 'This audio format is not supported. Try a different browser.';
+          setVoiceError(detail || 'Voice processing failed. Try again.');
+          return;
+        }
+        applyVoiceDraft(res.d);
+        setVoiceState('success');
+        voiceStatus('Draft ready. Review the fields below before saving.');
+        window.setTimeout(function() {
+          if (voiceState === 'success') {
+            setVoiceState('idle');
+            voiceStatus('Speak naturally. Review every draft before saving.');
+          }
+        }, 4500);
+      })
+      .catch(function() {
+        voiceRequestPending = false;
+        setVoiceError('Network error while processing the audio. Check your connection and try again.');
+      });
+  }
+
+  function drawVoiceBars(level, now) {
+    if (!voiceCanvasContext || !voiceCanvas) return;
+    var width = voiceCanvas.clientWidth || 280;
+    var height = voiceCanvas.clientHeight || 56;
+    var scale = window.devicePixelRatio || 1;
+    if (voiceCanvas.width !== Math.round(width * scale) || voiceCanvas.height !== Math.round(height * scale)) {
+      voiceCanvas.width = Math.round(width * scale);
+      voiceCanvas.height = Math.round(height * scale);
+    }
+    voiceCanvasContext.setTransform(scale, 0, 0, scale, 0, 0);
+    voiceCanvasContext.clearRect(0, 0, width, height);
+    voiceCanvasContext.fillStyle = getComputedStyle(voiceCanvas).getPropertyValue('--p5').trim() || '#2563eb';
+    var middle = height / 2;
+    if (voiceReducedMotion) {
+      var staticHeight = Math.max(4, level * (height - 10));
+      voiceCanvasContext.fillRect(Math.round(width / 2 - 4), middle - staticHeight / 2, 8, staticHeight);
+      return;
+    }
+    if (!voiceLastSampleAt || now - voiceLastSampleAt >= 55) {
+      voiceLevels.shift();
+      voiceLevels.push(level);
+      voiceLastSampleAt = now;
+    }
+    var count = voiceLevels.length, gap = 5;
+    var barWidth = Math.max(3, Math.min(7, (width - gap * (count - 1)) / count));
+    var startX = Math.max(0, (width - (count * barWidth + (count - 1) * gap)) / 2);
+    for (var i = 0; i < count; i++) {
+      var barHeight = Math.max(3, voiceLevels[i] * (height - 8));
+      voiceCanvasContext.fillRect(startX + i * (barWidth + gap), middle - barHeight / 2, barWidth, barHeight);
+    }
+  }
+
+  function voiceDrawFrame(now) {
+    if (voiceState !== 'recording' || !voiceAnalyser || !voiceLevelData) return;
+    voiceAnalyser.getByteTimeDomainData(voiceLevelData);
+    var sum = 0;
+    for (var i = 0; i < voiceLevelData.length; i++) {
+      var sample = (voiceLevelData[i] - 128) / 128;
+      sum += sample * sample;
+    }
+    var rms = Math.sqrt(sum / voiceLevelData.length);
+    var curved = Math.pow(Math.min(1, Math.max(0, (rms - 0.01) * 4.2)), 0.68);
+    voiceCurrentLevel += (curved - voiceCurrentLevel) * 0.35;
+    drawVoiceBars(voiceCurrentLevel, now);
+    if (rms < 0.025) {
+      if (!voiceSilentSince) voiceSilentSince = now;
+      if (now - voiceSilentSince >= 3000) document.getElementById('voice-silence').hidden = false;
+    } else {
+      voiceSilentSince = 0;
+      document.getElementById('voice-silence').hidden = true;
+    }
+    voiceFrame = requestAnimationFrame(voiceDrawFrame);
+  }
+
+  function voiceUpdateTimer() {
+    var elapsed = Math.floor((Date.now() - voiceStartedAt) / 1000);
+    document.getElementById('voice-timer').textContent = String(Math.floor(elapsed / 60)).padStart(2, '0') + ':' + String(elapsed % 60).padStart(2, '0');
+  }
+
+  function voicePermissionError(error) {
+    if (error && (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError' || error.name === 'SecurityError')) return 'Microphone access was denied. Allow access in your browser settings, then try again.';
+    if (error && (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError')) return 'No microphone was found. Connect a microphone and try again.';
+    if (error && (error.name === 'NotReadableError' || error.name === 'AbortError')) return 'The microphone could not start. Close other apps using it and try again.';
+    return 'We could not start the microphone. Check its connection and try again.';
+  }
+
+  function voiceStartRecording() {
+    if (voiceState === 'requesting' || voiceState === 'recording' || voiceState === 'processing') return;
+    var language = document.getElementById('voice-lang');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      setVoiceError('This browser does not support voice recording. Try a current version of Chrome or Edge.');
+      return;
+    }
+    if (!window.AudioContext || !voiceCanvasContext) {
+      setVoiceError('This browser does not support live microphone levels. Try a current version of Chrome or Edge.');
+      return;
+    }
+    voiceRecordingLang = language.value;
+    voiceDiscardRecording = false;
+    voiceRecorderError = '';
+    voiceChunks = [];
+    document.getElementById('voice-error-message').textContent = '';
+    setVoiceState('requesting');
+    voiceStatus('Waiting for microphone permission…');
+    var attempt = ++voiceAttempt, resumeAudio;
+    try {
+      voiceAudioContext = new AudioContext();
+      resumeAudio = voiceAudioContext.resume();
+    } catch (error) {
+      setVoiceError('The audio meter could not start. Check your browser and try again.');
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({audio: true}).then(function(stream) {
+      if (attempt !== voiceAttempt || voiceState !== 'requesting') {
+        stream.getTracks().forEach(function(track) { try { track.stop(); } catch (e) {} });
+        return;
+      }
+      voiceStream = stream;
+      return Promise.resolve(resumeAudio).then(function() {
+        if (attempt !== voiceAttempt || voiceState !== 'requesting') { stopVoiceStream(); return; }
+        voiceAudioSource = voiceAudioContext.createMediaStreamSource(stream);
+        voiceAnalyser = voiceAudioContext.createAnalyser();
+        voiceAnalyser.fftSize = 512;
+        voiceAnalyser.smoothingTimeConstant = 0.72;
+        voiceAudioSource.connect(voiceAnalyser);
+        voiceLevelData = new Uint8Array(voiceAnalyser.fftSize);
+        voiceLevels = [];
+        for (var index = 0; index < 24; index++) voiceLevels.push(0);
+        voiceRec = new MediaRecorder(stream);
+        voiceRec.ondataavailable = function(event) { if (event.data && event.data.size) voiceChunks.push(event.data); };
+        voiceRec.onerror = function() {
+          voiceRecorderError = 'Recording failed. Check your microphone and try again.';
+          voiceDiscardRecording = false;
+          setVoiceState('processing');
+          voiceStatus('Finishing the recording…');
+          try { voiceRec.stop(); } catch (error) { stopVoiceStream(); voiceRec = null; setVoiceError(voiceRecorderError); }
+        };
+        voiceRec.onstop = function() {
+          var duration = Date.now() - voiceStartedAt;
+          var recorder = voiceRec;
+          var blob = new Blob(voiceChunks, {type: recorder && recorder.mimeType || 'audio/webm'});
+          stopVoiceStream();
+          voiceRec = null;
+          voiceChunks = [];
+          if (voiceRecorderError) { setVoiceError(voiceRecorderError); return; }
+          if (voiceDiscardRecording) {
+            voiceDiscardRecording = false;
+            setVoiceState('idle');
+            voiceStatus('Recording discarded. Nothing was sent.');
+            return;
+          }
+          if (duration < 1000) { setVoiceError('That recording was too short. Speak for at least one second and try again.'); return; }
+          setVoiceState('processing');
+          voiceStatus('Processing your dictation. The first time can take a few minutes.');
+          sendVoice(blob);
+        };
+        voiceRec.start(250);
+        voiceStartedAt = Date.now();
+        document.getElementById('voice-timer').textContent = '00:00';
+        setVoiceState('recording');
+        voiceStatus('Listening. Audio level is shown in the bars.');
+        voiceTimerInterval = window.setInterval(voiceUpdateTimer, 250);
+        voiceFrame = requestAnimationFrame(voiceDrawFrame);
+      }).catch(function() {
+        if (attempt === voiceAttempt) setVoiceError('The audio meter could not start. Check your browser and try again.');
+      });
+    }).catch(function(error) {
+      if (attempt === voiceAttempt) setVoiceError(voicePermissionError(error));
+    });
+  }
+
+  function voiceStopRecording(discard) {
+    if (voiceState !== 'recording') return;
+    voiceDiscardRecording = !!discard;
+    voiceRecorderError = '';
+    setVoiceState('processing');
+    voiceStatus(discard ? 'Discarding the recording…' : 'Finishing the recording…');
+    try {
+      if (voiceRec && voiceRec.state === 'recording') voiceRec.stop();
+      else {
+        stopVoiceStream();
+        voiceRec = null;
+        if (discard) { voiceDiscardRecording = false; setVoiceState('idle'); voiceStatus('Recording discarded. Nothing was sent.'); }
+        else setVoiceError('The recording could not be stopped. Try again.');
+      }
+    } catch (error) {
+      stopVoiceStream();
+      voiceRec = null;
+      if (discard) { voiceDiscardRecording = false; setVoiceState('idle'); voiceStatus('Recording discarded. Nothing was sent.'); }
+      else setVoiceError('The recording could not be stopped. Try again.');
+    }
+  }
+
+  document.getElementById('voice-btn').addEventListener('click', function() {
+    if (voiceState === 'recording') voiceStopRecording(false);
+    else if (voiceState !== 'requesting' && voiceState !== 'processing') voiceStartRecording();
+  });
+  document.getElementById('voice-cancel').addEventListener('click', function() { voiceStopRecording(true); });
+  document.getElementById('voice-retry').addEventListener('click', function() {
+    setVoiceState('idle');
+    voiceStatus('Speak naturally. Review every draft before saving.');
+    voiceStartRecording();
+  });
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' && voiceState === 'recording') voiceStopRecording(true);
+  });
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden && voiceState === 'recording') voiceStopRecording(true);
+  });
+  window.addEventListener('pagehide', function() {
+    if (voiceState === 'recording') {
+      voiceDiscardRecording = true;
+      try { if (voiceRec && voiceRec.state === 'recording') voiceRec.stop(); } catch (error) {}
+      stopVoiceStream();
+      voiceRec = null;
+      voiceChunks = [];
+      voiceState = 'idle';
+    } else if (voiceState === 'requesting') {
+      voiceAttempt++;
+      stopVoiceStream();
+      voiceState = 'idle';
+    }
+  });
+  var voiceVisitPanel = document.getElementById('tab-new-visit');
+  if (voiceVisitPanel && window.MutationObserver) {
+    var voiceVisitObserver = new MutationObserver(function() {
+      if (window.getComputedStyle(voiceVisitPanel).display === 'none') {
+        if (voiceState === 'recording') voiceStopRecording(true);
+        else if (voiceState === 'requesting') {
+          voiceAttempt++;
+          stopVoiceStream();
+          setVoiceState('idle');
+          voiceStatus('Microphone setup stopped because you left the visit tab.');
+        }
+      }
+    });
+    voiceVisitObserver.observe(voiceVisitPanel, {attributes: true, attributeFilter: ['style', 'class']});
+  }
   document.getElementById('add-vitals-btn').addEventListener('click', function() {
     var payload = {
       patient_id: PATIENT_CODE,
