@@ -36,6 +36,7 @@ table { border-collapse: collapse; }
   --p5: #2563eb;
   --p6: #1d4ed8;
   --pa: rgba(37, 99, 235, 0.12);
+  --t5: #2563eb;
 
   /* Secondary */
   --t1: #f8fafc;

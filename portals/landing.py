@@ -3558,6 +3558,105 @@ def doctor_patient_lab_reports(patient_code):
     return jsonify(lrs), 200
 
 
+@app.route("/doctor/patient_reports/<patient_code>")
+def doctor_patient_reports(patient_code):
+    """Doctor sees DETAILS ONLY of a patient's encrypted reports/images (never the encrypted data)."""
+    err = _doctor_session_check()
+    if err: return err
+
+    resolved_code, patient_id = _resolve_patient_uuid_or_code(patient_code)
+    err = _require_active_access(session.get("doctor_code", ""), resolved_code)
+    if err:
+        return err
+
+    items = []
+    if _HAS_PSYCOPG2:
+        try:
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                "SELECT id, doctor_id, doctor_email, file_hash, created_at "
+                "FROM records WHERE patient_id=%s OR patient_id=%s ORDER BY created_at DESC",
+                (resolved_code, patient_id)
+            )
+            records = [dict(r) for r in cur.fetchall()]
+            ids = [r["id"] for r in records]
+            images_by_record = {}
+            if ids:
+                cur.execute(
+                    "SELECT id, record_id, file_hash, hash_verified, created_at "
+                    "FROM images WHERE record_id = ANY(%s) ORDER BY created_at DESC",
+                    (ids,)
+                )
+                for im in cur.fetchall():
+                    im = dict(im)
+                    if im.get("created_at"):
+                        im["created_at"] = im["created_at"].isoformat()
+                    images_by_record.setdefault(im["record_id"], []).append(im)
+            cur.close(); conn.close()
+            for r in records:
+                if r.get("created_at"):
+                    r["created_at"] = r["created_at"].isoformat()
+                r["images"] = images_by_record.get(r["id"], [])
+                items.append(r)
+        except Exception as e:
+            app.logger.warning("doctor_patient_reports: %s", e)
+    return jsonify(items), 200
+
+
+@app.route("/doctor/patient_appointments/<patient_code>")
+def doctor_patient_appointments(patient_code):
+    """Doctor sees only HIS OWN appointments with this patient."""
+    err = _doctor_session_check()
+    if err: return err
+
+    resolved_code, patient_id = _resolve_patient_uuid_or_code(patient_code)
+    err = _require_active_access(session.get("doctor_code", ""), resolved_code)
+    if err:
+        return err
+
+    doc_code = session.get("doctor_code", "")
+    doc_uid  = session.get("user_id", "")
+    doc_user = session.get("username", "")
+    out = []
+    if _HAS_PSYCOPG2:
+        try:
+            conn = psycopg2.connect(DB_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                "SELECT id, date, time, status, notes, created_at FROM appointments "
+                "WHERE (patient_id=%s OR patient_id=%s) AND doctor_username=%s "
+                "ORDER BY created_at DESC",
+                (resolved_code, patient_id, doc_user)
+            )
+            for r in cur.fetchall():
+                out.append({
+                    "id": r["id"],
+                    "when": (str(r["date"] or "") + " " + str(r["time"] or "")).strip(),
+                    "reason": "", "status": r["status"] or "", "notes": r["notes"] or "",
+                    "source": "request",
+                    "created_at": r["created_at"].isoformat() if r["created_at"] else "",
+                })
+            cur.execute(
+                "SELECT id, date_time, reason, status, notes, created_at FROM emr_appointments "
+                "WHERE (patient_id=%s OR patient_id=%s) AND (doctor_id=%s OR doctor_id=%s) "
+                "ORDER BY created_at DESC",
+                (resolved_code, patient_id, doc_code, doc_uid)
+            )
+            for r in cur.fetchall():
+                out.append({
+                    "id": r["id"], "when": r["date_time"] or "",
+                    "reason": r["reason"] or "", "status": r["status"] or "",
+                    "notes": r["notes"] or "", "source": "emr",
+                    "created_at": r["created_at"].isoformat() if r["created_at"] else "",
+                })
+            cur.close(); conn.close()
+        except Exception as e:
+            app.logger.warning("doctor_patient_appointments: %s", e)
+    out.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return jsonify(out), 200
+
+
 @app.route("/doctor/add_prescription", methods=["POST"])
 def doctor_add_prescription():
     """Doctor creates a prescription for a patient."""
@@ -3602,7 +3701,8 @@ def doctor_add_prescription():
                 hdrs = {**_headers(), "Authorization": f"Bearer {jwt_tok}"}
                 rb = http.post(
                     f"{BACKEND}/emr/prescriptions",
-                    json={**rx, "patient_id": pat_code},
+                    json={**rx, "patient_id": pat_code,
+                          **({"override_allergy_check": True} if d.get("override_allergy_check") is True else {})},
                     headers=hdrs, timeout=10,
                 )
                 # Forward ALL responses from the backend — including 409

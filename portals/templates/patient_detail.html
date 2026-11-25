@@ -37,37 +37,37 @@
       <div style="display:flex; flex-wrap:wrap; gap:var(--sp-5);">
 
         <div>
-          <div style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Username</div>
+          <div style="font-size:var(--t-xs); color:var(--tx3); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Username</div>
           <div style="font-size:var(--t-sm); color:var(--tx2); font-family:monospace;">{{ patient_info.username or patient_code or '—' }}</div>
         </div>
 
         <div>
-          <div style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Profile Code</div>
+          <div style="font-size:var(--t-xs); color:var(--tx3); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Profile Code</div>
           <div style="font-size:var(--t-sm); color:var(--tx2); font-family:monospace;">{{ patient_code or '—' }}</div>
         </div>
 
         {% if patient_info.age %}
         <div>
-          <div style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Age</div>
+          <div style="font-size:var(--t-xs); color:var(--tx3); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Age</div>
           <div style="font-size:var(--t-sm); color:var(--tx2);">{{ patient_info.age }}</div>
         </div>
         {% endif %}
 
         {% if patient_info.blood_group %}
         <div>
-          <div style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Blood Group</div>
+          <div style="font-size:var(--t-xs); color:var(--tx3); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Blood Group</div>
           <div style="font-size:var(--t-sm); color:var(--r5); font-weight:600;">{{ patient_info.blood_group }}</div>
         </div>
         {% endif %}
 
         <div>
-          <div style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Email</div>
+          <div style="font-size:var(--t-xs); color:var(--tx3); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Email</div>
           <div style="font-size:var(--t-sm); color:var(--tx2);">{{ patient_info.email or '—' }}</div>
         </div>
 
         {% if patient_info.phone %}
         <div>
-          <div style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Phone</div>
+          <div style="font-size:var(--t-xs); color:var(--tx3); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px;">Phone</div>
           <div style="font-size:var(--t-sm); color:var(--tx2);">{{ patient_info.phone }}</div>
         </div>
         {% endif %}
@@ -76,14 +76,14 @@
 
       {% if patient_info.allergies %}
       <div style="margin-top:var(--sp-3); display:flex; align-items:center; gap:var(--sp-2);">
-        <span style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em;">Allergies:</span>
+        <span style="font-size:var(--t-xs); color:var(--tx3); text-transform:uppercase; letter-spacing:.05em;">Allergies:</span>
         <span style="font-size:var(--t-xs); background:rgba(239,68,68,.12); color:var(--r5); padding:2px 8px; border-radius:4px; font-weight:600;">⚠ {{ patient_info.allergies }}</span>
       </div>
       {% endif %}
 
       {% if patient_info.conditions %}
       <div style="margin-top:var(--sp-2); display:flex; align-items:center; gap:var(--sp-2);">
-        <span style="font-size:var(--t-xs); color:var(--tx4); text-transform:uppercase; letter-spacing:.05em;">Conditions:</span>
+        <span style="font-size:var(--t-xs); color:var(--tx3); text-transform:uppercase; letter-spacing:.05em;">Conditions:</span>
         <span style="font-size:var(--t-xs); color:var(--tx3);">{{ patient_info.conditions }}</span>
       </div>
       {% endif %}
@@ -92,9 +92,9 @@
 
     <!-- Fetch encrypted record button -->
     <div style="flex-shrink:0;">
-      <button class="btn-secondary btn-sm" id="fetch-record-btn" type="button">
+      <button class="btn-primary btn-sm" id="fetch-record-btn" type="button">
         <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
-        Full encrypted record
+        View complete record
       </button>
     </div>
   </div>
@@ -116,11 +116,16 @@
 <div id="record-display" style="display:none; margin-bottom:var(--sp-6);"></div>
 
 <!-- Tab Navigation -->
-<div style="display:flex; gap:0; border-bottom:1px solid var(--b1); margin-bottom:var(--sp-6);">
-  <button class="tab-btn active" data-tab="notes" type="button">Doctor Notes</button>
+<div style="display:flex; gap:0; border-bottom:1px solid var(--b1); margin-bottom:var(--sp-6); overflow-x:auto;">
+  <button class="tab-btn active" data-tab="overview" type="button">Overview</button>
+  <button class="tab-btn" data-tab="notes" type="button">Doctor Notes</button>
   <button class="tab-btn" data-tab="prescriptions" type="button">Prescriptions</button>
   <button class="tab-btn" data-tab="lab-reports" type="button">Lab Reports</button>
   <button class="tab-btn" data-tab="vitals" type="button">Vitals</button>
+  <button class="tab-btn" data-tab="new-visit" type="button">New Visit</button>
+  <button class="tab-btn" data-tab="conditions" type="button">Conditions &amp; Allergies</button>
+  <button class="tab-btn" data-tab="reports-images" type="button">Reports &amp; Images</button>
+  <button class="tab-btn" data-tab="appointments" type="button">Appointments</button>
 </div>
 
 <style>
@@ -145,7 +150,51 @@
   <!-- LEFT: Tab content -->
   <div>
     <!-- Doctor Notes Tab -->
-    <div id="tab-notes" class="tab-content">
+<div id="tab-overview" class="tab-content">
+  <h2 class="type-h3" style="margin-bottom:var(--sp-4);">Overview</h2>
+  <div class="card">
+    <div class="grid-2">
+      <div class="field-row"><div class="field-label">Full name</div><div class="field-value">{{ patient_info.name or '—' }}</div></div>
+      <div class="field-row"><div class="field-label">Age</div><div class="field-value">{{ patient_info.age or '—' }}</div></div>
+      <div class="field-row"><div class="field-label">Blood group</div><div class="field-value">{{ patient_info.blood_group or '—' }}</div></div>
+      <div class="field-row"><div class="field-label">Phone</div><div class="field-value">{{ patient_info.phone or '—' }}</div></div>
+      <div class="field-row"><div class="field-label">Email</div><div class="field-value">{{ patient_info.email or '—' }}</div></div>
+      <div class="field-row"><div class="field-label">Address</div><div class="field-value">{{ patient_info.address or '—' }}</div></div>
+      <div class="field-row"><div class="field-label">Username</div><div class="field-value">{{ patient_info.username or '—' }}</div></div>
+      <div class="field-row"><div class="field-label">Profile code</div><div class="field-value">{{ patient_code or '—' }}</div></div>
+    </div>
+  </div>
+  <p style="font-size:var(--t-sm); color:var(--tx3); margin-top:var(--sp-3);">Use "View complete record" (top right) to decrypt the full encrypted health record.</p>
+</div>
+
+<div id="tab-conditions" class="tab-content" style="display:none;">
+  <h2 class="type-h3" style="margin-bottom:var(--sp-4);">Conditions &amp; Allergies</h2>
+  <div class="card" style="margin-bottom:var(--sp-4);">
+    <div class="field-label">Allergies</div>
+    {% if patient_info.allergies %}
+      <div style="margin-top:var(--sp-2);"><span style="font-size:var(--t-sm); background:rgba(239,68,68,.12); color:var(--r5); padding:2px 8px; border-radius:4px; font-weight:600;">⚠ {{ patient_info.allergies }}</span></div>
+    {% else %}
+      <div class="field-value" style="margin-top:var(--sp-2);">No allergies recorded.</div>
+    {% endif %}
+  </div>
+  <div class="card">
+    <div class="field-label">Medical conditions</div>
+    <div class="field-value" style="margin-top:var(--sp-2);">{{ patient_info.conditions or 'No conditions recorded.' }}</div>
+  </div>
+</div>
+
+<div id="tab-reports-images" class="tab-content" style="display:none;">
+  <h2 class="type-h3" style="margin-bottom:var(--sp-2);">Reports &amp; Images</h2>
+  <p style="font-size:var(--t-sm); color:var(--tx3); margin-bottom:var(--sp-4);">Files are stored encrypted. This list shows details only; contents stay encrypted.</p>
+  <div id="ri-list"><div class="empty-state"><div class="empty-state-title">Loading…</div></div></div>
+</div>
+
+<div id="tab-appointments" class="tab-content" style="display:none;">
+  <h2 class="type-h3" style="margin-bottom:var(--sp-4);">Appointments with this patient</h2>
+  <div id="appt-list"><div class="empty-state"><div class="empty-state-title">Loading…</div></div></div>
+</div>
+
+    <div id="tab-notes" class="tab-content" style="display:none;">
       <div class="section-header" style="margin-bottom:var(--sp-4);">
         <h2 class="type-h3">Doctor Notes</h2>
         <button class="btn-secondary btn-sm" id="refresh-notes-btn" type="button">Refresh</button>
@@ -182,7 +231,55 @@
     </div>
 
     <!-- Vitals Tab -->
-    <div id="tab-vitals" class="tab-content" style="display:none;">
+    <div id="tab-new-visit" class="tab-content" style="display:none;">
+  <div class="section-header" style="margin-bottom:var(--sp-4);">
+    <h2 class="type-h3">New Visit</h2>
+    <span class="type-caption">Note and prescription in one step. The visit date is set by the server (today).</span>
+  </div>
+  <div id="visit-alert" style="display:none;"></div>
+  <div class="card">
+    <div class="input-group">
+      <label class="input-label" for="visit-diagnosis">Diagnosis</label>
+      <input class="input-field" type="text" id="visit-diagnosis" maxlength="200" placeholder="Required if you prescribe medicines">
+    </div>
+    <div class="input-group">
+      <label class="input-label" for="visit-note-type">Note type</label>
+      <select class="input-field" id="visit-note-type">
+        <option value="General">General</option>
+        <option value="Diagnosis">Diagnosis</option>
+        <option value="Prescription">Prescription</option>
+        <option value="Lab Result">Lab Result</option>
+        <option value="Follow-up">Follow-up</option>
+        <option value="Referral">Referral</option>
+      </select>
+    </div>
+    <div class="input-group">
+      <label class="input-label" for="visit-note">Clinical note</label>
+      <textarea class="input-field" id="visit-note" rows="5" placeholder="Observations, plan, advice…"></textarea>
+    </div>
+    <div class="input-group">
+      <label class="input-label">Medicines</label>
+      <div id="visit-meds"></div>
+      <button class="btn-secondary btn-sm" id="visit-add-med" type="button" style="margin-top:var(--sp-2);">+ Add medicine</button>
+    </div>
+    <div class="input-group">
+      <label class="input-label" for="visit-rx-notes">Prescription notes (optional)</label>
+      <textarea class="input-field" id="visit-rx-notes" rows="2" placeholder="e.g. take after food"></textarea>
+    </div>
+    <div id="visit-conflict" style="display:none; border:1px solid var(--r3); background:var(--r1); border-radius:8px; padding:12px; margin-bottom:var(--sp-4);">
+      <strong>Allergy conflict</strong>
+      <div id="visit-conflict-list"></div>
+      <label style="display:block; margin:8px 0;"><input type="checkbox" id="visit-conflict-ack"> I have reviewed this conflict and confirm the prescription should proceed.</label>
+      <button class="btn-secondary btn-sm" id="visit-save-anyway" type="button" disabled>Save anyway</button>
+    </div>
+    <div style="display:flex; gap:var(--sp-3); margin-top:var(--sp-4);">
+      <button class="btn-primary" id="visit-save-btn" type="button">Save visit</button>
+      <button class="btn-secondary" id="visit-clear-btn" type="button">Clear</button>
+    </div>
+  </div>
+</div>
+
+<div id="tab-vitals" class="tab-content" style="display:none;">
       <div class="section-header" style="margin-bottom:var(--sp-4);">
         <h2 class="type-h3">Vitals</h2>
         <button class="btn-secondary btn-sm" id="refresh-vitals-btn" type="button">Refresh</button>
@@ -312,6 +409,57 @@
       if (tab === 'prescriptions') loadPrescriptions();
       if (tab === 'lab-reports')   loadLabReports();
       if (tab === 'vitals')        loadVitals();
+    });
+  });
+
+  // ── Complete-record tabs (lazy loaded, read-only) ─────────────────
+  var _tabLoaded = {};
+  function _fmtWhen(s) { if (!s) return '—'; var d = new Date(s); return isNaN(d.getTime()) ? esc(String(s)) : esc(d.toLocaleString()); }
+  function _emptyBox(t) { return '<div class="empty-state"><div class="empty-state-title">' + esc(t) + '</div></div>'; }
+
+  function loadReportsImages() {
+    var box = document.getElementById('ri-list');
+    fetch('/doctor/patient_reports/' + encodeURIComponent(PATIENT_CODE), {credentials: 'same-origin'})
+      .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, d: d}; }); })
+      .then(function(res) {
+        if (!res.ok) { box.innerHTML = _emptyBox('Could not load reports (access may not be approved).'); return; }
+        var items = Array.isArray(res.d) ? res.d : [];
+        if (!items.length) { box.innerHTML = _emptyBox('No reports or images uploaded yet.'); return; }
+        var html = '<table class="data-table" style="width:100%;"><thead><tr><th>Uploaded</th><th>By</th><th>Images</th><th>Integrity hash</th></tr></thead><tbody>';
+        items.forEach(function(it) {
+          var imgs = Array.isArray(it.images) ? it.images : [];
+          var imgTxt = imgs.length ? (imgs.length + ' image' + (imgs.length > 1 ? 's' : '')) : 'None';
+          var h = it.file_hash ? String(it.file_hash).slice(0, 12) + '…' : '—';
+          html += '<tr><td>' + _fmtWhen(it.created_at) + '</td><td>' + esc(it.doctor_email || it.doctor_id || '—') + '</td><td>' + esc(imgTxt) + '</td><td style="font-family:monospace;">' + esc(h) + '</td></tr>';
+        });
+        box.innerHTML = html + '</tbody></table>';
+      })
+      .catch(function() { box.innerHTML = _emptyBox('Network error. Try again.'); });
+  }
+
+  function loadPatientAppointments() {
+    var box = document.getElementById('appt-list');
+    fetch('/doctor/patient_appointments/' + encodeURIComponent(PATIENT_CODE), {credentials: 'same-origin'})
+      .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, d: d}; }); })
+      .then(function(res) {
+        if (!res.ok) { box.innerHTML = _emptyBox('Could not load appointments (access may not be approved).'); return; }
+        var items = Array.isArray(res.d) ? res.d : [];
+        if (!items.length) { box.innerHTML = _emptyBox('No appointments with this patient.'); return; }
+        var html = '<table class="data-table" style="width:100%;"><thead><tr><th>When</th><th>Reason / notes</th><th>Status</th></tr></thead><tbody>';
+        items.forEach(function(a) {
+          html += '<tr><td>' + esc(a.when || '—') + '</td><td>' + esc(a.reason || a.notes || '—') + '</td><td>' + esc(a.status || '—') + '</td></tr>';
+        });
+        box.innerHTML = html + '</tbody></table>';
+      })
+      .catch(function() { box.innerHTML = _emptyBox('Network error. Try again.'); });
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(function(b) {
+    b.addEventListener('click', function() {
+      var t = b.getAttribute('data-tab');
+      if (_tabLoaded[t]) return;
+      if (t === 'reports-images') { _tabLoaded[t] = true; loadReportsImages(); }
+      if (t === 'appointments')   { _tabLoaded[t] = true; loadPatientAppointments(); }
     });
   });
 
@@ -529,6 +677,147 @@
       showAlert(document.getElementById('note-alert'), 'Network error.', 'error');
     });
   });
+
+  // ── New Visit (note + prescription in one step) ───────────────────
+  var visitState = {rxDone: false};
+
+  function visitAlert(msg, type) { showAlert(document.getElementById('visit-alert'), msg, type); }
+
+  function addMedRow(pre) {
+    pre = pre || {};
+    var row = document.createElement('div');
+    row.className = 'vm-row';
+    row.style.cssText = 'display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;';
+    row.innerHTML =
+      '<input class="input-field vm-name" style="flex:2 1 160px;" type="text" maxlength="120" placeholder="Medicine name">' +
+      '<input class="input-field vm-dose" style="flex:1 1 110px;" type="text" maxlength="60" placeholder="Dose e.g. 500 mg">' +
+      '<input class="input-field vm-freq" style="flex:1 1 130px;" type="text" maxlength="60" placeholder="e.g. twice a day">' +
+      '<input class="input-field vm-dur" style="flex:1 1 100px;" type="text" maxlength="60" placeholder="e.g. 5 days">' +
+      '<button class="btn-secondary btn-sm vm-remove" type="button" aria-label="Remove medicine">✕</button>';
+    row.querySelector('.vm-name').value = pre.name || '';
+    row.querySelector('.vm-dose').value = pre.dosage || '';
+    row.querySelector('.vm-freq').value = pre.frequency || '';
+    row.querySelector('.vm-dur').value  = pre.duration || '';
+    row.querySelector('.vm-remove').addEventListener('click', function() { row.remove(); });
+    document.getElementById('visit-meds').appendChild(row);
+    return row;
+  }
+
+  function collectMeds() {
+    var meds = [];
+    document.querySelectorAll('#visit-meds .vm-row').forEach(function(row) {
+      var name = (row.querySelector('.vm-name').value || '').trim();
+      if (!name) return;
+      meds.push({
+        name: name,
+        dosage: (row.querySelector('.vm-dose').value || '').trim(),
+        frequency: (row.querySelector('.vm-freq').value || '').trim(),
+        duration: (row.querySelector('.vm-dur').value || '').trim()
+      });
+    });
+    return meds;
+  }
+
+  function hideConflict() {
+    document.getElementById('visit-conflict').style.display = 'none';
+    document.getElementById('visit-conflict-list').innerHTML = '';
+    document.getElementById('visit-conflict-ack').checked = false;
+    document.getElementById('visit-save-anyway').disabled = true;
+  }
+
+  function showConflict(list) {
+    var html = '';
+    list.forEach(function(c) {
+      html += '<div style="margin:6px 0;"><strong>' + esc(c.medication) + '</strong> vs recorded allergy <strong>' + esc(c.allergy) + '</strong> (' + esc(c.severity) + ')</div>';
+    });
+    document.getElementById('visit-conflict-list').innerHTML = html;
+    document.getElementById('visit-conflict').style.display = '';
+  }
+
+  function setVisitBusy(b) {
+    var btn = document.getElementById('visit-save-btn');
+    btn.disabled = b;
+    btn.textContent = b ? 'Saving…' : 'Save visit';
+  }
+
+  function clearVisitForm() {
+    ['visit-diagnosis', 'visit-note', 'visit-rx-notes'].forEach(function(id) { document.getElementById(id).value = ''; });
+    document.getElementById('visit-note-type').value = 'General';
+    document.getElementById('visit-meds').innerHTML = '';
+    addMedRow();
+    hideConflict();
+    visitState.rxDone = false;
+  }
+
+  function saveVisit(override) {
+    var diagnosis = (document.getElementById('visit-diagnosis').value || '').trim();
+    var noteText  = (document.getElementById('visit-note').value || '').trim();
+    var rxNotes   = (document.getElementById('visit-rx-notes').value || '').trim();
+    var meds      = collectMeds();
+    if (!noteText && !meds.length) { visitAlert('Enter a clinical note or at least one medicine.', 'error'); return; }
+    if (meds.length && !diagnosis) { visitAlert('Diagnosis is required when prescribing medicines.', 'error'); return; }
+    setVisitBusy(true);
+
+    var rxStep;
+    if (meds.length && !visitState.rxDone) {
+      var payload = {patient_code: PATIENT_CODE, diagnosis: diagnosis, medications: meds, notes: rxNotes};
+      if (override === true) payload.override_allergy_check = true;
+      rxStep = fetch('/doctor/add_prescription', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + JWT},
+        body: JSON.stringify(payload)
+      }).then(function(r) { return r.json().then(function(d) { return {status: r.status, data: d}; }); });
+    } else {
+      rxStep = Promise.resolve({status: 201, data: {}});
+    }
+
+    rxStep.then(function(rx) {
+      if (rx.status === 409 && rx.data && rx.data.error === 'allergy_conflict') {
+        showConflict(rx.data.conflicts || []); setVisitBusy(false); return null;
+      }
+      if (rx.status !== 201) {
+        visitAlert((rx.data && (rx.data.detail || rx.data.error)) || 'Prescription failed. Nothing was saved.', 'error');
+        setVisitBusy(false); return null;
+      }
+      if (meds.length) visitState.rxDone = true;
+      hideConflict();
+      if (!noteText) return {ok: true, data: {}};
+      return fetch('/doctor/add_note', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          profile_code: PATIENT_CODE, patient_code: PATIENT_CODE,
+          note_type: document.getElementById('visit-note-type').value,
+          note_text: noteText
+        })
+      }).then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); });
+    }).then(function(n) {
+      if (n === null) return;
+      setVisitBusy(false);
+      if (n.ok) {
+        var what = (meds.length && noteText) ? 'note and prescription' : (meds.length ? 'prescription' : 'note');
+        visitAlert('Visit saved (' + what + ').', 'success');
+        clearVisitForm();
+        loadNotes();
+        document.getElementById('refresh-rx-btn').click();
+      } else {
+        var err = (n.data && n.data.error) || 'Failed.';
+        visitAlert((visitState.rxDone ? 'Prescription saved, but the note was NOT saved: ' : 'Note was NOT saved: ') + err + '. Press "Save visit" again to retry the note only.', 'error');
+      }
+    }).catch(function() {
+      setVisitBusy(false);
+      visitAlert('Network error. Check the Doctor Notes and Prescriptions tabs before retrying.', 'error');
+    });
+  }
+
+  document.getElementById('visit-add-med').addEventListener('click', function() { addMedRow(); });
+  document.getElementById('visit-save-btn').addEventListener('click', function() { saveVisit(false); });
+  document.getElementById('visit-save-anyway').addEventListener('click', function() { saveVisit(true); });
+  document.getElementById('visit-conflict-ack').addEventListener('change', function() {
+    document.getElementById('visit-save-anyway').disabled = !this.checked;
+  });
+  document.getElementById('visit-clear-btn').addEventListener('click', clearVisitForm);
+  addMedRow();
 
   document.getElementById('add-vitals-btn').addEventListener('click', function() {
     var payload = {

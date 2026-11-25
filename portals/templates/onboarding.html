@@ -75,8 +75,8 @@
   }
 
   /* Step card animation */
-  .onb-step { display: none; animation: stepIn .28s ease both; }
-  .onb-step.active { display: block; }
+  .onb-step { display: none !important; animation: stepIn .28s ease both; }
+  .onb-step.active { display: block !important; }
   @keyframes stepIn {
     from { opacity: 0; transform: translateY(10px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -496,6 +496,7 @@
     document.getElementById('onb-no-pw').style.display = 'none';
     document.getElementById('onb-hero').style.display = '';
     document.getElementById('onb-progress').style.display = '';
+    document.querySelectorAll('.onb-step').forEach(function(s){ s.style.display = ''; });
     goStep(1);
   });
 
@@ -505,9 +506,10 @@
   function goStep(n) {
     document.querySelectorAll('.onb-step').forEach(function(el) {
       el.classList.remove('active');
+      el.style.display = '';
     });
     var el = document.getElementById('onb-step-' + n);
-    if (el) { el.classList.add('active'); }
+    if (el) { el.classList.add('active'); el.style.display = ''; }
     _step = n;
     updateProgress(n);
     window.scrollTo({top: 0, behavior: 'smooth'});
