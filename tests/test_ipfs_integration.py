@@ -7,10 +7,10 @@ import subprocess
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import pytest
+import requests
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("IPFS_INTEGRATION") != "1",
@@ -41,19 +41,62 @@ def _pg_dump_text():
     return result.stdout
 
 
+def _scan_kubo_volumes(marker: bytes):
+    """Scan each Kubo repo inside its container and fail if it scans no files."""
+    assert marker and marker.isascii(), "Kubo scan marker must be non-empty ASCII"
+    containers = [
+        os.environ.get("KUBO_CONTAINER", "medvault-kubo"),
+        os.environ.get("KUBO_REPLICA_CONTAINER", "medvault-kubo-replica"),
+    ]
+    script = (
+        'set -eu; count="$(find /data/ipfs -type f | wc -l)"; '
+        '[ "$count" -gt 0 ] || { echo "No Kubo repo files scanned" >&2; exit 3; }; '
+        'echo "SCANNED_FILES=$count"; '
+        'set +e; grep -rlF -- "$1" /data/ipfs; result=$?; set -e; '
+        '[ "$result" -le 1 ] || exit "$result"'
+    )
+    results = {}
+    for container in containers:
+        completed = subprocess.run(
+            ["docker", "exec", container, "sh", "-c", script, "scan", marker.decode("ascii")],
+            check=True, capture_output=True, text=True,
+        )
+        output = completed.stdout.splitlines()
+        scanned = [line for line in output if line.startswith("SCANNED_FILES=")]
+        assert len(scanned) == 1, f"Scanner did not report its file count for {container}: {completed.stdout}"
+        count = int(scanned[0].split("=", 1)[1])
+        assert count > 0, f"Scanner examined no files in {container}"
+        matches = [line for line in output if not line.startswith("SCANNED_FILES=")]
+        results[container] = {"scanned_files": count, "matches": matches}
+    return results
+
+
 def _assert_absent_from_kubo_volume(marker: bytes):
-    roots = [Path(os.environ["KUBO_DATA_DIR"])]
-    replica = os.environ.get("KUBO_REPLICA_DATA_DIR")
-    if replica:
-        roots.append(Path(replica))
-    for root in roots:
-        assert root.exists(), f"Kubo data volume not mounted at {root}"
-        for path in root.rglob("*"):
-            if path.is_file():
-                try:
-                    assert marker not in path.read_bytes(), f"plaintext sentinel found in {path.name}"
-                except PermissionError as exc:
-                    raise AssertionError(f"Cannot inspect Kubo data file {path}") from exc
+    results = _scan_kubo_volumes(marker)
+    for container, result in results.items():
+        assert not result["matches"], f"plaintext sentinel found in {container}: {result['matches']}"
+
+
+def _upload_plaintext_control(marker: bytes) -> str:
+    api = os.environ["IPFS_API_URL"].rstrip("/")
+    response = requests.post(
+        f"{api}/api/v0/add", params={"pin": "true", "cid-version": "1", "raw-leaves": "true"},
+        files={"file": ("scanner-positive-control.bin", marker, "application/octet-stream")},
+        timeout=15,
+    )
+    response.raise_for_status()
+    result = json.loads(response.text.splitlines()[-1])
+    cid = result.get("Hash")
+    assert cid, f"Kubo did not return a CID for positive control: {response.text}"
+    return cid
+
+
+def _remove_plaintext_control(cid: str) -> None:
+    api = os.environ["IPFS_API_URL"].rstrip("/")
+    unpinned = requests.post(f"{api}/api/v0/pin/rm", params={"arg": cid}, timeout=15)
+    unpinned.raise_for_status()
+    collected = requests.post(f"{api}/api/v0/repo/gc", timeout=30)
+    collected.raise_for_status()
 
 
 def test_real_kubo_registration_and_share_ciphertext_have_no_plaintext_leaks(
@@ -67,6 +110,15 @@ def test_real_kubo_registration_and_share_ciphertext_have_no_plaintext_leaks(
     from common.crypto_utils import rsa_load_public
 
     sentinel = ("MEDVAULT_IPFS_SENTINEL_" + uuid.uuid4().hex).encode("ascii")
+    positive_control = ("MEDVAULT_PLAINTEXT_SCAN_CONTROL_" + uuid.uuid4().hex).encode("ascii")
+    positive_cid = _upload_plaintext_control(positive_control)
+    try:
+        scan = _scan_kubo_volumes(positive_control)
+        primary = os.environ.get("KUBO_CONTAINER", "medvault-kubo")
+        assert scan[primary]["matches"], "Kubo scan did not find the directly uploaded plaintext control"
+    finally:
+        _remove_plaintext_control(positive_cid)
+
     patient_private, patient_public = generate_rsa_keypair(2048)
     doctor_private, doctor_public = generate_rsa_keypair(2048)
     patient_code = "PAT-IPFS-CI-" + uuid.uuid4().hex

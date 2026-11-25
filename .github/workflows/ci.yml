@@ -74,6 +74,8 @@ jobs:
       IPFS_RETRY_BACKOFF_SECONDS: "0.1"
       KUBO_DATA_DIR: ${{ github.workspace }}/.ci-kubo-data
       KUBO_REPLICA_DATA_DIR: ${{ github.workspace }}/.ci-kubo-replica
+      KUBO_CONTAINER: medvault-kubo
+      KUBO_REPLICA_CONTAINER: medvault-kubo-replica
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
