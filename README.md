@@ -15,9 +15,9 @@ A research prototype of consent-based sharing for encrypted patient records.
 MedVault is a **research prototype** of consent-based sharing for encrypted patient records.
 Patients authorize access to their records via **consent-based cryptographic key sharing**, and doctors can access them **only after explicit patient approval**.
 
-The patient's registration record is encrypted (AES-256-GCM, key wrapped with RSA-4096 OAEP). Most clinical data added later (notes, prescriptions, vitals, lab results) is stored in plaintext. Encryption and key handling currently happen in the portal server.
+The patient's registration record is encrypted (AES-256-GCM, key wrapped with RSA-4096 OAEP), and per-share snapshots are encrypted before storage. Most clinical data added later (notes, prescriptions, vitals, lab results) is stored in plaintext. Encryption and key handling currently happen in the portal server.
 
-Encrypted registration records and per-share snapshot ciphertexts are stored in a private, offline Kubo/IPFS node. PostgreSQL stores their CIDs, SHA-256 digests, sizes and package metadata. IPFS is not public or decentralized in this deployment. EMR clinical tables remain plaintext in PostgreSQL, and the application does not claim end-to-end encryption.
+Encrypted registration records and per-share snapshot ciphertexts are stored in a private, offline Kubo/IPFS node. PostgreSQL stores their CIDs, SHA-256 digests, sizes and package metadata. EMR clinical tables remain plaintext in PostgreSQL, and encryption and key handling remain server-side.
 
 > **Important:** This is a research prototype, not a production system. See [Current Status and Limitations](#-current-status-and-limitations) below, and the full [Threat Model](docs/THREAT_MODEL.md).
 
@@ -155,8 +155,8 @@ The maintenance worker migrates legacy inline encrypted registration/share paylo
 
 ### What is NOT implemented (planned for future work)
 - **Client-side (phone/browser) encryption**: Currently, all key generation, encryption, and decryption happen on the portal server, not on the patient's device. The portal server can read plaintext and private keys.
-- **Encryption of clinical data**: Most clinical data (doctor notes, prescriptions, lab reports, vitals, conditions, encounters, EMR profiles) is stored as **plaintext** in the database. Only the initial patient registration record is encrypted.
-- **Public or decentralized storage**: IPFS is a private offline ciphertext store for registration records and per-share snapshots only. It does not provide anonymity or guaranteed deletion. EMR clinical data remains in PostgreSQL.
+- **Encryption of clinical data**: The initial patient registration record and per-share snapshots are encrypted. Most clinical data (doctor notes, prescriptions, lab reports, vitals, conditions, encounters, EMR profiles) is stored as **plaintext** in the database.
+- **Public IPFS publishing**: The private offline Kubo store holds registration and per-share snapshot ciphertext only. It does not provide anonymity or guaranteed deletion. EMR clinical data remains in PostgreSQL.
 - **Robust key recovery**: Key loss currently means partial data loss.
 - **Doctor identity verification**: Doctor accounts are created manually by an admin. The `doctor_verification_status` column exists but no verification logic is implemented.
 - **Encrypted backup/export**: No backup export mechanism exists.
@@ -166,8 +166,8 @@ The maintenance worker migrates legacy inline encrypted registration/share paylo
 
 ### Known security limitations
 - The same password is used for login and KEK derivation; the backend receives the password at login.
-- `_doctor_has_active_access` grants permanent implicit access if a doctor has ever written a prescription or lab report for the patient.
+- Access through `access_db` has no expiry in backend authorization checks; wrapped-key grants are checked against their expiry. The old implicit grant based on having authored a prescription or lab report was removed.
 - `/approve_request` is protected by a shared API key, not patient-specific authentication.
-- The API key comparison uses `!=` instead of a constant-time compare.
+- API keys and JWT HMAC signatures use `hmac.compare_digest`; RSA package signatures are verified with `rsa_verify`.
 
 For a full analysis, see **[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)**.

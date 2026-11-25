@@ -5,11 +5,15 @@ Performed against the current codebase as of this writing.
 
 ## Current IPFS facts
 
-The project uses a private, offline Kubo/IPFS store for **encrypted patient registration records and per-share snapshot ciphertext only**. PostgreSQL stores their CIDs, SHA-256 digests, sizes, wrapped keys and metadata. Kubo's API is internal to the Docker network and its HTTP gateway is loopback-only. EMR profiles, prescriptions, vitals, notes, labs, conditions, encounters and appointments remain plaintext in PostgreSQL. No end-to-end encryption claim is made; IPFS is not public decentralisation and unpinning does not guarantee deletion from copies already fetched or backed up.
+The project uses a private, offline Kubo/IPFS store for **encrypted patient registration records and per-share snapshot ciphertext only**. PostgreSQL stores their CIDs, SHA-256 digests, sizes, wrapped keys and metadata. Kubo's API is internal to the Docker network and its HTTP gateway is loopback-only. EMR profiles, prescriptions, vitals, notes, labs, conditions, encounters and appointments remain plaintext in PostgreSQL. Portal servers handle keys and encryption. Unpinning does not guarantee deletion from copies already fetched or backed up.
 
 ## Methodology
 
 Searched the entire repository for the terms: `zero-trust`, `end-to-end` / `E2E`, `decentralized` / `decentralised`, `distributed storage`, `IPFS`, `blockchain`, `only manage encrypted metadata`, `fully control`, `24-hour` / `24 hours`, `time-limited`, `auto-expire`, `all 25 security issues`, `HIPAA`, `FHIR`, `compliant`, `submitted`, `published`, `conference`.
+
+## Current corrections
+
+The README status section now includes per-share snapshots among encrypted payloads, describes the remaining plaintext EMR data, and no longer states that API-key comparison uses `!=`. `server._require_api_key`, `server._jwt_decode`, and the portal API-key check use `hmac.compare_digest`; RSA package signatures are verified with `rsa_verify`. The former permanent patient-wide authorship grant was removed: `server._doctor_has_active_access` delegates to `authorize_patient_access`, which accepts approved `access_db` rows or unexpired wrapped-key grants. `access_db` approval expiry remains open. Entries below preserve older quoted claims for audit history; they do not describe the current behavior where the evidence has since changed.
 
 ## Audit Table
 

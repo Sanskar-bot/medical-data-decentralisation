@@ -4,7 +4,7 @@
 > Claims about the planned phone-first design are clearly marked **PLANNED, NOT IMPLEMENTED**.
 > Every claim about current behaviour cites a source file and function or line number.
 
-The patient's registration record is encrypted (AES-256-GCM, key wrapped with RSA-4096 OAEP). Most clinical data added later (notes, prescriptions, vitals, lab results) is stored in plaintext. Encryption and key handling currently happen in the portal server. Wrapped-key access has a 24-hour server-side expiry; JWT-based approvals (`access_db`) currently have no expiry. Once a doctor decrypts a key or record, access cannot be cryptographically revoked.
+The patient's registration record and per-share snapshots are encrypted. Most clinical data added later (notes, prescriptions, vitals, lab results) is stored in plaintext. Encryption and key handling currently happen in the portal server. Wrapped-key access has a 24-hour server-side expiry; approved grants in `access_db` currently have no expiry in backend authorization checks. Once a doctor decrypts a key or record, access cannot be cryptographically revoked.
 
 ## Private IPFS ciphertext store
 
@@ -65,10 +65,10 @@ All components run in Docker containers on a single host (`docker-compose.yml`).
 
 ### Data Flow: Doctor Access
 
-1. Doctor requests the patient's data. The backend checks `_doctor_has_active_access` (`server/server.py`), which returns true if:
+1. Doctor requests the patient's data. The backend checks `_doctor_has_active_access` (`server/server.py`), which delegates to `authorize_patient_access` (`server/authz.py`) and returns true if:
    - A non-expired entry exists in `wrapped_keys` (checks `temp_key_expires_at > now()`), **OR**
-   - An `approved` row exists in `access_db` (no expiry check), **OR**
-   - The doctor has ever written a prescription or lab report for the patient (`emr_prescriptions` / `emr_lab_reports`).
+   - An `approved` row exists in `access_db` (no expiry check).
+   - There is no patient-wide grant based on previous prescription or lab authorship. Specific record endpoints may authorize the doctor who authored that record, and only for that record.
 2. If access is granted, the backend returns the wrapped key. The doctor's portal/client unwraps T with their RSA private key, then decrypts K_data with T.
 3. The doctor can then decrypt the `encrypted_record` using K_data.
 4. All EMR data (prescriptions, notes, vitals, etc.) is served as plaintext from the database — no decryption step is needed for these.
@@ -79,7 +79,7 @@ All components run in Docker containers on a single host (`docker-compose.yml`).
 
 | Asset | Sensitivity | Storage Location |
 |-------|------------|-----------------|
-| Patient clinical record (initial registration blob) | High | Ciphertext in private IPFS; `patients` stores CID, SHA-256, size, public key and signature |
+| Patient registration record and per-share snapshots | High | Ciphertext in private IPFS; PostgreSQL stores CIDs, SHA-256 digests, sizes, keys and metadata |
 | EMR profiles, prescriptions, lab reports, conditions, vitals, encounters, doctor notes | High | `emr_profiles`, `emr_prescriptions`, `emr_lab_reports`, `conditions`, `vitals`, `encounters`, `doctor_notes` — **all plaintext** in Postgres |
 | Patient RSA private key | Critical | Portal server filesystem (`SecureKeyStore`, DPAPI or AES-GCM), plus encrypted backup in `users.encrypted_private_key` |
 | AES data key K_data | Critical | Wrapped in portal server's `user_data.json` (KEK from password via PBKDF2) |
@@ -147,13 +147,13 @@ In this design, the portal server would no longer generate or hold private keys.
 
 | Property | README / Intent Claims | Current Status | Planned Design | Work Needed |
 |----------|----------------------|----------------|----------------|-------------|
-| **End-to-end confidentiality** | "end-to-end encrypted platform" | Only `patients.encrypted_record` is encrypted. All other clinical data is plaintext. Portal server handles all crypto. | Phone-side encryption of all data; server sees only ciphertext. | Move key generation and all encrypt/decrypt to patient device. Encrypt all EMR entities before storage. |
+| **Client-held confidentiality** | "end-to-end encrypted platform" | Registration records and share snapshots are encrypted, while most other clinical data is plaintext. Portal servers handle keys and encryption. | Phone-side encryption of all data; server sees only ciphertext. | Move key generation and all encrypt/decrypt to patient device. Encrypt all EMR entities before storage. |
 | **Server learns nothing** | "servers only manage encrypted metadata" | Server stores plaintext prescriptions, notes, vitals, lab reports, conditions, encounters, appointments, and EMR profiles. | Server stores only encrypted blobs. | Encrypt all clinical tables. Redesign EMR endpoints to accept/return ciphertext. |
-| **Time-limited access** | "24-hour" / "time-limited" | `wrapped_keys.temp_key_expires_at` checked in SQL (`_db_get_wrapped_key`). `access_db` has `responded_at` checked in `landing.py` L3382. But `_doctor_has_active_access` grants permanent implicit access via EMR data authorship (check #3). Once K_data is decrypted, it cannot be un-known. | Same server-side expiry, but K_data never leaves patient device; doctor gets ephemeral session keys. | Remove implicit EMR-based access grant. Add expiry to `access_db`. Design session-key protocol where K_data is never shared. |
+| **Time-limited access** | "24-hour" / "time-limited" | `wrapped_keys.temp_key_expires_at` is checked in SQL (`_db_get_wrapped_key`). `access_db` approved rows have no expiry in backend authorization checks. Once K_data is decrypted, it cannot be un-known. The old patient-wide authorship grant was removed. | Same server-side expiry, but K_data never leaves patient device; doctor gets ephemeral session keys. | Add expiry to `access_db`. Design session-key protocol where K_data is never shared. |
 | **Per-share snapshot expiry** | New snapshot shares are individually expiring | Each snapshot uses a fresh key wrapped to one doctor; server-side expiry and purge clear live fields. An honest doctor client checks expiry, but a doctor who already decrypted can retain the snapshot. Portals still handle keys and plaintext. | Move share creation and opening to patient and doctor devices; retain honest-doctor assumption. | Implement native clients; assess backup/WAL retention and doctor identity verification; do not promise post-decryption deletion. |
 | **Snapshot retention after fetch** | Expiry removes access to the selected snapshot | Expiry blocks future fetches and clears live database fields. It cannot erase plaintext already decrypted by the doctor, screenshots, or copies on a compromised device. | Doctor viewer enforces expiry while the doctor is assumed to follow the protocol. | Keep expiry claims limited to best-effort access control; address device security and retention policies separately. |
 | **Share key authenticity** | The public key selected for a patient or doctor belongs to that named person | The API supplies the patient's verification key and the server directory supplies the doctor's wrapping key. Clients do not independently authenticate either key; a server that substitutes keys can defeat the intended identity binding. | Clients verify key fingerprints or use keys certified to verified identities. | Design authenticated key discovery, rotation, and recovery; evaluate out-of-band comparison, pinning, and registry-backed certification. |
-| **Revocation** | Author acknowledges revocation cannot un-see data | Revoking (`access_db.status = 'revoked'`) stops future API access. `_doctor_has_active_access` still grants access via wrapped_keys or EMR authorship. The doctor retains K_data. | Revocation deletes server-side session keys; K_data never shared. | Close the implicit-access loopholes. Document the fundamental limitation clearly. |
+| **Revocation** | Author acknowledges revocation cannot un-see data | Revoking an `access_db` grant blocks that grant. A separate, unexpired `wrapped_keys` grant may still authorize access until its expiry; the doctor may retain already-decrypted data. | Revocation deletes server-side session keys; K_data never shared. | Document the limits of server-side expiry and revocation clearly. |
 | **Doctor identity verification** | Doctor identity verified by checking licence number against a medical council registry | Admin manually creates doctor accounts (`admin_create_doctor.html`). `users.doctor_verification_status` column exists but defaults to `'unverified'` and `doctor_license_number` column exists but no verification logic is implemented (`schema.sql` L464–466). **(NOT IMPLEMENTED)** | Automated lookup of licence number against an external medical council registry, plus identity-proofing to confirm the registrant is the licence holder. | Implement registry API integration; design identity-proofing step (licence number alone does not prove the registrant is that doctor); handle registry unavailability and data-quality issues. |
 | **Patient device (Android app)** | Patient data lives on the patient's own phone; private key held on-device using Android Keystore | No mobile code exists in the repository. All crypto runs on the server-side portal. **(NOT IMPLEMENTED)** | Android app holds records and private key on-device, using Android Keystore for hardware-backed key protection where available. | Build Android app; implement on-device key generation, encryption, and decryption; remove portal-side crypto for patient data; design secure sync protocol between app and server. |
 | **Key recovery** | "key loss means data loss" initially | Private key backup wrapped with PBKDF2-derived KEK stored in `users.encrypted_private_key` (`patient_portal.py` L117–123). Same password used for login and KEK derivation. | Recovery via personal cloud backup. | Separate recovery password from login password, or use Argon2id. |
@@ -193,7 +193,7 @@ In this design, the portal server would no longer generate or hold private keys.
 |---|-------|--------|-----------------|-------------------|
 | A1 | Network attacker | Intercept traffic | Blocked by TLS (nginx.conf L40–46) | ✅ Mitigated |
 | A2 | Malicious doctor | Retain K_data after 24h expiry | Doctor keeps K_data forever; can decrypt `encrypted_record` offline. Server-side expiry only blocks API calls. | ⚠️ Fundamental limitation, documented |
-| A3 | Malicious doctor | Access plaintext EMR data beyond 24h | `_doctor_has_active_access` check #3 grants permanent implicit access if doctor ever wrote EMR data for patient. `access_db` has no expiry. | ❌ Not mitigated |
+| A3 | Malicious doctor | Access plaintext EMR data beyond 24h | Approved `access_db` grants have no expiry in backend authorization checks. The former patient-wide authorship grant is removed. | ❌ Not mitigated |
 | A4 | Operator / insider | Read all clinical data | All EMR data is plaintext in Postgres. Private keys recoverable via filesystem + machine-id. | ❌ Not mitigated (by design in prototype) |
 | A5 | Database admin | Read plaintext EMR data | Direct SQL access to all plaintext tables. | ❌ Not mitigated |
 | A6 | Any API client with API key | Approve access request for any patient | `/approve_request` checks only the static API key, not patient identity (`server/server.py` L1940–1944). | ❌ Not mitigated |
@@ -207,21 +207,19 @@ In this design, the portal server would no longer generate or hold private keys.
 
 ## 9. Open Issues and Future Work (ordered by importance)
 
-**Remaining open items:** `approve_request` caller check, `access_db` expiry, per-grant keys, plaintext EMR data, server-side key generation, password-derived key backup, and the unused Argon2 function. H7's timing-compare issue and H8 are fixed.
+**Remaining open items:** `approve_request` caller check, `access_db` expiry, per-grant keys, plaintext EMR data, server-side key generation, password-derived key backup, and the unused Argon2 function. The implicit prescription/lab authorship grant has been removed. API-key and JWT HMAC comparisons use `hmac.compare_digest`; H7's timing-compare issue and H8 are fixed.
 
 1. **Encrypt all clinical data.** Most EMR data is stored in plaintext. This is the single largest gap between claims and implementation. All tables (`doctor_notes`, `emr_profiles`, `emr_prescriptions`, `emr_lab_reports`, `conditions`, `vitals`, `encounters`) should store ciphertext.
 
 2. **Move crypto to patient device.** Key generation, encryption, and decryption currently happen on the portal server. Moving these to the patient's device (phone or browser) is necessary for genuine end-to-end confidentiality.
 
-3. **Fix implicit access grants.** `_doctor_has_active_access` check #3 grants permanent access if a doctor has ever written a prescription or lab report. This bypasses the consent and time-limiting mechanisms.
+3. **Add expiry to `access_db`.** Approved grants currently remain active in backend authorization checks until revoked (`schema.sql` L181–191).
 
-4. **Add expiry to `access_db`.** The JWT-based access flow has no expiry column or enforcement (`schema.sql` L181–191).
+4. **Authenticate `approve_request` to the patient.** Currently protected only by a shared static API key. Any holder of the API key can approve any request (`server/server.py` L1940–1944).
 
-5. **Authenticate `approve_request` to the patient.** Currently protected only by a shared static API key. Any holder of the API key can approve any request (`server/server.py` L1940–1944).
+5. **Use constant-time comparisons for API keys and HMAC signatures.** Fixed: `_require_api_key`, JWT validation and portal API-key validation use `hmac.compare_digest`.
 
-6. **Use constant-time comparison for API key.** Fixed: `_require_api_key` now uses `hmac.compare_digest` (`server/server.py` L123).
-
-7. **Migrate all KEK derivation to Argon2id.** `derive_kek_argon2` exists (`crypto_utils.py` L192–214) but is never called at runtime. All call sites use the deprecated PBKDF2 function.
+6. **Migrate all KEK derivation to Argon2id.** `derive_kek_argon2` exists (`crypto_utils.py` L192–214) but is not wired into runtime KEK call sites. All such call sites use PBKDF2.
 
 8. **Separate login password from KEK password.** The same password is sent to the backend at login and used to derive the KEK for K_data wrapping. An operator who intercepts the password can unwrap K_data.
 

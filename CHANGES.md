@@ -1,6 +1,10 @@
 # CHANGES.md — Security Fixes Applied
 
-25 identified security issues were addressed as described below. H7's timing-compare issue and H8 are fixed. Remaining open items are the `approve_request` caller check, `access_db` expiry, per-grant keys, plaintext EMR data, server-side key generation, password-derived key backup, and unused Argon2 function. See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for a full analysis.
+25 identified security issues were addressed as described below. H6's patient-wide authorship grant, H7's timing-compare issue and H8 are fixed. Remaining open items are the `approve_request` caller check, `access_db` expiry, per-grant keys, plaintext EMR data, server-side key generation, password-derived key backup, and unused Argon2 function. See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for a full analysis.
+
+### Hardening cleanup — Task 1: README status review
+
+Updated the README and security documentation to include per-share snapshot ciphertext, remove the stale claim that `_doctor_has_active_access` grants permanent access based on past authorship, and correct the API-key comparison statement. API keys and JWT HMAC signatures use `hmac.compare_digest`; RSA package signatures use `rsa_verify`. This task changes documentation only.
 
 ### Per-share snapshots (new)
 
